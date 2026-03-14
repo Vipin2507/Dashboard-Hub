@@ -1,0 +1,167 @@
+import { Topbar } from '@/components/Topbar';
+import { useAppStore } from '@/store/useAppStore';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ROLE_LABELS, type Role } from '@/types';
+import { ShieldAlert } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { useState } from 'react';
+
+export default function UsersPage() {
+  const me = useAppStore(s => s.me);
+  const users = useAppStore(s => s.users);
+  const teams = useAppStore(s => s.teams);
+  const regions = useAppStore(s => s.regions);
+  const updateUserRole = useAppStore(s => s.updateUserRole);
+  const updateUserStatus = useAppStore(s => s.updateUserStatus);
+  const updatePassword = useAppStore(s => s.updatePassword);
+
+  const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
+  const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+
+  if (me.role !== 'super_admin') {
+    return (
+      <>
+        <Topbar title="Users" />
+        <div className="p-6">
+          <Card className="bg-card border border-border">
+            <CardContent className="flex items-center gap-3 py-12 justify-center text-muted-foreground">
+              <ShieldAlert className="w-5 h-5" />
+              <p className="text-sm">Access denied. Only Super Admin can manage users.</p>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
+
+  const handlePasswordChange = (userId: string) => {
+    const newPassword = passwordEdits[userId];
+    if (!newPassword || newPassword.length < 4) {
+      setPasswordErrors(prev => ({ ...prev, [userId]: 'Password must be at least 4 characters' }));
+      return;
+    }
+    try {
+      updatePassword(userId, null, newPassword);
+      setPasswordEdits(prev => ({ ...prev, [userId]: '' }));
+      setPasswordErrors(prev => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unable to update password';
+      setPasswordErrors(prev => ({ ...prev, [userId]: message }));
+    }
+  };
+
+  return (
+    <>
+      <Topbar title="Users" subtitle="Manage platform users" />
+      <div className="p-6 space-y-4">
+        <Card className="bg-card border border-border">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">Name</TableHead>
+                  <TableHead className="text-xs">ID</TableHead>
+                  <TableHead className="text-xs">Email</TableHead>
+                  <TableHead className="text-xs">Role</TableHead>
+                  <TableHead className="text-xs">Team</TableHead>
+                  <TableHead className="text-xs">Region</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Security</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {users.map(u => (
+                  <TableRow key={u.id}>
+                    <TableCell className="text-sm font-medium">{u.name}</TableCell>
+                    <TableCell className="font-mono-id">{u.id}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{u.email}</TableCell>
+                    <TableCell>
+                      {me.role === 'super_admin' ? (
+                        <Select
+                          value={u.role}
+                          onValueChange={(value) => updateUserRole(u.id, value as Role)}
+                        >
+                          <SelectTrigger className="h-8 text-[10px]">
+                            <SelectValue placeholder="Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(ROLE_LABELS).map(([role, label]) => (
+                              <SelectItem key={role} value={role} className="text-xs">
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          {ROLE_LABELS[u.role]}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">{teams.find(t => t.id === u.teamId)?.name}</TableCell>
+                    <TableCell className="text-xs">{regions.find(r => r.id === u.regionId)?.name}</TableCell>
+                    <TableCell>
+                      <span className={`flex items-center gap-1 text-xs ${u.status === 'active' ? 'text-success' : 'text-destructive'}`}>
+                        <span className={`w-2 h-2 rounded-full ${u.status === 'active' ? 'bg-success' : 'bg-destructive'}`} />
+                        {u.status === 'active' ? 'Active' : 'Disabled'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {me.role === 'super_admin' && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={u.status === 'active'}
+                              onCheckedChange={(checked) => updateUserStatus(u.id, checked ? 'active' : 'disabled')}
+                            />
+                            <span className="text-[11px] text-muted-foreground">
+                              {u.status === 'active' ? 'Can sign in' : 'Sign in disabled'}
+                            </span>
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex gap-1">
+                              <Input
+                                type="password"
+                                placeholder="New password"
+                                className="h-8 text-xs"
+                                value={passwordEdits[u.id] ?? ''}
+                                onChange={e => setPasswordEdits(prev => ({ ...prev, [u.id]: e.target.value }))}
+                              />
+                              <Button
+                                size="sm"
+                                className="h-8 text-xs"
+                                type="button"
+                                onClick={() => handlePasswordChange(u.id)}
+                              >
+                                Update
+                              </Button>
+                            </div>
+                            {passwordErrors[u.id] && (
+                              <p className="text-[11px] text-destructive">
+                                {passwordErrors[u.id]}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+        <p className="text-xs text-muted-foreground">In V1, only Super Admin can manage users.</p>
+      </div>
+    </>
+  );
+}
