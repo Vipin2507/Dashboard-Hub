@@ -1,5 +1,24 @@
 import { create } from 'zustand';
-import type { Role, MeContext, Region, Team, User, Customer, Proposal, Deal, Notification, InventoryItem } from '@/types';
+import type {
+  Role,
+  MeContext,
+  Region,
+  Team,
+  User,
+  Customer,
+  CustomerContact,
+  CustomerNote,
+  CustomerSupportTicket,
+  CustomerActivityLog,
+  CustomerPayment,
+  CustomerInvoice,
+  CustomerProductLine,
+  Proposal,
+  ProposalLineItem,
+  Deal,
+  Notification,
+  InventoryItem,
+} from '@/types';
 import { seedRegions, seedTeams, seedUsers, seedCustomers, seedProposals, seedDeals, seedNotifications, seedInventoryItems } from '@/lib/seed';
 
 interface AppState {
@@ -21,9 +40,25 @@ interface AppState {
   updateUserStatus: (userId: string, status: User['status']) => void;
   updatePassword: (userId: string, oldPassword: string | null, newPassword: string) => void;
 
-  // Master data management
-  addCustomer: (payload: Omit<Customer, 'id'>) => void;
-  bulkAddCustomers: (payloads: Omit<Customer, 'id'>[]) => void;
+  // Customers
+  addCustomer: (customer: Customer) => void;
+  updateCustomer: (id: string, updates: Partial<Customer>) => void;
+  deleteCustomer: (id: string) => void;
+  addContact: (customerId: string, contact: CustomerContact) => void;
+  updateContact: (customerId: string, contactId: string, updates: Partial<CustomerContact>) => void;
+  deleteContact: (customerId: string, contactId: string) => void;
+  setPrimaryContact: (customerId: string, contactId: string) => void;
+  addNote: (customerId: string, note: CustomerNote) => void;
+  updateNote: (customerId: string, noteId: string, content: string) => void;
+  deleteNote: (customerId: string, noteId: string) => void;
+  addSupportTicket: (customerId: string, ticket: CustomerSupportTicket) => void;
+  updateSupportTicket: (customerId: string, ticketId: string, updates: Partial<CustomerSupportTicket>) => void;
+  appendActivityLog: (customerId: string, entry: CustomerActivityLog) => void;
+  addPayment: (customerId: string, payment: CustomerPayment) => void;
+  addInvoice: (customerId: string, invoice: CustomerInvoice) => void;
+  updateInvoiceStatus: (customerId: string, invoiceId: string, status: CustomerInvoice['status']) => void;
+  addProductLine: (customerId: string, line: CustomerProductLine) => void;
+
   addDeal: (payload: Omit<Deal, 'id' | 'locked'>) => void;
   addDealWithId: (deal: Deal) => void;
 
@@ -155,19 +190,152 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  addCustomer: (payload) => {
-    const id = 'c' + makeId();
-    const customer: Customer = { id, ...payload };
-    set(s => ({ customers: [...s.customers, customer] }));
+  addCustomer: (customer) => {
+    set(s => ({ customers: [customer, ...s.customers] }));
   },
 
-  bulkAddCustomers: (payloads) => {
-    if (payloads.length === 0) return;
-    const created: Customer[] = payloads.map(p => ({
-      id: 'c' + makeId(),
-      ...p,
+  updateCustomer: (id, updates) => {
+    const now = new Date().toISOString();
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === id ? { ...c, ...updates, updatedAt: now } : c
+      ),
     }));
-    set(s => ({ customers: [...s.customers, ...created] }));
+  },
+
+  deleteCustomer: (id) => {
+    set(s => ({ customers: s.customers.filter(c => c.id !== id) }));
+  },
+
+  addContact: (customerId, contact) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, contacts: [...c.contacts, contact] } : c
+      ),
+    }));
+  },
+
+  updateContact: (customerId, contactId, updates) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId
+          ? { ...c, contacts: c.contacts.map(co => (co.id === contactId ? { ...co, ...updates } : co)) }
+          : c
+      ),
+    }));
+  },
+
+  deleteContact: (customerId, contactId) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, contacts: c.contacts.filter(co => co.id !== contactId) } : c
+      ),
+    }));
+  },
+
+  setPrimaryContact: (customerId, contactId) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId
+          ? { ...c, contacts: c.contacts.map(co => ({ ...co, isPrimary: co.id === contactId })) }
+          : c
+      ),
+    }));
+  },
+
+  addNote: (customerId, note) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, notes: [note, ...c.notes] } : c
+      ),
+    }));
+  },
+
+  updateNote: (customerId, noteId, content) => {
+    const now = new Date().toISOString();
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId
+          ? { ...c, notes: c.notes.map(n => (n.id === noteId ? { ...n, content, updatedAt: now } : n)) }
+          : c
+      ),
+    }));
+  },
+
+  deleteNote: (customerId, noteId) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, notes: c.notes.filter(n => n.id !== noteId) } : c
+      ),
+    }));
+  },
+
+  addSupportTicket: (customerId, ticket) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, supportTickets: [ticket, ...c.supportTickets] } : c
+      ),
+    }));
+  },
+
+  updateSupportTicket: (customerId, ticketId, updates) => {
+    const now = new Date().toISOString();
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId
+          ? {
+              ...c,
+              supportTickets: c.supportTickets.map(t =>
+                t.id === ticketId ? { ...t, ...updates, updatedAt: now } : t
+              ),
+            }
+          : c
+      ),
+    }));
+  },
+
+  appendActivityLog: (customerId, entry) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, activityLog: [entry, ...c.activityLog] } : c
+      ),
+    }));
+  },
+
+  addPayment: (customerId, payment) => {
+    set(s => ({
+      customers: s.customers.map(c => {
+        if (c.id !== customerId) return c;
+        const totalRevenue = c.totalRevenue + payment.amount;
+        return { ...c, payments: [payment, ...c.payments], totalRevenue };
+      }),
+    }));
+  },
+
+  addInvoice: (customerId, invoice) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, invoices: [invoice, ...c.invoices] } : c
+      ),
+    }));
+  },
+
+  updateInvoiceStatus: (customerId, invoiceId, status) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId
+          ? { ...c, invoices: c.invoices.map(inv => (inv.id === invoiceId ? { ...inv, status } : inv)) }
+          : c
+      ),
+    }));
+  },
+
+  addProductLine: (customerId, line) => {
+    set(s => ({
+      customers: s.customers.map(c =>
+        c.id === customerId ? { ...c, productLines: [line, ...c.productLines] } : c
+      ),
+    }));
   },
 
   addDeal: (payload) => {
@@ -217,6 +385,23 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addProposal: (proposal) => {
     set(s => ({ proposals: [proposal, ...s.proposals] }));
+    const me = get().me;
+    const customer = get().customers.find(c => c.id === proposal.customerId);
+    if (customer) {
+      get().updateCustomer(proposal.customerId, {
+        activeProposalsCount: customer.activeProposalsCount + 1,
+      });
+      get().appendActivityLog(proposal.customerId, {
+        id: 'cal-' + makeId(),
+        action: 'Proposal created',
+        description: `Proposal ${proposal.proposalNumber} created: ${proposal.title}.`,
+        performedBy: me.id,
+        performedByName: me.name,
+        timestamp: new Date().toISOString(),
+        entityType: 'proposal',
+        entityId: proposal.id,
+      });
+    }
   },
 
   updateProposal: (id, updates) => {
@@ -270,16 +455,56 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     const proposal = get().proposals.find(p => p.id === id);
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
-    const to = customer?.email ?? 'customer@example.com';
+    const primaryContact = customer?.contacts?.find(c => c.isPrimary) ?? customer?.contacts?.[0];
+    const to = primaryContact?.email ?? 'customer@example.com';
     get().pushNotification({ type: 'CUSTOMER_EMAIL', to, subject: `Proposal ${proposal?.proposalNumber ?? id} sent`, entityId: id });
   },
 
   createDealFromProposal: (id, dealId) => {
+    const proposal = get().proposals.find(p => p.id === id);
     set(s => ({
       proposals: s.proposals.map(p =>
         p.id === id ? { ...p, status: 'deal_created' as const, dealId, updatedAt: new Date().toISOString() } : p
       ),
     }));
+    if (proposal?.customerId) {
+      const customer = get().customers.find(c => c.id === proposal.customerId);
+      if (customer) {
+        get().updateCustomer(proposal.customerId, {
+          activeProposalsCount: Math.max(0, customer.activeProposalsCount - 1),
+          activeDealsCount: customer.activeDealsCount + 1,
+        });
+        const deal = get().deals.find(d => d.id === dealId);
+        const purchasedAt = new Date().toISOString().slice(0, 10);
+        const invItems = get().inventoryItems;
+        proposal.lineItems.forEach((li: ProposalLineItem) => {
+          const inv = invItems.find((x) => x.id === li.inventoryItemId);
+          get().addProductLine(proposal.customerId, {
+            id: 'cpl-' + makeId(),
+            inventoryItemId: li.inventoryItemId,
+            itemName: li.name,
+            sku: li.sku,
+            itemType: inv?.itemType ?? 'product',
+            qty: li.qty,
+            unitPrice: li.unitPrice,
+            taxRate: li.taxRate,
+            purchasedAt,
+            status: 'active',
+            dealId,
+          });
+        });
+        get().appendActivityLog(proposal.customerId, {
+          id: 'cal-' + makeId(),
+          action: 'Deal closed',
+          description: `Deal created from proposal ${proposal.proposalNumber}. Value ₹${(proposal.finalQuoteValue ?? proposal.grandTotal).toLocaleString('en-IN')}.`,
+          performedBy: get().me.id,
+          performedByName: get().me.name,
+          timestamp: new Date().toISOString(),
+          entityType: 'deal',
+          entityId: dealId,
+        });
+      }
+    }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Deal created from proposal', entityId: id });
   },
 

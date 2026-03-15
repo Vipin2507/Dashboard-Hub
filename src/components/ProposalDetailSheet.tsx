@@ -15,7 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Pencil, Send, Check, X, FileText, FileDown } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Pencil, Send, Check, X, FileText, FileDown, Loader2 } from "lucide-react";
 import type { Proposal, ProposalStatus } from "@/types";
 import { formatINR } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
@@ -40,6 +41,7 @@ interface ProposalDetailSheetProps {
   onSend: () => void;
   onCreateDeal: () => void;
   onDownloadPdf: () => void;
+  isPdfLoading?: boolean;
 }
 
 export function ProposalDetailSheet({
@@ -52,7 +54,9 @@ export function ProposalDetailSheet({
   onSend,
   onCreateDeal,
   onDownloadPdf,
+  isPdfLoading = false,
 }: ProposalDetailSheetProps) {
+  const navigate = useNavigate();
   const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
   const regions = useAppStore((s) => s.regions);
@@ -83,8 +87,8 @@ export function ProposalDetailSheet({
           <SheetTitle className="flex items-center justify-between gap-2">
             <span>{proposal.proposalNumber}</span>
             <div className="flex items-center gap-1">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDownloadPdf} title="Download PDF">
-                <FileDown className="w-4 h-4" />
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onDownloadPdf} title="Download PDF" disabled={isPdfLoading}>
+                {isPdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
               </Button>
               {canEdit && (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} title="Edit">
@@ -131,7 +135,16 @@ export function ProposalDetailSheet({
             </div>
             <div className="space-y-2 text-sm">
               <Row label="Title" value={proposal.title} />
-              <Row label="Customer" value={proposal.customerName} />
+              <div className="flex justify-between py-1 border-b border-border/50">
+                <span className="text-muted-foreground">{ "Customer" }</span>
+                <button
+                  type="button"
+                  className="text-primary hover:underline text-right"
+                  onClick={() => { onOpenChange(false); navigate(`/customers/${proposal.customerId}`); }}
+                >
+                  {proposal.customerName}
+                </button>
+              </div>
               <Row label="Assigned to" value={proposal.assignedToName} />
               <Row label="Region" value={region?.name} />
               <Row label="Team" value={team?.name} />

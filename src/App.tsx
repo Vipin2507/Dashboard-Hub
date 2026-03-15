@@ -7,7 +7,8 @@ import { AppLayout } from "@/components/AppLayout";
 import DashboardPage from "@/pages/DashboardPage";
 import DealsPage from "@/pages/DealsPage";
 import Proposals from "@/pages/Proposals";
-import CustomersPage from "@/pages/CustomersPage";
+import Customers from "@/pages/Customers";
+import CustomerProfile from "@/pages/CustomerProfile";
 import UsersPage from "@/pages/UsersPage";
 import TeamsPage from "@/pages/TeamsPage";
 import RegionsPage from "@/pages/RegionsPage";
@@ -33,7 +34,8 @@ const App = () => (
             <Route path="/" element={<DashboardPage />} />
             <Route path="/deals" element={<DealsPage />} />
             <Route path="/proposals" element={<Proposals />} />
-            <Route path="/customers" element={<CustomersPage />} />
+            <Route path="/customers" element={<Customers />} />
+            <Route path="/customers/:id" element={<CustomerProfile />} />
             <Route path="/users" element={<UsersPage />} />
             <Route path="/teams" element={<TeamsPage />} />
             <Route path="/regions" element={<RegionsPage />} />

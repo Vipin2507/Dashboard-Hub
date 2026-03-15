@@ -49,6 +49,7 @@ interface ProposalFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingProposal: Proposal | null;
+  initialCustomerId?: string;
   onSaved: () => void;
 }
 
@@ -56,6 +57,7 @@ export function ProposalFormDialog({
   open,
   onOpenChange,
   editingProposal,
+  initialCustomerId,
   onSaved,
 }: ProposalFormDialogProps) {
   const me = useAppStore((s) => s.me);
@@ -184,7 +186,7 @@ export function ProposalFormDialog({
       proposalNumber: editingProposal?.proposalNumber ?? getNextProposalNumber(),
       title,
       customerId,
-      customerName: customer?.name ?? "",
+      customerName: customer?.companyName ?? "",
       assignedTo: assignedTo || me.id,
       assignedToName: assignedUser?.name ?? users.find((u) => u.id === (assignedTo || me.id))?.name ?? "",
       regionId: editingProposal?.regionId ?? me.regionId,
@@ -293,7 +295,7 @@ export function ProposalFormDialog({
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
     } else {
       setTitle("");
-      setCustomerId("");
+      setCustomerId(initialCustomerId ?? "");
       setAssignedTo(me.id);
       setValidUntil(defaultValidUntil());
       setCustomerNotes("");
@@ -302,7 +304,7 @@ export function ProposalFormDialog({
       setOverrideFinal(false);
       setFinalQuoteValue("");
     }
-  }, [open, editingProposal?.id]);
+  }, [open, editingProposal?.id, initialCustomerId]);
 
   return (
     <>

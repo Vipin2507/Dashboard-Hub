@@ -68,4 +68,10 @@
   .font-mono-id {
     @apply font-mono text-sm font-medium tracking-tight;
   }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

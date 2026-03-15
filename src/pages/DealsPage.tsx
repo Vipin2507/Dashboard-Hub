@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
 import { getScope, visibleWithScope, formatINR } from '@/lib/rbac';
@@ -7,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Lock, DollarSign, TrendingUp, CheckCircle } from 'lucide-react';
 
 export default function DealsPage() {
+  const navigate = useNavigate();
   const me = useAppStore(s => s.me);
   const deals = useAppStore(s => s.deals);
   const customers = useAppStore(s => s.customers);
@@ -72,7 +74,19 @@ export default function DealsPage() {
                   <TableRow key={d.id}>
                     <TableCell className="font-mono-id">{d.id}</TableCell>
                     <TableCell className="text-sm font-medium">{d.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{customers.find(c => c.id === d.customerId)?.name}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                        {customers.find(c => c.id === d.customerId) ? (
+                          <button
+                            type="button"
+                            className="text-primary hover:underline text-left"
+                            onClick={() => navigate(`/customers/${d.customerId}`)}
+                          >
+                            {customers.find(c => c.id === d.customerId)?.companyName}
+                          </button>
+                        ) : (
+                          '—'
+                        )}
+                      </TableCell>
                     <TableCell><Badge variant="outline" className="text-[10px]">{d.stage}</Badge></TableCell>
                     <TableCell className="text-xs text-muted-foreground">{users.find(u => u.id === d.ownerUserId)?.name}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{formatINR(d.value)}</TableCell>

@@ -4,7 +4,7 @@ export type Module = 'dashboard' | 'proposals' | 'deals' | 'customers' | 'users'
 
 export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'SELF' | 'NONE';
 
-export type Action = 'view' | 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'send' | 'share' | 'export' | 'request_approval' | 'override_final_value' | 'admin_override';
+export type Action = 'view' | 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'send' | 'share' | 'export' | 'request_approval' | 'override_final_value' | 'admin_override' | 'manage_tickets';
 
 export interface Region {
   id: string;
@@ -32,22 +32,147 @@ export interface User {
   status: 'active' | 'disabled';
 }
 
+export type CustomerStatus =
+  | 'active'
+  | 'inactive'
+  | 'lead'
+  | 'churned'
+  | 'blacklisted';
+
+export interface CustomerContact {
+  id: string;
+  name: string;
+  designation?: string;
+  email: string;
+  phone?: string;
+  isPrimary: boolean;
+}
+
+export interface CustomerNote {
+  id: string;
+  content: string;
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomerAttachment {
+  id: string;
+  fileName: string;
+  fileType: string;
+  fileSize: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  url?: string;
+}
+
+export interface CustomerProductLine {
+  id: string;
+  inventoryItemId: string;
+  itemName: string;
+  sku: string;
+  itemType: string;
+  qty: number;
+  unitPrice: number;
+  taxRate: number;
+  purchasedAt: string;
+  renewalDate?: string;
+  expiryDate?: string;
+  status: 'active' | 'expired' | 'cancelled';
+  dealId: string;
+  usageDetails?: string;
+}
+
+export interface CustomerPayment {
+  id: string;
+  dealId: string;
+  dealTitle: string;
+  amount: number;
+  paidOn: string;
+  mode: string;
+  reference: string;
+  notes?: string;
+}
+
+export interface CustomerInvoice {
+  id: string;
+  invoiceNumber: string;
+  dealId: string;
+  dealTitle: string;
+  amount: number;
+  taxAmount: number;
+  totalAmount: number;
+  issuedOn: string;
+  dueDate: string;
+  status: 'paid' | 'unpaid' | 'overdue' | 'cancelled';
+}
+
+export interface CustomerSupportTicket {
+  id: string;
+  ticketNumber: string;
+  subject: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  createdBy: string;
+  createdByName: string;
+  assignedTo?: string;
+  assignedToName?: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}
+
+export interface CustomerActivityLog {
+  id: string;
+  action: string;
+  description: string;
+  performedBy: string;
+  performedByName: string;
+  timestamp: string;
+  entityType?: string;
+  entityId?: string;
+}
+
 export interface Customer {
   id: string;
-  leadId: string;
-  name: string;
-  state: string;
-  gstin: string | null;
+  customerNumber: string;
+  companyName: string;
+  status: CustomerStatus;
+  gstin?: string;
+  pan?: string;
+  industry?: string;
+  website?: string;
+  address: {
+    line1?: string;
+    line2?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country: string;
+  };
+  contacts: CustomerContact[];
   regionId: string;
-  // Optional extended fields for richer dashboards
-  city?: string;
-  email?: string;
-  primaryPhone?: string;
-  status?: 'active' | 'inactive';
-  createdAt?: string;
-  salesExecutive?: string;
-  accountManager?: string;
-  deliveryExecutive?: string;
+  regionName: string;
+  teamId: string;
+  assignedTo: string;
+  assignedToName: string;
+  tags: string[];
+  notes: CustomerNote[];
+  attachments: CustomerAttachment[];
+  productLines: CustomerProductLine[];
+  payments: CustomerPayment[];
+  invoices: CustomerInvoice[];
+  supportTickets: CustomerSupportTicket[];
+  activityLog: CustomerActivityLog[];
+  totalRevenue: number;
+  totalDealValue: number;
+  activeProposalsCount: number;
+  activeDealsCount: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
 }
 
 export type ItemType = 'product' | 'service' | 'subscription' | 'bundle';
@@ -97,6 +222,7 @@ export interface ProposalVersion {
   version: number;
   createdAt: string;
   createdBy: string;
+  createdByName?: string;
   lineItems: ProposalLineItem[];
   subtotal: number;
   totalDiscount: number;
@@ -135,6 +261,7 @@ export interface Proposal {
   createdBy: string;
   sentAt?: string;
   dealId?: string;
+  paymentTerms?: string;
 }
 
 export interface Deal {

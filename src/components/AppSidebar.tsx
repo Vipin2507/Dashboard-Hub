@@ -27,10 +27,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'CUSTOMER MANAGEMENT',
     items: [
-      { label: 'Leads', module: 'customers', path: '/customers', icon: Building2 },
+      { label: 'Customers', module: 'customers', path: '/customers', icon: Building2 },
+      { label: 'Proposals', module: 'proposals', path: '/proposals', icon: FileText },
       { label: 'Deals', module: 'deals', path: '/deals', icon: Handshake },
       { label: 'Inventory', module: 'inventory', path: '/inventory', icon: Package },
-      { label: 'Proposals', module: 'proposals', path: '/proposals', icon: FileText },
     ],
   },
   {
@@ -50,14 +50,19 @@ const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', '
 export function AppSidebar() {
   const me = useAppStore(s => s.me);
   const proposals = useAppStore(s => s.proposals);
+  const customers = useAppStore(s => s.customers);
   const switchRole = useAppStore(s => s.switchRole);
   const resetDemo = useAppStore(s => s.resetDemo);
   const navigate = useNavigate();
   const location = useLocation();
   const proposalScope = getScope(me.role, 'proposals');
+  const customerScope = getScope(me.role, 'customers');
   const visibleProposals = visibleWithScope(proposalScope, me, proposals);
+  const visibleCustomers = visibleWithScope(customerScope, me, customers);
   const pendingCount = visibleProposals.filter(p => p.status === 'approval_pending').length;
+  const leadCount = visibleCustomers.filter(c => c.status === 'lead').length;
   const showProposalBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && pendingCount > 0;
+  const showCustomerLeadBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && leadCount > 0;
 
   return (
     <aside className="w-[220px] min-w-[220px] h-screen bg-sidebar border-r border-sidebar-border flex flex-col overflow-y-auto">
@@ -81,8 +86,9 @@ export function AppSidebar() {
               </p>
               <div className="space-y-0.5">
                 {visibleItems.map(item => {
-                  const active = location.pathname === item.path;
+                  const active = location.pathname === item.path || (item.path === '/customers' && location.pathname.startsWith('/customers/'));
                   const isProposals = item.module === 'proposals';
+                  const isCustomers = item.module === 'customers';
                   return (
                     <button
                       key={item.path}
@@ -98,6 +104,11 @@ export function AppSidebar() {
                       {isProposals && showProposalBadge && (
                         <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 text-[10px]">
                           {pendingCount}
+                        </Badge>
+                      )}
+                      {isCustomers && showCustomerLeadBadge && (
+                        <Badge variant="secondary" className="ml-auto h-5 min-w-5 px-1.5 text-[10px]">
+                          {leadCount}
                         </Badge>
                       )}
                     </button>

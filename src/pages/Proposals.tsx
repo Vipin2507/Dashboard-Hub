@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
@@ -35,6 +36,7 @@ import {
   FileDown,
   ChevronDown,
   FileQuestion,
+  Loader2,
 } from "lucide-react";
 import type { Proposal, ProposalStatus } from "@/types";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
@@ -77,7 +79,12 @@ const STATUS_BADGE: Record<ProposalStatus, string> = {
 
 type SortKey = "date" | "value" | "customer";
 
+const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = ["all", "draft", "sent", "approval_pending", "approved", "rejected", "deal_created"];
+
 export default function Proposals() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const proposals = useAppStore((s) => s.proposals);
   const users = useAppStore((s) => s.users);
@@ -93,6 +100,7 @@ export default function Proposals() {
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [page, setPage] = useState(1);
+  const statusFromUrl = searchParams.get("status");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -101,6 +109,19 @@ export default function Proposals() {
   const [sendId, setSendId] = useState<string | null>(null);
   const [createDealId, setCreateDealId] = useState<string | null>(null);
   const [deleteProposal, setDeleteProposal] = useState<Proposal | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPdf = async (proposalObj: Proposal) => {
+    setPdfLoading(true);
+    toast({ title: "Generating PDF...", description: "Please wait" });
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      await generateProposalPdf(proposalObj);
+      toast({ title: "PDF Downloaded", description: `Proposal-${proposalObj.proposalNumber}.pdf` });
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   const canCreate = can(me.role, "proposals", "create");
   const canUpdate = can(me.role, "proposals", "update");
@@ -110,6 +131,29 @@ export default function Proposals() {
   const canSend = can(me.role, "proposals", "send");
   const canExport = can(me.role, "proposals", "export");
   const canOverride = can(me.role, "proposals", "override_final_value");
+
+  const stateCustomerId = (location.state as { customerId?: string; detailId?: string } | null)?.customerId;
+  const stateDetailId = (location.state as { customerId?: string; detailId?: string } | null)?.detailId;
+  const [initialCustomerIdForForm, setInitialCustomerIdForForm] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (stateCustomerId && canCreate) {
+      setInitialCustomerIdForForm(stateCustomerId);
+      setFormOpen(true);
+      setEditingId(null);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [stateCustomerId, canCreate, navigate, location.pathname]);
+  useEffect(() => {
+    if (stateDetailId) {
+      setDetailId(stateDetailId);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [stateDetailId, navigate, location.pathname]);
+  useEffect(() => {
+    if (statusFromUrl && PROPOSAL_STATUS_VALUES.includes(statusFromUrl as ProposalStatus | "all")) {
+      setStatusFilter(statusFromUrl as ProposalStatus | "all");
+    }
+  }, [statusFromUrl]);
 
   const filtered = useMemo(() => {
     let list = visible;
@@ -320,7 +364,15 @@ export default function Proposals() {
                             </button>
                           </TableCell>
                           <TableCell className="text-sm font-medium">{p.title}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{p.customerName}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                              <button
+                                type="button"
+                                className="text-primary hover:underline text-left"
+                                onClick={() => navigate(`/customers/${p.customerId}`)}
+                              >
+                                {p.customerName}
+                              </button>
+                            </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{p.assignedToName}</TableCell>
                           <TableCell className="text-right font-mono text-sm">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
                           <TableCell>
@@ -368,8 +420,8 @@ export default function Proposals() {
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               )}
-                              <Button variant="ghost" size="icon" className="h-8 w-8" title="Download PDF" onClick={() => { generateProposalPdf(p); toast({ title: "PDF downloaded", description: `Proposal-${p.proposalNumber}.pdf` }); }}>
-                                <FileDown className="w-4 h-4" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8" title="Download PDF" disabled={pdfLoading} onClick={() => handleDownloadPdf(p)}>
+                                {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                               </Button>
                             </div>
                           </TableCell>
@@ -404,14 +456,16 @@ export default function Proposals() {
         onReject={() => detailId && setRejectId(detailId)}
         onSend={() => detailId && setSendId(detailId)}
         onCreateDeal={() => detailId && setCreateDealId(detailId)}
-        onDownloadPdf={() => detailProposal && (generateProposalPdf(detailProposal), toast({ title: "PDF downloaded" }))}
+        onDownloadPdf={() => detailProposal && handleDownloadPdf(detailProposal)}
+        isPdfLoading={pdfLoading}
       />
 
       <ProposalFormDialog
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(open) => { setFormOpen(open); if (!open) setInitialCustomerIdForForm(undefined); }}
         editingProposal={editingId ? proposals.find((p) => p.id === editingId) ?? null : null}
-        onSaved={() => { setFormOpen(false); setEditingId(null); }}
+        initialCustomerId={initialCustomerIdForForm}
+        onSaved={() => { setFormOpen(false); setEditingId(null); setInitialCustomerIdForForm(undefined); }}
       />
 
       {approveId && <ApproveProposalDialog proposalId={approveId} onClose={() => setApproveId(null)} />}
