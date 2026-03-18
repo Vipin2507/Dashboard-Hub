@@ -17,6 +17,7 @@ import type {
   InventoryItem,
   ProposalLineItem,
   ProposalVersion,
+  AutomationTemplate,
 } from '@/types';
 
 export const seedRegions: Region[] = [
@@ -558,6 +559,92 @@ export const seedDeals: Deal[] = [
 export const seedNotifications: Notification[] = [
   { id: 'n1', type: 'CUSTOMER_EMAIL', to: 'accounts@sunrise.dev', subject: 'Buildesk Proposal PROP-2026-0007 shared', entityId: 'p1', at: '2026-03-10T15:00:00Z' },
   { id: 'n2', type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Final quote value overridden (Sales Manager)', entityId: 'p1', at: '2026-03-10T14:35:00Z' },
+];
+
+export const seedAutomationTemplates: AutomationTemplate[] = [
+  // 1. Proposal sent — WhatsApp to customer
+  {
+    id: 'tpl-001',
+    name: 'Proposal Sent — WhatsApp',
+    trigger: 'proposal_sent',
+    channel: 'whatsapp',
+    recipients: ['customer'],
+    isActive: true,
+    delayHours: 0,
+    body: `Hi {{customer_name}},\n\nThank you for your interest in Buildesk! 🎉\n\nWe have shared our proposal *{{proposal_number}}* for *{{proposal_title}}* with a total value of *{{grand_total}}*.\n\nThe proposal is valid until {{valid_until}}.\n\nFor any queries, contact {{sales_rep_name}} at {{sales_rep_phone}}.\n\nWarm regards,\nTeam Buildesk`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
+  // 2. Proposal sent — Email to customer
+  {
+    id: 'tpl-002',
+    name: 'Proposal Sent — Email',
+    trigger: 'proposal_sent',
+    channel: 'email',
+    recipients: ['customer'],
+    isActive: true,
+    delayHours: 0,
+    subject: 'Your Buildesk Proposal — {{proposal_number}}',
+    body: `Dear {{customer_name}},\n\nPlease find enclosed our proposal {{proposal_number}} for {{proposal_title}}.\n\nProposal Value: {{grand_total}}\nValid Until: {{valid_until}}\n\nOur team is available to walk you through any questions.\n\nBest regards,\n{{sales_rep_name}}\nCravingcode Technologies Pvt. Ltd.`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
+  // 3. Follow-up — WhatsApp after 3 days
+  {
+    id: 'tpl-003',
+    name: 'Proposal Follow-up — WhatsApp (3 days)',
+    trigger: 'proposal_follow_up',
+    channel: 'whatsapp',
+    recipients: ['customer'],
+    isActive: true,
+    delayHours: 72,
+    repeatEveryHours: 48,
+    maxRepeats: 2,
+    body: `Hi {{customer_name}},\n\nJust following up on our proposal *{{proposal_number}}* sent {{days_since_sent}} days ago.\n\nWould you like to discuss or have any questions? 😊\n\nReach us at: {{sales_rep_phone}}\n\nTeam Buildesk`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
+  // 4. Deal Won — WhatsApp to customer
+  {
+    id: 'tpl-004',
+    name: 'Deal Won — Welcome WhatsApp',
+    trigger: 'deal_won',
+    channel: 'whatsapp',
+    recipients: ['customer'],
+    isActive: true,
+    delayHours: 0,
+    body: `Hi {{customer_name}},\n\nWelcome to the Buildesk family! 🎊\n\nWe're thrilled to confirm your deal *{{deal_title}}*.\n\nOur onboarding team will reach out within 24 hours.\n\nExcited to work with you!\nTeam Cravingcode`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
+  // 5. Payment Due — WhatsApp to customer
+  {
+    id: 'tpl-005',
+    name: 'Payment Due Reminder — WhatsApp',
+    trigger: 'payment_due',
+    channel: 'whatsapp',
+    recipients: ['customer'],
+    isActive: true,
+    delayHours: 0,
+    repeatEveryHours: 24,
+    maxRepeats: 3,
+    body: `Hi {{customer_name}},\n\nFriendly reminder: Invoice *{{invoice_number}}* of *{{amount_due}}* is due on *{{due_date}}* ({{days_until_due}} days remaining).\n\nPlease process the payment at your earliest convenience.\n\nFor queries: {{sales_rep_name}}`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
+  // 6. Proposal Approved — in-app to Sales Rep
+  {
+    id: 'tpl-006',
+    name: 'Proposal Approved — Sales Rep Alert',
+    trigger: 'proposal_approved',
+    channel: 'in_app',
+    recipients: ['sales_rep'],
+    isActive: true,
+    delayHours: 0,
+    body: `Proposal {{proposal_number}} for {{customer_name}} has been approved by {{approved_by}}. Grand total: {{grand_total}}.`,
+    createdAt: '2026-03-15T00:00:00Z',
+    updatedAt: '2026-03-15T00:00:00Z',
+  },
 ];
 
 const seedNow = '2026-03-01T10:00:00Z';

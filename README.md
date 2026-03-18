@@ -165,6 +165,71 @@ The app ships with **seed data** in `src/lib/seed.ts`: regions, teams, users, cu
 
 ---
 
+## Automation (n8n + WAHA) setup
+
+Buildesk’s Automation module triggers n8n workflows via webhooks (from the frontend). n8n then calls WAHA to send WhatsApp messages.
+
+Create these workflows in n8n at `http://72.60.200.185:5678`:
+
+### Workflow 1: `buildesk-whatsapp`
+
+- **Webhook**: `POST /webhook/buildesk-whatsapp`
+  - Authentication: **None**
+- **Wait node**:
+  - Delay: `{{$json.delayHours}}` hours (skip if 0)
+- **HTTP Request node**:
+  - Method: `POST`
+  - URL: `{{$json.wahaApiUrl}}/api/sendText`
+  - Headers:
+    - `X-Api-Key`: `{{$json.wahaApiKey}}`
+  - Body:
+
+```json
+{
+  "session": "{{$json.wahaSession}}",
+  "chatId": "{{$json.recipientPhone}}@c.us",
+  "text": "{{$json.messageBody}}"
+}
+```
+
+- **Respond to Webhook**:
+
+```json
+{ "status": "sent" }
+```
+
+### Workflow 2: `buildesk-email`
+
+- **Webhook**: `POST /webhook/buildesk-email`
+  - Authentication: **None**
+- **Wait node**:
+  - Delay: `{{$json.delayHours}}` hours
+- **Gmail node** (or SMTP node):
+  - To: `{{$json.recipientEmail}}`
+  - Subject: `{{$json.emailSubject}}`
+  - Body: `{{$json.messageBody}}`
+- **Respond to Webhook**:
+
+```json
+{ "status": "sent" }
+```
+
+### Workflow 3: `buildesk-health` (connection test)
+
+- **Webhook**: `POST /webhook/buildesk-health`
+  - Authentication: **None**
+- **Respond to Webhook**:
+
+```json
+{ "status": "ok", "timestamp": "{{$now}}" }
+```
+
+Notes:
+- These webhooks are intentionally unauthenticated for internal network use. If you need auth, protect the endpoints at the gateway/reverse-proxy layer.
+- Frontend settings default to `http://72.60.200.185:5678/webhook` and `http://72.60.200.185:3000`.
+
+---
+
 ## Environment Variables
 
 | Variable | Description | Default |

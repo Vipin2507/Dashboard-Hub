@@ -15,6 +15,7 @@ import RegionsPage from "@/pages/RegionsPage";
 import EmailLogPage from "@/pages/EmailLogPage";
 import MastersPage from "@/pages/MastersPage";
 import Inventory from "@/pages/Inventory";
+import Automation from "@/pages/Automation";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import NotFound from "./pages/NotFound.tsx";
@@ -42,6 +43,7 @@ const App = () => (
             <Route path="/email-log" element={<EmailLogPage />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/masters" element={<MastersPage />} />
+            <Route path="/automation" element={<Automation />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

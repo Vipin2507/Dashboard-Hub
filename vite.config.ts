@@ -11,6 +11,22 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      // Dev-only proxy to avoid CORS when calling WAHA directly.
+      "/waha": {
+        target: "http://72.60.200.185:3000",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/waha/, ""),
+      },
+      // Dev-only proxy to avoid CORS when calling n8n directly.
+      "/n8n": {
+        target: "http://72.60.200.185:5678",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/n8n/, ""),
+      },
+    },
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

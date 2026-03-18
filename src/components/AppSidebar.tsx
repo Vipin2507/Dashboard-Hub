@@ -5,6 +5,7 @@ import type { Module, Role } from '@/types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Handshake, Users, Building2, Map, Mail, UsersRound, RotateCcw, Package, Settings,
+  Zap,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,6 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Customers', module: 'customers', path: '/customers', icon: Building2 },
       { label: 'Proposals', module: 'proposals', path: '/proposals', icon: FileText },
       { label: 'Deals', module: 'deals', path: '/deals', icon: Handshake },
+      { label: 'Automation', module: 'automation', path: '/automation', icon: Zap },
       { label: 'Inventory', module: 'inventory', path: '/inventory', icon: Package },
     ],
   },
@@ -51,6 +53,7 @@ export function AppSidebar() {
   const me = useAppStore(s => s.me);
   const proposals = useAppStore(s => s.proposals);
   const customers = useAppStore(s => s.customers);
+  const automationLogs = useAppStore(s => s.automationLogs);
   const switchRole = useAppStore(s => s.switchRole);
   const resetDemo = useAppStore(s => s.resetDemo);
   const navigate = useNavigate();
@@ -63,6 +66,8 @@ export function AppSidebar() {
   const leadCount = visibleCustomers.filter(c => c.status === 'lead').length;
   const showProposalBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && pendingCount > 0;
   const showCustomerLeadBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && leadCount > 0;
+  const failedLogsCount = automationLogs.filter(l => l.status === 'failed').length;
+  const showAutomationBadge = failedLogsCount > 0;
 
   return (
     <aside className="w-[220px] min-w-[220px] h-screen bg-sidebar border-r border-sidebar-border flex flex-col overflow-y-auto">
@@ -89,6 +94,7 @@ export function AppSidebar() {
                   const active = location.pathname === item.path || (item.path === '/customers' && location.pathname.startsWith('/customers/'));
                   const isProposals = item.module === 'proposals';
                   const isCustomers = item.module === 'customers';
+                  const isAutomation = item.module === 'automation';
                   return (
                     <button
                       key={item.path}
@@ -109,6 +115,11 @@ export function AppSidebar() {
                       {isCustomers && showCustomerLeadBadge && (
                         <Badge variant="secondary" className="ml-auto h-5 min-w-5 px-1.5 text-[10px]">
                           {leadCount}
+                        </Badge>
+                      )}
+                      {isAutomation && showAutomationBadge && (
+                        <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 text-[10px]">
+                          {failedLogsCount}
                         </Badge>
                       )}
                     </button>

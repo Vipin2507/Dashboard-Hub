@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { triggerAutomation } from '@/lib/automationService';
 import type {
   Role,
   MeContext,
@@ -18,8 +19,21 @@ import type {
   Deal,
   Notification,
   InventoryItem,
+  AutomationTemplate,
+  AutomationLog,
+  AutomationSettings,
 } from '@/types';
-import { seedRegions, seedTeams, seedUsers, seedCustomers, seedProposals, seedDeals, seedNotifications, seedInventoryItems } from '@/lib/seed';
+import {
+  seedRegions,
+  seedTeams,
+  seedUsers,
+  seedCustomers,
+  seedProposals,
+  seedDeals,
+  seedNotifications,
+  seedInventoryItems,
+  seedAutomationTemplates,
+} from '@/lib/seed';
 
 interface AppState {
   me: MeContext;
@@ -31,6 +45,11 @@ interface AppState {
   deals: Deal[];
   notifications: Notification[];
   inventoryItems: InventoryItem[];
+
+  // Automation
+  automationTemplates: AutomationTemplate[];
+  automationLogs: AutomationLog[];
+  automationSettings: AutomationSettings;
 
   // Auth & user management
   login: (email: string, password: string) => void;
@@ -83,6 +102,14 @@ interface AppState {
   switchRole: (role: Role) => void;
   resetDemo: () => void;
   pushNotification: (n: Omit<Notification, 'id' | 'at'>) => void;
+
+  // Automation actions
+  addAutomationTemplate: (t: AutomationTemplate) => void;
+  updateAutomationTemplate: (id: string, updates: Partial<AutomationTemplate>) => void;
+  deleteAutomationTemplate: (id: string) => void;
+  toggleAutomationTemplate: (id: string) => void;
+  appendAutomationLog: (log: AutomationLog) => void;
+  updateAutomationSettings: (settings: Partial<AutomationSettings>) => void;
 }
 
 function getUserForRole(role: Role, users: User[]): User {
@@ -110,6 +137,20 @@ function getInitialState() {
     deals: structuredClone(seedDeals),
     notifications: structuredClone(seedNotifications),
     inventoryItems: structuredClone(seedInventoryItems),
+
+    automationTemplates: structuredClone(seedAutomationTemplates),
+    automationLogs: [],
+    automationSettings: {
+      n8nWebhookBase: 'http://72.60.200.185:5678/webhook',
+      wahaApiUrl: 'http://72.60.200.185:3000',
+      wahaApiKey: 'MySecretWAHAKey',
+      wahaSession: 'first',
+      wahaFromNumber: '',
+      emailFromAddress: 'noreply@buildesk.in',
+      emailFromName: 'Buildesk CRM',
+      isWahaConnected: false,
+      isN8nConnected: false,
+    },
   };
 }
 
@@ -434,6 +475,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal approved', entityId: id });
+
+    const proposal = get().proposals.find(p => p.id === id);
+    const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
+    const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
+    const approver = get().users.find(u => u.id === approverId);
+    void triggerAutomation('proposal_approved', {
+      proposalId: proposal?.id,
+      proposalNumber: proposal?.proposalNumber,
+      proposalTitle: proposal?.title,
+      grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
+      customerId: customer?.id,
+      customerName: customer?.companyName,
+      approvedBy: approver?.name ?? '',
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+    });
   },
 
   rejectProposal: (id, approverId, reason) => {
@@ -444,6 +502,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal rejected', entityId: id });
+
+    const proposal = get().proposals.find(p => p.id === id);
+    const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
+    const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
+    void triggerAutomation('proposal_rejected', {
+      proposalId: proposal?.id,
+      proposalNumber: proposal?.proposalNumber,
+      proposalTitle: proposal?.title,
+      customerId: customer?.id,
+      customerName: customer?.companyName,
+      rejectionReason: reason,
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+    });
   },
 
   sendProposal: (id) => {
@@ -458,6 +531,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     const primaryContact = customer?.contacts?.find(c => c.isPrimary) ?? customer?.contacts?.[0];
     const to = primaryContact?.email ?? 'customer@example.com';
     get().pushNotification({ type: 'CUSTOMER_EMAIL', to, subject: `Proposal ${proposal?.proposalNumber ?? id} sent`, entityId: id });
+
+    const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
+    void triggerAutomation('proposal_sent', {
+      proposalId: proposal?.id,
+      proposalNumber: proposal?.proposalNumber,
+      proposalTitle: proposal?.title,
+      grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
+      validUntil: proposal?.validUntil,
+      customerId: customer?.id,
+      customerName: customer?.companyName,
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      companyName: 'Cravingcode Technologies Pvt. Ltd.',
+    });
   },
 
   createDealFromProposal: (id, dealId) => {
@@ -502,6 +590,19 @@ export const useAppStore = create<AppState>((set, get) => ({
           timestamp: new Date().toISOString(),
           entityType: 'deal',
           entityId: dealId,
+        });
+
+        const rep = get().users.find(u => u.id === proposal.assignedTo);
+        void triggerAutomation('deal_won', {
+          dealId,
+          dealTitle: deal?.name ?? proposal.title,
+          dealValue: deal?.value ?? (proposal.finalQuoteValue ?? proposal.grandTotal),
+          customerId: customer.id,
+          customerName: customer.companyName,
+          salesRepId: rep?.id,
+          salesRepName: rep?.name,
+          salesRepPhone: (rep as { phone?: string } | null)?.phone,
+          companyName: 'Cravingcode Technologies Pvt. Ltd.',
         });
       }
     }
@@ -554,6 +655,41 @@ export const useAppStore = create<AppState>((set, get) => ({
   pushNotification: (n) => {
     const notif: Notification = { ...n, id: makeId(), at: new Date().toISOString() };
     set(s => ({ notifications: [notif, ...s.notifications] }));
+  },
+
+  // ─── Automation ──────────────────────────────────────────────────────────
+  addAutomationTemplate: (t) => {
+    set(s => ({ automationTemplates: [t, ...s.automationTemplates] }));
+  },
+
+  updateAutomationTemplate: (id, updates) => {
+    const now = new Date().toISOString();
+    set(s => ({
+      automationTemplates: s.automationTemplates.map(t =>
+        t.id === id ? { ...t, ...updates, updatedAt: now } : t
+      ),
+    }));
+  },
+
+  deleteAutomationTemplate: (id) => {
+    set(s => ({ automationTemplates: s.automationTemplates.filter(t => t.id !== id) }));
+  },
+
+  toggleAutomationTemplate: (id) => {
+    const now = new Date().toISOString();
+    set(s => ({
+      automationTemplates: s.automationTemplates.map(t =>
+        t.id === id ? { ...t, isActive: !t.isActive, updatedAt: now } : t
+      ),
+    }));
+  },
+
+  appendAutomationLog: (log) => {
+    set(s => ({ automationLogs: [log, ...s.automationLogs] }));
+  },
+
+  updateAutomationSettings: (settings) => {
+    set(s => ({ automationSettings: { ...s.automationSettings, ...settings } }));
   },
 
 }));

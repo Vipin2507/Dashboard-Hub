@@ -1,7 +1,8 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
 import { getScope, visibleWithScope, formatINR } from '@/lib/rbac';
+import { checkAndTriggerPaymentDue } from '@/lib/automationService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -50,6 +51,12 @@ export default function DashboardPage() {
   const visibleDeals = visibleWithScope(dealScope, me, deals);
   const visibleProposals = visibleWithScope(proposalScope, me, proposals);
   const visibleCustomers = visibleWithScope(customerScope, me, customers);
+
+  useEffect(() => {
+    checkAndTriggerPaymentDue();
+    const interval = setInterval(() => checkAndTriggerPaymentDue(), 24 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();

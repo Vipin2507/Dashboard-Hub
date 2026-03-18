@@ -1,10 +1,35 @@
 export type Role = 'super_admin' | 'finance' | 'sales_manager' | 'sales_rep' | 'support';
 
-export type Module = 'dashboard' | 'proposals' | 'deals' | 'customers' | 'users' | 'teams' | 'regions' | 'email_log' | 'masters' | 'inventory';
+export type Module =
+  | 'dashboard'
+  | 'proposals'
+  | 'deals'
+  | 'customers'
+  | 'automation'
+  | 'users'
+  | 'teams'
+  | 'regions'
+  | 'email_log'
+  | 'masters'
+  | 'inventory';
 
 export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'SELF' | 'NONE';
 
-export type Action = 'view' | 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'send' | 'share' | 'export' | 'request_approval' | 'override_final_value' | 'admin_override' | 'manage_tickets';
+export type Action =
+  | 'view'
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'test'
+  | 'approve'
+  | 'reject'
+  | 'send'
+  | 'share'
+  | 'export'
+  | 'request_approval'
+  | 'override_final_value'
+  | 'admin_override'
+  | 'manage_tickets';
 
 export interface Region {
   id: string;
@@ -287,6 +312,8 @@ export interface Notification {
   entityId: string;
   at: string;
 }
+
+export * from "./automation";
 
 export interface MeContext {
   id: string;

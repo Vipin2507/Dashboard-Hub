@@ -1,104 +1,157 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useAppStore } from "@/store/useAppStore";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { 
+  RecaptchaVerifier, 
+  signInWithPhoneNumber, 
+  ConfirmationResult 
+} from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { LoginCard } from "@/components/auth/LoginCard";
+import { toast } from "sonner";
+import { LayoutDashboard, ShieldCheck, Zap, BarChart3 } from "lucide-react";
 
-const loginSchema = z.object({
-  email: z.string().email("Enter a valid email"),
-  password: z.string().min(4, "Password is required"),
-});
-
-type LoginValues = z.infer<typeof loginSchema>;
-
-export default function LoginPage() {
+export default function Login() {
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [loading, setLoading] = useState(false);
+  const [timer, setTimer] = useState(0);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  
+  const recaptchaVerifier = useRef<RecaptchaVerifier | null>(null);
   const navigate = useNavigate();
-  const login = useAppStore(s => s.login);
-  const [error, setError] = useState<string | null>(null);
 
-  const form = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-  });
+  useEffect(() => {
+    if (timer > 0) {
+      const interval = setInterval(() => setTimer((t) => t - 1), 1000);
+      return () => clearInterval(interval);
+    }
+  }, [timer]);
 
-  const onSubmit = async (values: LoginValues) => {
-    setError(null);
-    try {
-      login(values.email, values.password);
-      navigate("/");
-    } catch (e) {
-      const message = e instanceof Error ? e.message : "Unable to login";
-      setError(message);
+  const initRecaptcha = () => {
+    if (!recaptchaVerifier.current) {
+      recaptchaVerifier.current = new RecaptchaVerifier(auth, "recaptcha-container", {
+        size: "invisible",
+      });
     }
   };
 
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      initRecaptcha();
+      const appVerifier = recaptchaVerifier.current!;
+      const result = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+      setConfirmationResult(result);
+      setStep("otp");
+      setTimer(30);
+      toast.success("OTP sent successfully!");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Failed to send OTP. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (!confirmationResult) throw new Error("No confirmation result");
+      await confirmationResult.confirm(otp);
+      toast.success("Logged in successfully!");
+      navigate("/");
+    } catch (error: any) {
+      console.error(error);
+      toast.error("Invalid OTP. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (timer > 0) return;
+    handleSendOtp({ preventDefault: () => {} } as React.FormEvent);
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-full max-w-md border border-border bg-card">
-        <CardHeader>
-          <CardTitle className="text-xl">Sign in to Buildesk</CardTitle>
-          <CardDescription>Use your work email and password.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="you@company.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+    <div className="min-h-screen flex bg-white dark:bg-black font-sans selection:bg-zinc-200 dark:selection:bg-zinc-800">
+      <div id="recaptcha-container"></div>
+      
+      {/* Left Column: Brand Section */}
+      <div className="hidden lg:flex w-1/2 relative overflow-hidden bg-gradient-to-br from-primary via-[#0088CC] to-[#00AEEF]">
+        {/* Animated Background Gradients (Mesh effect) */}
+        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-blue-300/20 rounded-full blur-[100px] animate-pulse"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-white/20 rounded-full blur-[100px] animate-pulse delay-700"></div>
+        <div className="absolute top-[20%] right-[10%] w-[40%] h-[40%] bg-blue-400/30 rounded-full blur-[80px] animate-pulse delay-1000"></div>
+        
+        {/* Subtle pattern overlay */}
+        <div className="absolute inset-0 bg-[radial-gradient(#ffffff0a_1px,transparent_1px)] bg-[size:20px_20px]"></div>
 
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="••••••••" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+        <div className="relative z-10 flex flex-col justify-between p-16 w-full">
+          <div>
+            <div className="flex items-center space-x-3 mb-12">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+                <LayoutDashboard className="text-black w-6 h-6" />
+              </div>
+              <span className="text-2xl font-bold text-white tracking-tight">Buildesk</span>
+            </div>
+            
+            <div className="space-y-6 max-w-lg">
+              <h2 className="text-5xl font-bold text-white leading-[1.1] tracking-tight">
+                License & Revenue Management Platform
+              </h2>
+              <p className="text-xl text-blue-50/80 font-medium leading-relaxed">
+                Manage customers, licenses, subscriptions, and revenue insights in one place.
+              </p>
+            </div>
+          </div>
 
-              {error && (
-                <p className="text-sm font-medium text-destructive">
-                  {error}
-                </p>
-              )}
+            <div className="grid grid-cols-1 gap-8 max-w-md">
+              {[
+                { icon: BarChart3, title: "Real-time analytics", desc: "Instantly track your core metrics." },
+                { icon: ShieldCheck, title: "Secure enterprise access", desc: "Military-grade data protection." },
+                { icon: Zap, title: "Scalable subscription management", desc: "Grow without friction." }
+              ].map((feature, i) => (
+                <div key={i} className="flex items-start space-x-4 group">
+                  <div className="mt-1 p-2 bg-white/15 rounded-lg group-hover:bg-white/25 transition-colors duration-300">
+                    <feature.icon className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-semibold text-lg">{feature.title}</h3>
+                    <p className="text-blue-100/70 font-medium">{feature.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
 
-              <Button type="submit" className="w-full">
-                Sign in
-              </Button>
-            </form>
-          </Form>
+          <div className="text-blue-100/50 text-sm font-medium">
+            &copy; {new Date().getFullYear()} Buildesk Inc. All rights reserved.
+          </div>
+        </div>
+      </div>
 
-          <p className="text-xs text-muted-foreground text-center">
-            New here?{" "}
-            <Link to="/register" className="text-primary underline-offset-4 hover:underline">
-              Create an account
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
+      {/* Right Column: Login Section */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background relative">
+        {/* Subtle grid pattern for the background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
+        
+        <LoginCard
+          phoneNumber={phoneNumber}
+          setPhoneNumber={setPhoneNumber}
+          otp={otp}
+          setOtp={setOtp}
+          step={step}
+          setStep={setStep}
+          loading={loading}
+          onSendOtp={handleSendOtp}
+          onVerifyOtp={handleVerifyOtp}
+          onResendOtp={handleResendOtp}
+          timer={timer}
+        />
+      </div>
     </div>
   );
 }
-
