@@ -31,6 +31,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { InventoryItemDialog } from "@/components/InventoryItemDialog";
 import type { InventoryItem, ItemType } from "@/types";
+import { apiUrl } from "@/lib/api";
 import {
   Package,
   Pencil,
@@ -50,25 +51,21 @@ const ITEM_TYPE_BADGE: Record<ItemType, string> = {
 
 const PAGE_SIZE = 10;
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? "";
-
 export default function Inventory() {
   const queryClient = useQueryClient();
   const me = useAppStore((s) => s.me);
   const inventoryItems = useAppStore((s) => s.inventoryItems);
   const setInventoryItems = useAppStore((s) => s.setInventoryItems);
-  const addInventoryItem = useAppStore((s) => s.addInventoryItem);
   const updateInventoryItem = useAppStore((s) => s.updateInventoryItem);
   const deleteInventoryItem = useAppStore((s) => s.deleteInventoryItem);
 
   const inventoryQuery = useQuery({
     queryKey: ["inventory"],
     queryFn: async () => {
-      const res = await fetch(`${apiBase}/api/inventory`);
+      const res = await fetch(apiUrl("/api/inventory"));
       if (!res.ok) throw new Error("Failed to load inventory");
       return res.json() as Promise<InventoryItem[]>;
     },
-    enabled: !!apiBase,
     onSuccess: (data) => {
       setInventoryItems(data);
     },
@@ -76,7 +73,7 @@ export default function Inventory() {
 
   const createMutation = useMutation({
     mutationFn: async (item: Omit<InventoryItem, "id" | "createdAt" | "updatedAt">) => {
-      const res = await fetch(`${apiBase}/api/inventory`, {
+      const res = await fetch(apiUrl("/api/inventory"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(item),
@@ -94,7 +91,7 @@ export default function Inventory() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<InventoryItem> }) => {
-      const res = await fetch(`${apiBase}/api/inventory/${id}`, {
+      const res = await fetch(apiUrl(`/api/inventory/${id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updates),
@@ -112,7 +109,7 @@ export default function Inventory() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${apiBase}/api/inventory/${id}`, { method: "DELETE" });
+      const res = await fetch(apiUrl(`/api/inventory/${id}`), { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete item");
       return res.json();
     },
@@ -171,51 +168,34 @@ export default function Inventory() {
 
   const handleToggleActive = (item: InventoryItem) => {
     const nextActive = !item.isActive;
-    if (apiBase) {
-      updateMutation.mutate(
-        { id: item.id, updates: { isActive: nextActive } },
-        {
-          onSuccess: () => {
-            updateInventoryItem(item.id, { isActive: nextActive });
-            toast({
-              title: item.isActive ? "Item deactivated" : "Item activated",
-              description: `${item.name} is now ${item.isActive ? "inactive" : "active"}.`,
-            });
-          },
-          onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-        }
-      );
-    } else {
-      updateInventoryItem(item.id, { isActive: nextActive });
-      toast({
-        title: item.isActive ? "Item deactivated" : "Item activated",
-        description: `${item.name} is now ${item.isActive ? "inactive" : "active"}.`,
-      });
-    }
+    updateMutation.mutate(
+      { id: item.id, updates: { isActive: nextActive } },
+      {
+        onSuccess: () => {
+          updateInventoryItem(item.id, { isActive: nextActive });
+          toast({
+            title: item.isActive ? "Item deactivated" : "Item activated",
+            description: `${item.name} is now ${item.isActive ? "inactive" : "active"}.`,
+          });
+        },
+        onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+      }
+    );
   };
 
   const handleDelete = (item: InventoryItem) => {
     if (!confirm(`Delete "${item.name}"? This cannot be undone.`)) return;
-    if (apiBase) {
-      deleteMutation.mutate(item.id, {
-        onSuccess: () => {
-          deleteInventoryItem(item.id);
-          toast({ title: "Item deleted", description: `${item.name} has been removed.` });
-          if (detailItem?.id === item.id) {
-            setDetailItem(null);
-            setSheetOpen(false);
-          }
-        },
-        onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-      });
-    } else {
-      deleteInventoryItem(item.id);
-      toast({ title: "Item deleted", description: `${item.name} has been removed.` });
-      if (detailItem?.id === item.id) {
-        setDetailItem(null);
-        setSheetOpen(false);
-      }
-    }
+    deleteMutation.mutate(item.id, {
+      onSuccess: () => {
+        deleteInventoryItem(item.id);
+        toast({ title: "Item deleted", description: `${item.name} has been removed.` });
+        if (detailItem?.id === item.id) {
+          setDetailItem(null);
+          setSheetOpen(false);
+        }
+      },
+      onError: (e) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    });
   };
 
   const openDetail = (item: InventoryItem) => {
@@ -329,7 +309,7 @@ export default function Inventory() {
 
         <Card className="bg-card border border-border">
           <CardContent className="p-0">
-            {apiBase && inventoryQuery.isLoading ? (
+            {inventoryQuery.isLoading ? (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
                 Loading inventory...
               </div>
@@ -489,12 +469,10 @@ export default function Inventory() {
         existingItems={inventoryItems}
         editingItem={editingItem}
         onSubmit={(item) => {
-          if (apiBase) return createMutation.mutateAsync(item);
-          addInventoryItem(item);
+          return createMutation.mutateAsync(item);
         }}
         onUpdate={(id, updates) => {
-          if (apiBase) return updateMutation.mutateAsync({ id, updates });
-          updateInventoryItem(id, updates);
+          return updateMutation.mutateAsync({ id, updates });
         }}
         createdBy={me.id}
         toast={toast}

@@ -44,6 +44,62 @@ const LOGO_BUILDESK_WIDTH = 42;
 const LOGO_BUILDESK_HEIGHT = 20;
 const LOGO_CRAVING_WIDTH = 50;
 const LOGO_CRAVING_HEIGHT = 18;
+const TEMPLATE_PAGE_CANDIDATES: string[][] = [
+  [
+    "buildesk proposal/1.jpg",
+    "buildesk proposal/1.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0001.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0001.png",
+  ],
+  [
+    "buildesk proposal/2.jpg",
+    "buildesk proposal/2.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0002.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0002.png",
+  ],
+  [
+    "buildesk proposal/3.jpg",
+    "buildesk proposal/3.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0003.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0003.png",
+  ],
+  [
+    "buildesk proposal/4.jpg",
+    "buildesk proposal/4.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0004.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0004.png",
+  ],
+  [
+    "buildesk proposal/5.jpg",
+    "buildesk proposal/5.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0005.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0005.png",
+  ],
+  [
+    "buildesk proposal/6.jpg",
+    "buildesk proposal/6.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0006.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0006.png",
+  ],
+  [
+    "buildesk proposal/7.jpg",
+    "buildesk proposal/7.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0007.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0007.png",
+  ],
+  [
+    "buildesk proposal/8.jpg",
+    "buildesk proposal/8.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0008.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0008.png",
+  ],
+  [
+    "buildesk proposal/9.jpg",
+    "buildesk proposal/9.png",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0009.jpg",
+    "buildesk proposal/BUILDESK PROPOSAL_ISTA SPACES_v3.0_page-0009.png",
+  ],
+];
 
 function getOrdinal(n: number): string {
   const v = n % 100;
@@ -67,14 +123,24 @@ function getOrdinalSuffix(n: number): string {
   }
 }
 
-function formatProposalDate(isoDate: string): string {
+function formatSimpleDate(isoDate: string): string {
   const d = new Date(isoDate);
   const day = d.getDate();
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const month = months[d.getMonth()];
   const year = d.getFullYear();
   const dayStr = String(day).padStart(2, "0");
-  return `${dayStr}${getOrdinalSuffix(day)} ${month}, ${year}`;
+  return `${dayStr} ${month} ${year}`;
+}
+
+function formatLetterDate(isoDate: string): string {
+  const d = new Date(isoDate);
+  const day = d.getDate();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = months[d.getMonth()];
+  const year = d.getFullYear();
+  const dayStr = String(day).padStart(2, "0");
+  return `${dayStr}${getOrdinalSuffix(day)}${month}, ${year}`;
 }
 
 
@@ -98,15 +164,10 @@ function addPageHeader(doc: jsPDF): void {
   doc.setTextColor(80, 80, 80);
   doc.text(" Business", 14 + enablingWidth + aiWidth + forWidth + reWidth, 9);
 
+  // Draw as one string to avoid OCR/kerning gaps like "www. buildesk.in"
   doc.setFont("helvetica", "normal");
   doc.setTextColor(80, 80, 80);
-  doc.text("www.", 148, 9);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 114, 188);
-  doc.text("buildesk", 148 + doc.getTextWidth("www."), 9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(80, 80, 80);
-  doc.text(".in", 148 + doc.getTextWidth("www.buildesk"), 9);
+  doc.text("www.buildesk.in", 148, 9);
 
   doc.setDrawColor(200, 200, 200);
   doc.setLineWidth(0.3);
@@ -119,10 +180,20 @@ function addRightAccentBar(doc: jsPDF): void {
 }
 
 function addPageNumber(doc: jsPDF, num: number): void {
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(150, 150, 150);
-  doc.text(String(num), 105, 290, { align: "center" });
+  void doc;
+  void num;
+  // Numbering is stamped at the end using total page count.
+}
+
+function addPageCounters(doc: jsPDF): void {
+  const total = doc.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text(`-- ${i} of ${total} --`, PAGE_WIDTH / 2, 283, { align: "center" });
+  }
 }
 
 function renderParagraph(
@@ -134,13 +205,13 @@ function renderParagraph(
   lineHeight: number
 ): number {
   const lines = doc.splitTextToSize(text, maxWidth);
-  doc.setFontSize(10);
+  doc.setFontSize(9.5);
   doc.setTextColor(...COLORS.textMedium);
   doc.setFont("helvetica", "normal");
   for (let i = 0; i < lines.length; i++) {
     doc.text(lines[i], x, y + i * lineHeight);
   }
-  return y + lines.length * lineHeight;
+  return y + (lines.length - 1) * lineHeight + 1;
 }
 
 function renderBulletList(
@@ -150,7 +221,7 @@ function renderBulletList(
   y: number,
   maxWidth: number
 ): number {
-  doc.setFontSize(9.5);
+  doc.setFontSize(9.25);
   doc.setTextColor(...COLORS.textMedium);
   doc.setFont("helvetica", "normal");
   let currentY = y;
@@ -159,20 +230,21 @@ function renderBulletList(
     doc.text("•", x, currentY);
     const lines = doc.splitTextToSize(item, maxWidth - bulletIndent);
     for (let i = 0; i < lines.length; i++) {
-      doc.text(lines[i], x + bulletIndent, currentY + i * LINE_HEIGHT);
+      doc.text(lines[i], x + bulletIndent, currentY + i * 5.2);
     }
-    currentY += Math.max(1, lines.length) * LINE_HEIGHT + 2;
+    currentY += Math.max(1, lines.length) * 5.2 + 2.2;
   }
   return currentY;
 }
 
 function getLogoUrl(filename: string): string {
+  const normalized = filename.split("/").map((part) => encodeURIComponent(part)).join("/");
   if (typeof window !== "undefined" && window.location?.origin) {
     const base = window.location.origin;
-    const path = base.endsWith("/") ? base + filename : base + "/" + filename;
+    const path = base.endsWith("/") ? base + normalized : base + "/" + normalized;
     return path;
   }
-  return "/" + filename;
+  return "/" + normalized;
 }
 
 function loadImageAsBase64(url: string): Promise<string | null> {
@@ -185,15 +257,170 @@ function loadImageAsBase64(url: string): Promise<string | null> {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
           reader.onerror = () => resolve(null);
-          reader.readDataURL(blob);
+          reader.readAsDataURL(blob);
         })
     )
     .catch(() => null);
 }
 
+async function loadFirstAvailableImage(paths: string[]): Promise<string | null> {
+  for (const path of paths) {
+    const image = await loadImageAsBase64(path);
+    if (image) return image;
+  }
+  return null;
+}
+
 function getImageFormat(dataUrl: string): "PNG" | "JPEG" {
   if (!dataUrl || !dataUrl.startsWith("data:")) return "PNG";
   return dataUrl.indexOf("image/jpeg") >= 0 || dataUrl.indexOf("image/jpg") >= 0 ? "JPEG" : "PNG";
+}
+
+function paintTemplateBackground(doc: jsPDF, imageData: string): void {
+  doc.addImage(imageData, getImageFormat(imageData), 0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+}
+
+function renderTemplateOverlay(
+  doc: jsPDF,
+  proposal: Proposal,
+  autoTable: (doc: jsPDF, options: object) => void,
+  commercialChunks: ProposalLineItem[][],
+  commercialStartPage: number,
+): void {
+  const users = useAppStore.getState().users;
+  const rep = users.find((u) => u.id === proposal.assignedTo);
+  const repPhone = (rep as { phone?: string } | undefined)?.phone ?? "";
+
+  // Page 1 dynamic fields.
+  doc.setPage(1);
+  // Mask old sample content from template before drawing variables.
+  doc.setFillColor(61, 61, 61);
+  doc.rect(10, 192, 130, 55, "F");
+  doc.rect(130, 240, 72, 35, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  const titleLines = doc.splitTextToSize(proposal.title.toUpperCase(), 108);
+  doc.text(titleLines, 14, 205);
+  doc.setTextColor(...COLORS.buildeskBlue);
+  doc.text(`For ${proposal.customerName}`, 14, 205 + titleLines.length * 8);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.text(proposal.assignedToName || "Sales Representative", 196, 248, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.text(rep?.role?.replace(/_/g, " ") ?? "", 196, 254, { align: "right" });
+  doc.text(repPhone, 196, 260, { align: "right" });
+  doc.text("Cravingcode Technologies Pvt. Ltd.", 196, 266, { align: "right" });
+  doc.text(`Submitted on: ${formatSimpleDate(proposal.createdAt)}`, 196, 272, { align: "right" });
+
+  // Page 2 version table row.
+  doc.setPage(2);
+  // Full table mask to remove old printed table (header, borders, and row text).
+  doc.setFillColor(255, 255, 255);
+  doc.rect(14, 78, 176, 50, "F");
+  const comment =
+    proposal.versionHistory?.[0]?.notes?.trim() ||
+    "This is the First version of Proposal to be submitted for Buildesk Annual Licenses.";
+  autoTable(doc, {
+    startY: 84,
+    head: [["Version", "Date", "Name", "Comments"]],
+    body: [[
+      Number(proposal.currentVersion || 1).toFixed(1),
+      formatSimpleDate(proposal.createdAt),
+      `Mr. ${proposal.assignedToName || "Anurag Singh"}`,
+      comment,
+    ]],
+    margin: { left: 18, right: 22 },
+    tableWidth: 170,
+    headStyles: { fillColor: [61, 61, 61], textColor: [255, 255, 255], fontSize: 9, halign: "center" },
+    columnStyles: {
+      0: { cellWidth: 20, halign: "center" },
+      1: { cellWidth: 30, halign: "center" },
+      2: { cellWidth: 35 },
+      3: { cellWidth: 85 },
+    },
+    styles: { fontSize: 9 },
+  });
+
+  // Page 3 cover-letter variable fields.
+  doc.setPage(3);
+  // Mask top recipient/date block and bottom signature block.
+  doc.setFillColor(255, 255, 255);
+  doc.rect(16, 23, 132, 30, "F");
+  doc.rect(16, 248, 95, 24, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.textMedium);
+  doc.setFontSize(10);
+  doc.text(`Date: ${formatLetterDate(proposal.createdAt)}`, 20, 29);
+  doc.text("To,", 20, 35);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLORS.textDark);
+  doc.text(proposal.customerName, 20, 41);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...COLORS.textMedium);
+  doc.text("Yours Truly,", 20, 256);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...COLORS.textDark);
+  doc.text(proposal.assignedToName || "Sales Representative", 20, 262);
+
+  // Page 4 commercial module + table.
+  const total = proposal.finalQuoteValue ?? proposal.lineItems.reduce((s, li) => s + li.lineTotal + li.taxAmount, 0);
+  commercialChunks.forEach((chunk, chunkIndex) => {
+    const page = commercialStartPage + chunkIndex;
+    doc.setPage(page);
+    // Mask commercial dynamic zone so old sample values disappear.
+    doc.setFillColor(255, 255, 255);
+    doc.rect(16, 36, 174, 208, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(...COLORS.textDark);
+    doc.text(`Module 1: ${proposal.title}`, 20, 44);
+
+    const globalOffset = chunkIndex * chunk.length;
+    const tableBody = chunk.map((item, idx) => [
+      `${globalOffset + idx + 1}.`,
+      item.description ? `${item.name}\n${item.description}` : item.name,
+      getServiceLabel(item),
+      pdfRupee(Math.round(item.unitPrice)),
+    ]);
+
+    autoTable(doc, {
+      startY: 50,
+      head: [["Sr. No.", "Description", "Service", "Annual License Cost (in INR)"]],
+      body: tableBody,
+      margin: { left: 18, right: 22 },
+      tableWidth: 170,
+      headStyles: { fillColor: [61, 61, 61], textColor: [255, 255, 255], fontSize: 8.8, halign: "center" },
+      columnStyles: {
+        0: { cellWidth: 16, halign: "center" },
+        1: { cellWidth: 92 },
+        2: { cellWidth: 25, halign: "center" },
+        3: { cellWidth: 37, halign: "center" },
+      },
+      styles: { fontSize: 9, cellPadding: 3.2, valign: "middle" },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+    });
+
+    const isLast = chunkIndex === commercialChunks.length - 1;
+    if (isLast) {
+      autoTable(doc, {
+        startY: ((doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY ?? 200) + 2,
+        body: [["Total", "", "", pdfRupeeTotal(Math.round(total))]],
+        margin: { left: 18, right: 22 },
+        tableWidth: 170,
+        theme: "plain",
+        columnStyles: {
+          0: { cellWidth: 133, halign: "right", fontStyle: "bold" },
+          1: { cellWidth: 0.1 },
+          2: { cellWidth: 0.1 },
+          3: { cellWidth: 37, halign: "center", fontStyle: "bold", textColor: [0, 114, 188] },
+        },
+        bodyStyles: { fillColor: [235, 244, 252], fontSize: 10 },
+      });
+    }
+  });
 }
 
 function fillTriangle(
@@ -228,7 +455,7 @@ function fillTriangle(
   }
 }
 
-function renderCoverPage(doc: jsPDF, proposal: Proposal, _logoBuildesk: string | null, _logoCraving: string | null): void {
+function renderCoverPage(doc: jsPDF, proposal: Proposal, logoBuildesk: string | null, logoCraving: string | null): void {
   const W = PAGE_WIDTH;
   const H = PAGE_HEIGHT;
 
@@ -238,23 +465,32 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, _logoBuildesk: string |
   doc.setFillColor(255, 255, 255);
   doc.rect(0, 0, W, 38, "F");
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(0, 114, 188);
-  doc.text("Buildesk", 18, 16);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text("Real Estate CRM", 18, 22);
+  // Use provided logos when available for closer visual parity.
+  if (logoBuildesk) {
+    doc.addImage(
+      logoBuildesk,
+      getImageFormat(logoBuildesk),
+      16,
+      6,
+      LOGO_BUILDESK_WIDTH,
+      LOGO_BUILDESK_HEIGHT,
+    );
+  } else {
+    drawBuildeskTextLogo(doc, 18, 16);
+  }
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.setTextColor(30, 30, 30);
-  doc.text("C  cravingcode", 120, 14);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(80, 80, 80);
-  doc.text("T E C H N O L O G I E S   P V T .  L T D .", 120, 20);
+  if (logoCraving) {
+    doc.addImage(
+      logoCraving,
+      getImageFormat(logoCraving),
+      116,
+      6,
+      LOGO_CRAVING_WIDTH,
+      LOGO_CRAVING_HEIGHT,
+    );
+  } else {
+    drawCravingcodeTextLogo(doc, 120, 14);
+  }
 
   fillTriangle(doc, 0, 85, 0, 200, 80, 85, COLORS.buildeskBlue);
   fillTriangle(doc, 80, 85, 210, 85, 210, 200, [200, 200, 200] as [number, number, number]);
@@ -310,7 +546,7 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, _logoBuildesk: string |
   contactY += 4;
   doc.text("Cravingcode Technologies Pvt. Ltd.", rightX, contactY, { align: "right" });
   contactY += 6;
-  doc.text(`Submitted on: ${formatProposalDate(proposal.createdAt)}`, rightX, contactY, { align: "right" });
+  doc.text(`Submitted on: ${formatSimpleDate(proposal.createdAt)}`, rightX, contactY, { align: "right" });
 }
 
 function drawBuildeskTextLogo(doc: jsPDF, x: number, y: number): void {
@@ -361,7 +597,7 @@ function renderVersionPage(doc: jsPDF, proposal: Proposal, autoTable: (doc: jsPD
     const comment =
       v.notes?.trim() ||
       "This is the First version of Proposal to be submitted for Buildesk Annual Licenses.";
-    return [String(v.version), formatProposalDate(v.createdAt), versionUserName, comment];
+    return [Number(v.version).toFixed(1), formatSimpleDate(v.createdAt), versionUserName, comment];
   });
 
   const colWidths = [18, 32, 38, CONTENT_WIDTH - 18 - 32 - 38];
@@ -416,41 +652,41 @@ function renderCoverLetterPage(doc: jsPDF, proposal: Proposal): void {
   addPageHeader(doc);
 
   let y = BODY_START_Y;
-  const dateStr = `Date: ${formatProposalDate(proposal.createdAt)}`;
+  const dateStr = `Date: ${formatLetterDate(proposal.createdAt)}`;
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.textMedium);
   doc.setFont("helvetica", "normal");
   doc.text(dateStr, MARGIN, y);
-  y += 14;
+  y += 12;
 
   doc.text("To,", MARGIN, y);
-  y += 6;
+  y += 5.5;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(...COLORS.textDark);
   doc.text(proposal.customerName, MARGIN, y);
-  y += 10;
+  y += 8;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.textMedium);
   doc.text("Re: Enclosed Proposal for Buildesk Annual Sales Management License", MARGIN, y);
-  y += 14;
+  y += 11;
 
   const p1 =
     "At Cravingcode Technologies we are aware that creating client-oriented software takes a mixture of technical excellence and clear communication and our firm hires only the very best to ensure you receive both. We know that every client is unique and we strive to deliver an individual, innovative and affordable proposal every time and to follow it through with an outstanding delivery which is both on time and within budget.";
-  y = renderParagraph(doc, p1, MARGIN, y, CONTENT_WIDTH, LINE_HEIGHT) + PARA_SPACING;
+  y = renderParagraph(doc, p1, MARGIN, y, CONTENT_WIDTH, 5.2) + 5.2;
 
   const p2 =
     "We have over 8 years of development in this area and our previous clients include Gurukrupa Builders & Developers, Balaji Developers, Baradiya Group, Haware, Realty Assistant, Globe Group, Antilla, Smile Homes, RC Group, Nakshatra Group, JMD infra, Akar Housing Developer, Balaji Group, Dayaar Group and many more. Please let us know if you would like to get in touch with our existing clients from whom you will receive nothing but positive endorsements.";
-  y = renderParagraph(doc, p2, MARGIN, y, CONTENT_WIDTH, LINE_HEIGHT) + PARA_SPACING;
+  y = renderParagraph(doc, p2, MARGIN, y, CONTENT_WIDTH, 5.2) + 5.2;
 
   const p3 =
     "We also pride ourselves on our after-sales client-care including our guarantees, staff-training, and onsite and offsite support.";
-  y = renderParagraph(doc, p3, MARGIN, y, CONTENT_WIDTH, LINE_HEIGHT) + PARA_SPACING;
+  y = renderParagraph(doc, p3, MARGIN, y, CONTENT_WIDTH, 5.2) + 5.2;
 
   const p4 =
     "Finally, we realize that you are very busy and wanted to thank you in advance for your time spent reviewing our proposal.";
-  y = renderParagraph(doc, p4, MARGIN, y, CONTENT_WIDTH, LINE_HEIGHT) + 10;
+  y = renderParagraph(doc, p4, MARGIN, y, CONTENT_WIDTH, 5.2) + 8;
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
@@ -504,7 +740,7 @@ function renderCommercialPage(doc: jsPDF, proposal: Proposal, autoTable: (doc: j
       0: { halign: "center", cellWidth: 15 },
       1: { halign: "left", cellWidth: 83 },
       2: { halign: "center", cellWidth: 30 },
-      3: { halign: "right", cellWidth: 40 },
+      3: { halign: "center", cellWidth: 40 },
     },
     headStyles: {
       fillColor: [0, 114, 188],
@@ -514,7 +750,7 @@ function renderCommercialPage(doc: jsPDF, proposal: Proposal, autoTable: (doc: j
       halign: "center",
     },
     alternateRowStyles: { fillColor: [245, 245, 245] },
-    styles: { fontSize: 9, cellPadding: 4 },
+    styles: { fontSize: 9, cellPadding: { top: 3.2, right: 2.8, bottom: 3.2, left: 2.8 }, valign: "middle", overflow: "linebreak" },
     margin: { left: MARGIN },
     tableWidth: CONTENT_WIDTH,
   });
@@ -528,9 +764,9 @@ function renderCommercialPage(doc: jsPDF, proposal: Proposal, autoTable: (doc: j
       0: { cellWidth: 130, halign: "right", fontStyle: "bold" },
       1: { cellWidth: 1 },
       2: { cellWidth: 1 },
-      3: { cellWidth: 40, halign: "right", fontStyle: "bold", textColor: [0, 114, 188] },
+      3: { cellWidth: 40, halign: "center", fontStyle: "bold", textColor: [0, 114, 188] },
     },
-    bodyStyles: { fontSize: 10 },
+    bodyStyles: { fontSize: 10, cellPadding: { top: 3, right: 2, bottom: 3, left: 2 } },
     theme: "plain",
     margin: { left: MARGIN },
     tableWidth: CONTENT_WIDTH,
@@ -556,8 +792,9 @@ function renderCommercialPage(doc: jsPDF, proposal: Proposal, autoTable: (doc: j
     doc.setTextColor(...COLORS.textMedium);
     const roman = ["(I)", "(II)", "(III)", "(IV)", "(V)"];
     noteLines.forEach((line, i) => {
-      doc.text(`${roman[i] ?? `(${i + 1})`} ${line}`, MARGIN, noteY);
-      noteY += 5;
+      const wrapped = doc.splitTextToSize(`${roman[i] ?? `(${i + 1})`} ${line}`, CONTENT_WIDTH);
+      wrapped.forEach((w: string, idx: number) => doc.text(w, MARGIN, noteY + idx * 4.8));
+      noteY += wrapped.length * 4.8 + 1;
     });
   }
 
@@ -721,6 +958,9 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
 
   const logoBuildesk = await loadImageAsBase64("buildesk.png");
   const logoCraving = await loadImageAsBase64("craving_code.png");
+  const templateImages = await Promise.all(
+    TEMPLATE_PAGE_CANDIDATES.map((candidates) => loadFirstAvailableImage(candidates)),
+  );
 
   const doc = new jsPDF({
     orientation: "portrait",
@@ -728,22 +968,64 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
     format: "a4",
   });
 
-  renderCoverPage(doc, proposal, logoBuildesk, logoCraving);
+  const hasTemplateSet = templateImages.some(Boolean);
+  if (hasTemplateSet) {
+    const ROWS_PER_COMMERCIAL_PAGE = 10;
+    const commercialChunks: ProposalLineItem[][] = [];
+    for (let i = 0; i < proposal.lineItems.length; i += ROWS_PER_COMMERCIAL_PAGE) {
+      commercialChunks.push(proposal.lineItems.slice(i, i + ROWS_PER_COMMERCIAL_PAGE));
+    }
+    if (commercialChunks.length === 0) commercialChunks.push([]);
 
-  doc.addPage();
-  renderVersionPage(doc, proposal, autoTable);
+    // Template indices:
+    // 0: Cover, 1: Version, 2: Cover Letter, 3: Commercial (first), 4: Commercial (continuation),
+    // 5..8: Remaining static pages (Terms/SLA/etc).
+    const needsContinuationTemplate = commercialChunks.length > 1;
+    const required = new Set<number>([0, 1, 2, 3, 5, 6, 7, 8]);
+    if (needsContinuationTemplate) required.add(4);
 
-  doc.addPage();
-  renderCoverLetterPage(doc, proposal);
+    for (const idx of required) {
+      if (!templateImages[idx]) {
+        throw new Error(
+          `Missing template page ${idx + 1}. Ensure public/buildesk proposal/${idx + 1}.jpg exists (or .png).`,
+        );
+      }
+    }
 
-  doc.addPage();
-  renderCommercialPage(doc, proposal, autoTable);
+    // Build doc pages dynamically:
+    // Cover (1), Version (2), Letter (3)
+    paintTemplateBackground(doc, templateImages[0] as string);
+    doc.addPage(); paintTemplateBackground(doc, templateImages[1] as string);
+    doc.addPage(); paintTemplateBackground(doc, templateImages[2] as string);
 
-  doc.addPage();
-  renderTermsPage(doc, proposal);
+    // Commercial pages (1..N)
+    for (let i = 0; i < commercialChunks.length; i++) {
+      doc.addPage();
+      const bg = i === 0 ? (templateImages[3] as string) : (templateImages[4] as string);
+      paintTemplateBackground(doc, bg);
+    }
 
-  doc.addPage();
-  renderSLAPages(doc);
+    // Tail static pages (6..9 templates)
+    for (let idx = 5; idx <= 8; idx++) {
+      doc.addPage();
+      paintTemplateBackground(doc, templateImages[idx] as string);
+    }
 
+    renderTemplateOverlay(doc, proposal, autoTable, commercialChunks, 4);
+    addPageCounters(doc);
+  } else {
+    renderCoverPage(doc, proposal, logoBuildesk, logoCraving);
+    doc.addPage();
+    renderVersionPage(doc, proposal, autoTable);
+    doc.addPage();
+    renderCoverLetterPage(doc, proposal);
+    doc.addPage();
+    renderCommercialPage(doc, proposal, autoTable);
+    doc.addPage();
+    renderTermsPage(doc, proposal);
+    doc.addPage();
+    renderSLAPages(doc);
+    addPageCounters(doc);
+  }
   doc.save(`Proposal-${proposal.proposalNumber}.pdf`);
 }

@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
+import { apiUrl } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -101,12 +103,149 @@ function StatCard({ label, value, icon, valueColor = "text-gray-900 dark:text-gr
 
 export default function Customers() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
+  const setCustomers = useAppStore((s) => s.setCustomers);
   const regions = useAppStore((s) => s.regions);
   const users = useAppStore((s) => s.users);
   const updateCustomer = useAppStore((s) => s.updateCustomer);
   const deleteCustomer = useAppStore((s) => s.deleteCustomer);
+
+  type ApiCustomer = {
+    id: string;
+    leadId?: string;
+    name: string;
+    state?: string | null;
+    gstin?: string | null;
+    regionId: string;
+    city?: string | null;
+    email?: string | null;
+    primaryPhone?: string | null;
+    status?: string | null;
+    createdAt?: string;
+    salesExecutive?: string | null;
+    accountManager?: string | null;
+    deliveryExecutive?: string | null;
+  };
+
+  const toUiCustomer = (row: ApiCustomer): Customer => {
+    const regionName = regions.find((r) => r.id === row.regionId)?.name ?? "Unknown";
+    const assignedUser =
+      users.find((u) => u.name === row.salesExecutive) ??
+      users.find((u) => u.regionId === row.regionId && u.role === "sales_rep") ??
+      users[0];
+    const nowIso = row.createdAt ?? new Date().toISOString();
+    return {
+      id: row.id,
+      customerNumber: row.leadId ?? `CUST-${row.id.slice(-4).toUpperCase()}`,
+      companyName: row.name,
+      status: (row.status as CustomerStatus) ?? "active",
+      gstin: row.gstin ?? undefined,
+      pan: undefined,
+      industry: undefined,
+      website: undefined,
+      address: {
+        city: row.city ?? undefined,
+        state: row.state ?? undefined,
+        country: "India",
+      },
+      contacts: [
+        {
+          id: `ct-${row.id}`,
+          name: row.name,
+          email: row.email ?? undefined,
+          phone: row.primaryPhone ?? undefined,
+          isPrimary: true,
+        },
+      ],
+      regionId: row.regionId,
+      regionName,
+      teamId: assignedUser?.teamId ?? users[0]?.teamId ?? "t1",
+      assignedTo: assignedUser?.id ?? users[0]?.id ?? me.id,
+      assignedToName: assignedUser?.name ?? row.salesExecutive ?? "Unassigned",
+      tags: [],
+      notes: [],
+      attachments: [],
+      productLines: [],
+      payments: [],
+      invoices: [],
+      supportTickets: [],
+      activityLog: [],
+      totalRevenue: 0,
+      totalDealValue: 0,
+      activeProposalsCount: 0,
+      activeDealsCount: 0,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      createdBy: me.id,
+    };
+  };
+
+  const toApiPayload = (customer: Customer) => {
+    const primary = customer.contacts.find((c) => c.isPrimary) ?? customer.contacts[0];
+    return {
+      id: customer.id,
+      leadId: customer.customerNumber,
+      name: customer.companyName,
+      state: customer.address?.state ?? null,
+      gstin: customer.gstin ?? null,
+      regionId: customer.regionId,
+      city: customer.address?.city ?? null,
+      email: primary?.email ?? null,
+      primaryPhone: primary?.phone ?? null,
+      status: customer.status,
+      salesExecutive: users.find((u) => u.id === customer.assignedTo)?.name ?? customer.assignedToName ?? null,
+      accountManager: null,
+      deliveryExecutive: null,
+    };
+  };
+
+  const customersQuery = useQuery({
+    queryKey: ["customers-old-ui-sync"],
+    queryFn: async () => {
+      const res = await fetch(apiUrl("/api/customers"));
+      if (!res.ok) throw new Error("Failed to load customers");
+      return (await res.json()) as ApiCustomer[];
+    },
+  });
+
+  useEffect(() => {
+    if (!customersQuery.data) return;
+    setCustomers(customersQuery.data.map(toUiCustomer));
+  }, [customersQuery.data, regions, users]);
+
+  const createCustomerMutation = useMutation({
+    mutationFn: async (customer: Customer) => {
+      const res = await fetch(apiUrl("/api/customers"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toApiPayload(customer)),
+      });
+      if (!res.ok) throw new Error("Failed to create customer");
+    },
+    onSettled: () => customersQuery.refetch(),
+  });
+
+  const updateCustomerMutation = useMutation({
+    mutationFn: async (customer: Customer) => {
+      const res = await fetch(apiUrl(`/api/customers/${customer.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toApiPayload(customer)),
+      });
+      if (!res.ok) throw new Error("Failed to update customer");
+    },
+    onSettled: () => customersQuery.refetch(),
+  });
+
+  const deleteCustomerMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(apiUrl(`/api/customers/${id}`), { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete customer");
+    },
+    onSettled: () => customersQuery.refetch(),
+  });
 
   const scope = getScope(me.role, "customers");
   const visible = visibleWithScope(scope, me, customers);
@@ -115,8 +254,11 @@ export default function Customers() {
   const [statusFilter, setStatusFilter] = useState<CustomerStatus | "all">("all");
   const [regionFilter, setRegionFilter] = useState<string>("all");
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
+  const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [tagsFilter, setTagsFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
@@ -127,6 +269,22 @@ export default function Customers() {
     const stored = localStorage.getItem(VIEW_STORAGE_KEY) as "table" | "card" | null;
     if (stored === "table" || stored === "card") setViewMode(stored);
   }, []);
+  useEffect(() => {
+    const q = searchParams.get("q");
+    const status = searchParams.get("status");
+    const owner = searchParams.get("owner");
+    const team = searchParams.get("team");
+    const region = searchParams.get("region");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (q) setSearch(q);
+    if (status && STATUS_OPTIONS.some((s) => s.value === status)) setStatusFilter(status as CustomerStatus | "all");
+    if (owner) setAssignedToFilter(owner);
+    if (team) setTeamQueryFilter(team);
+    if (region) setRegionFilter(region);
+    if (from) setDateFrom(from);
+    if (to) setDateTo(to);
+  }, [searchParams]);
   const persistView = (mode: "table" | "card") => {
     setViewMode(mode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
@@ -157,13 +315,16 @@ export default function Customers() {
     if (statusFilter !== "all") list = list.filter((c) => c.status === statusFilter);
     if (regionFilter !== "all") list = list.filter((c) => c.regionId === regionFilter);
     if (assignedToFilter !== "all") list = list.filter((c) => c.assignedTo === assignedToFilter);
+    if (teamQueryFilter !== "all") list = list.filter((c) => c.teamId === teamQueryFilter);
+    if (dateFrom) list = list.filter((c) => c.createdAt.slice(0, 10) >= dateFrom);
+    if (dateTo) list = list.filter((c) => c.createdAt.slice(0, 10) <= dateTo);
     if (industryFilter !== "all") list = list.filter((c) => c.industry === industryFilter);
     if (tagsFilter) {
       const tag = tagsFilter.trim().toLowerCase();
       list = list.filter((c) => c.tags.some((t) => t.toLowerCase().includes(tag)));
     }
     return list;
-  }, [visible, search, statusFilter, regionFilter, assignedToFilter, industryFilter, tagsFilter]);
+  }, [visible, search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, dateFrom, dateTo, industryFilter, tagsFilter]);
 
   const totalPages =
     viewMode === "table"
@@ -236,6 +397,10 @@ export default function Customers() {
 
   const handleDelete = (c: Customer) => {
     deleteCustomer(c.id);
+    deleteCustomerMutation.mutate(c.id, {
+      onError: (e: Error) =>
+        toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+    });
     toast({ title: "Customer deleted", description: `${c.companyName} has been removed.` });
     setDeleteTarget(null);
   };
@@ -246,6 +411,9 @@ export default function Customers() {
     <>
       <Topbar title="Customers" subtitle={`${visible.length} customers`} />
       <div className="p-6 max-w-[1400px] mx-auto">
+        {customersQuery.isLoading && (
+          <div className="mb-4 text-sm text-muted-foreground">Loading customers...</div>
+        )}
         {/* Zone 1: Page title row */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -678,6 +846,13 @@ export default function Customers() {
         open={formOpen}
         onOpenChange={setFormOpen}
         editingCustomer={editingCustomer}
+        onPersist={async (customer, mode) => {
+          if (mode === "create") {
+            await createCustomerMutation.mutateAsync(customer);
+            return;
+          }
+          await updateCustomerMutation.mutateAsync(customer);
+        }}
         onSaved={() => {
           setFormOpen(false);
           setEditingCustomer(null);

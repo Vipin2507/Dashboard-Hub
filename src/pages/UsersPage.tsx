@@ -1,5 +1,6 @@
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -9,11 +10,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiUrl } from '@/lib/api';
 
 export default function UsersPage() {
   const me = useAppStore(s => s.me);
   const users = useAppStore(s => s.users);
+  const setUsers = useAppStore(s => s.setUsers);
   const teams = useAppStore(s => s.teams);
   const regions = useAppStore(s => s.regions);
   const updateUserRole = useAppStore(s => s.updateUserRole);
@@ -22,6 +25,33 @@ export default function UsersPage() {
 
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await fetch(apiUrl('/api/users'));
+      if (!res.ok) throw new Error('Failed to load users');
+      return res.json() as Promise<import('@/types').User[]>;
+    },
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async (payload: import('@/types').User) => {
+      const res = await fetch(apiUrl(`/api/users/${payload.id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Failed to update user');
+      return res.json();
+    },
+    onSuccess: () => usersQuery.refetch(),
+  });
+
+  useEffect(() => {
+    if (!usersQuery.data) return;
+    setUsers(usersQuery.data);
+  }, [usersQuery.data, setUsers]);
 
   if (me.role !== 'super_admin') {
     return (
@@ -47,6 +77,8 @@ export default function UsersPage() {
     }
     try {
       updatePassword(userId, null, newPassword);
+      const user = useAppStore.getState().users.find((u) => u.id === userId);
+      if (user) updateUserMutation.mutate(user);
       setPasswordEdits(prev => ({ ...prev, [userId]: '' }));
       setPasswordErrors(prev => {
         const next = { ...prev };
@@ -88,7 +120,11 @@ export default function UsersPage() {
                       {me.role === 'super_admin' ? (
                         <Select
                           value={u.role}
-                          onValueChange={(value) => updateUserRole(u.id, value as Role)}
+                          onValueChange={(value) => {
+                            updateUserRole(u.id, value as Role);
+                            const user = useAppStore.getState().users.find((x) => x.id === u.id);
+                            if (user) updateUserMutation.mutate(user);
+                          }}
                         >
                           <SelectTrigger className="h-8 text-[10px]">
                             <SelectValue placeholder="Role" />
@@ -121,7 +157,11 @@ export default function UsersPage() {
                           <div className="flex items-center gap-2">
                             <Switch
                               checked={u.status === 'active'}
-                              onCheckedChange={(checked) => updateUserStatus(u.id, checked ? 'active' : 'disabled')}
+                              onCheckedChange={(checked) => {
+                                updateUserStatus(u.id, checked ? 'active' : 'disabled');
+                                const user = useAppStore.getState().users.find((x) => x.id === u.id);
+                                if (user) updateUserMutation.mutate(user);
+                              }}
                             />
                             <span className="text-[11px] text-muted-foreground">
                               {u.status === 'active' ? 'Can sign in' : 'Sign in disabled'}

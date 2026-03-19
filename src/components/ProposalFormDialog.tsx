@@ -326,7 +326,7 @@ export function ProposalFormDialog({
                   <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
                   <SelectContent>
                     {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

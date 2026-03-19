@@ -1,8 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
+import { runAutomationRules } from "@/lib/automationService";
+import { apiUrl } from "@/lib/api";
 import type { AutomationChannel, AutomationLog, AutomationRecipient, AutomationTemplate, AutomationTrigger } from "@/types";
 import { TEMPLATE_VARIABLES } from "@/types";
 import { cn } from "@/lib/utils";
@@ -105,8 +107,61 @@ function ConnectionStatus() {
 }
 
 export default function Automation() {
+  const automationTemplates = useAppStore((s) => s.automationTemplates);
+  const automationSettings = useAppStore((s) => s.automationSettings);
+  const setAutomationTemplates = useAppStore((s) => s.setAutomationTemplates);
+  const setAutomationLogs = useAppStore((s) => s.setAutomationLogs);
+  const setAutomationSettings = useAppStore((s) => s.setAutomationSettings);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<AutomationTemplate | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [tplRes, logRes, settingsRes] = await Promise.all([
+          fetch(apiUrl("/api/automation/templates")),
+          fetch(apiUrl("/api/automation/logs")),
+          fetch(apiUrl("/api/automation/settings")),
+        ]);
+        if (!mounted) return;
+
+        if (tplRes.ok) {
+          const serverTemplates = (await tplRes.json()) as AutomationTemplate[];
+          if (serverTemplates.length > 0) {
+            setAutomationTemplates(serverTemplates);
+          } else if (automationTemplates.length > 0) {
+            await Promise.all(
+              automationTemplates.map((t) =>
+                fetch(apiUrl("/api/automation/templates"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(t),
+                }).catch(() => undefined),
+              ),
+            );
+          }
+        }
+
+        if (logRes.ok) {
+          const serverLogs = (await logRes.json()) as AutomationLog[];
+          setAutomationLogs(serverLogs);
+        }
+
+        if (settingsRes.ok) {
+          const serverSettings = (await settingsRes.json()) as Partial<typeof automationSettings>;
+          if (serverSettings && Object.keys(serverSettings).length > 0) {
+            setAutomationSettings({ ...automationSettings, ...serverSettings });
+          }
+        }
+      } catch {
+        // Keep local state when backend is unreachable.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6">
@@ -119,6 +174,16 @@ export default function Automation() {
         </div>
         <div className="flex items-center gap-3">
           <ConnectionStatus />
+          <Button
+            variant="outline"
+            className="h-9"
+            onClick={() => {
+              runAutomationRules();
+              toast({ title: "Rule check started", description: "Proposal follow-up and payment rules evaluated." });
+            }}
+          >
+            Run Rules Now
+          </Button>
           <Button
             onClick={() => setShowAddTemplate(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white h-9"
@@ -268,28 +333,42 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
 
       const ok = res.ok;
       const errorBody = ok ? "" : (await res.text().catch(() => ""))?.slice(0, 500);
-      useAppStore.setState({
-        automationLogs: useAppStore
-          .getState()
-          .automationLogs.map((l) =>
-            l.id === logEntry.id
-              ? {
-                  ...l,
-                  status: ok ? "sent" : ("failed" as const),
-                  errorMessage: ok ? undefined : `${res.status} ${res.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
-                }
-              : l,
-          ),
-      });
+      const nextLogs = useAppStore
+        .getState()
+        .automationLogs.map((l) =>
+          l.id === logEntry.id
+            ? {
+                ...l,
+                status: ok ? "sent" : ("failed" as const),
+                errorMessage: ok ? undefined : `${res.status} ${res.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
+              }
+            : l,
+        );
+      useAppStore.setState({ automationLogs: nextLogs });
+      const updated = nextLogs.find((l) => l.id === logEntry.id);
+      if (updated) {
+        void fetch(apiUrl(`/api/automation/logs/${logEntry.id}`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        }).catch(() => undefined);
+      }
       toast({ title: ok ? "Test triggered" : "Test failed", variant: ok ? "default" : "destructive" });
     } catch (e) {
-      useAppStore.setState({
-        automationLogs: useAppStore
-          .getState()
-          .automationLogs.map((l) =>
-            l.id === logEntry.id ? { ...l, status: "failed", errorMessage: e instanceof Error ? e.message : String(e) } : l,
-          ),
-      });
+      const nextLogs = useAppStore
+        .getState()
+        .automationLogs.map((l) =>
+          l.id === logEntry.id ? { ...l, status: "failed", errorMessage: e instanceof Error ? e.message : String(e) } : l,
+        );
+      useAppStore.setState({ automationLogs: nextLogs });
+      const updated = nextLogs.find((l) => l.id === logEntry.id);
+      if (updated) {
+        void fetch(apiUrl(`/api/automation/logs/${logEntry.id}`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        }).catch(() => undefined);
+      }
       toast({ title: "Test failed", variant: "destructive" });
     }
   };
@@ -966,7 +1045,6 @@ function SettingsTab() {
             <p className="text-xs text-amber-800 dark:text-amber-200 font-medium mb-1">Required n8n webhooks</p>
             <div className="space-y-1">
               {[
-                { path: "buildesk-whatsapp", desc: "WhatsApp messages via WAHA" },
                 { path: "buildesk-email", desc: "Email via Gmail/SMTP" },
                 { path: "buildesk-health", desc: "Health check for settings tab" },
               ].map((w) => (
@@ -978,6 +1056,9 @@ function SettingsTab() {
                 </div>
               ))}
             </div>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+              WhatsApp automation is sent directly via WAHA (n8n not used for WhatsApp).
+            </p>
           </div>
         </CardContent>
       </Card>

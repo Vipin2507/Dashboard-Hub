@@ -52,6 +52,10 @@ interface AppState {
   automationSettings: AutomationSettings;
 
   // Auth & user management
+  setRegions: (regions: Region[]) => void;
+  setTeams: (teams: Team[]) => void;
+  setUsers: (users: User[]) => void;
+  setNotifications: (notifications: Notification[]) => void;
   login: (email: string, password: string) => void;
   logout: () => void;
   registerUser: (payload: { name: string; email: string; password: string; role: Role; teamId: string; regionId: string }) => void;
@@ -60,6 +64,7 @@ interface AppState {
   updatePassword: (userId: string, oldPassword: string | null, newPassword: string) => void;
 
   // Customers
+  setCustomers: (customers: Customer[]) => void;
   addCustomer: (customer: Customer) => void;
   updateCustomer: (id: string, updates: Partial<Customer>) => void;
   deleteCustomer: (id: string) => void;
@@ -78,8 +83,11 @@ interface AppState {
   updateInvoiceStatus: (customerId: string, invoiceId: string, status: CustomerInvoice['status']) => void;
   addProductLine: (customerId: string, line: CustomerProductLine) => void;
 
+  setDeals: (deals: Deal[]) => void;
   addDeal: (payload: Omit<Deal, 'id' | 'locked'>) => void;
   addDealWithId: (deal: Deal) => void;
+  updateDeal: (id: string, updates: Partial<Deal>) => void;
+  deleteDeal: (id: string) => void;
 
   // Inventory
   setInventoryItems: (items: InventoryItem[]) => void;
@@ -88,6 +96,7 @@ interface AppState {
   deleteInventoryItem: (id: string) => void;
 
   // Proposals
+  setProposals: (proposals: Proposal[]) => void;
   addProposal: (proposal: Proposal) => void;
   updateProposal: (id: string, updates: Partial<Proposal>) => void;
   deleteProposal: (id: string) => void;
@@ -104,6 +113,9 @@ interface AppState {
   pushNotification: (n: Omit<Notification, 'id' | 'at'>) => void;
 
   // Automation actions
+  setAutomationTemplates: (items: AutomationTemplate[]) => void;
+  setAutomationLogs: (items: AutomationLog[]) => void;
+  setAutomationSettings: (settings: AutomationSettings) => void;
   addAutomationTemplate: (t: AutomationTemplate) => void;
   updateAutomationTemplate: (id: string, updates: Partial<AutomationTemplate>) => void;
   deleteAutomationTemplate: (id: string) => void;
@@ -123,6 +135,9 @@ function meFromUser(u: User): MeContext {
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
+
+const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:4000';
+const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
 const initialUser = seedUsers.find(u => u.id === 'u4')!;
 
@@ -156,6 +171,11 @@ function getInitialState() {
 
 export const useAppStore = create<AppState>((set, get) => ({
   ...getInitialState(),
+
+  setRegions: (regions) => set({ regions }),
+  setTeams: (teams) => set({ teams }),
+  setUsers: (users) => set({ users }),
+  setNotifications: (notifications) => set({ notifications }),
 
   login: (email, password) => {
     const user = get().users.find(u => u.email.toLowerCase() === email.toLowerCase());
@@ -195,6 +215,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       status: 'active',
     };
     set(s => ({ users: [...s.users, user] }));
+    void fetch(apiUrl('/api/users'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(user),
+    }).catch(() => undefined);
   },
 
   updateUserRole: (userId, role) => {
@@ -202,12 +227,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       users: s.users.map(u => (u.id === userId ? { ...u, role } : u)),
       me: s.me.id === userId ? { ...s.me, role } : s.me,
     }));
+    const user = get().users.find(u => u.id === userId);
+    if (user) {
+      void fetch(apiUrl(`/api/users/${userId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      }).catch(() => undefined);
+    }
   },
 
   updateUserStatus: (userId, status) => {
     set(s => ({
       users: s.users.map(u => (u.id === userId ? { ...u, status } : u)),
     }));
+    const user = get().users.find(u => u.id === userId);
+    if (user) {
+      void fetch(apiUrl(`/api/users/${userId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      }).catch(() => undefined);
+    }
     const { me } = get();
     if (me.id === userId && status !== 'active') {
       const fallbackUser = seedUsers.find(u => u.status === 'active' && u.id !== userId) ?? seedUsers[0];
@@ -229,6 +270,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         users: s.users.map(u => (u.id === userId ? { ...u, password: newPassword } : u)),
       };
     });
+    const user = get().users.find(u => u.id === userId);
+    if (user) {
+      void fetch(apiUrl(`/api/users/${userId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      }).catch(() => undefined);
+    }
+  },
+
+  setCustomers: (customers) => {
+    set({ customers });
   },
 
   addCustomer: (customer) => {
@@ -379,6 +432,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  setDeals: (deals) => {
+    set({ deals });
+  },
+
   addDeal: (payload) => {
     const id = 'd' + makeId();
     const deal: Deal = {
@@ -387,10 +444,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...payload,
     };
     set(s => ({ deals: [...s.deals, deal] }));
+    void fetch(apiUrl('/api/deals'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deal),
+    }).catch(() => undefined);
   },
 
   addDealWithId: (deal) => {
     set(s => ({ deals: [...s.deals, deal] }));
+    void fetch(apiUrl('/api/deals'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deal),
+    }).catch(() => undefined);
+  },
+
+  updateDeal: (id, updates) => {
+    set(s => ({
+      deals: s.deals.map(d => (d.id === id ? { ...d, ...updates } : d)),
+    }));
+    const deal = get().deals.find(d => d.id === id);
+    if (deal) {
+      void fetch(apiUrl(`/api/deals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(deal),
+      }).catch(() => undefined);
+    }
+  },
+
+  deleteDeal: (id) => {
+    set(s => ({ deals: s.deals.filter(d => d.id !== id) }));
+    void fetch(apiUrl(`/api/deals/${id}`), { method: 'DELETE' }).catch(() => undefined);
   },
 
   setInventoryItems: (items) => {
@@ -424,6 +510,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  setProposals: (proposals) => {
+    set({ proposals });
+  },
+
   addProposal: (proposal) => {
     set(s => ({ proposals: [proposal, ...s.proposals] }));
     const me = get().me;
@@ -443,6 +533,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         entityId: proposal.id,
       });
     }
+    void fetch(apiUrl('/api/proposals'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(proposal),
+    }).catch(() => undefined);
   },
 
   updateProposal: (id, updates) => {
@@ -452,10 +547,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, ...updates, updatedAt: now } : p
       ),
     }));
+    const proposal = get().proposals.find(p => p.id === id);
+    if (proposal) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposal),
+      }).catch(() => undefined);
+    }
   },
 
   deleteProposal: (id) => {
     set(s => ({ proposals: s.proposals.filter(p => p.id !== id) }));
+    void fetch(apiUrl(`/api/proposals/${id}`), {
+      method: 'DELETE',
+    }).catch(() => undefined);
   },
 
   submitForApproval: (id) => {
@@ -464,6 +570,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, status: 'approval_pending' as const, updatedAt: new Date().toISOString() } : p
       ),
     }));
+    const proposal = get().proposals.find(p => p.id === id);
+    if (proposal) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposal),
+      }).catch(() => undefined);
+    }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'manager@buildesk.com', subject: 'Proposal submitted for approval', entityId: id });
   },
 
@@ -474,6 +588,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, status: 'approved' as const, approvedBy: approverId, approvedAt: now, updatedAt: now } : p
       ),
     }));
+    const proposalPersist = get().proposals.find(p => p.id === id);
+    if (proposalPersist) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalPersist),
+      }).catch(() => undefined);
+    }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal approved', entityId: id });
 
     const proposal = get().proposals.find(p => p.id === id);
@@ -501,6 +623,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, status: 'rejected' as const, rejectionReason: reason, updatedAt: now } : p
       ),
     }));
+    const proposalPersist = get().proposals.find(p => p.id === id);
+    if (proposalPersist) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalPersist),
+      }).catch(() => undefined);
+    }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal rejected', entityId: id });
 
     const proposal = get().proposals.find(p => p.id === id);
@@ -526,6 +656,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, status: 'sent' as const, sentAt: now, updatedAt: now } : p
       ),
     }));
+    const proposalPersist = get().proposals.find(p => p.id === id);
+    if (proposalPersist) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalPersist),
+      }).catch(() => undefined);
+    }
     const proposal = get().proposals.find(p => p.id === id);
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
     const primaryContact = customer?.contacts?.find(c => c.isPrimary) ?? customer?.contacts?.[0];
@@ -541,6 +679,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       validUntil: proposal?.validUntil,
       customerId: customer?.id,
       customerName: customer?.companyName,
+      customerPhone: primaryContact?.phone,
+      customerEmail: primaryContact?.email,
       salesRepId: rep?.id,
       salesRepName: rep?.name,
       salesRepPhone: (rep as { phone?: string } | null)?.phone,
@@ -555,6 +695,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, status: 'deal_created' as const, dealId, updatedAt: new Date().toISOString() } : p
       ),
     }));
+    const proposalPersist = get().proposals.find(p => p.id === id);
+    if (proposalPersist) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalPersist),
+      }).catch(() => undefined);
+    }
     if (proposal?.customerId) {
       const customer = get().customers.find(c => c.id === proposal.customerId);
       if (customer) {
@@ -633,6 +781,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       };
     });
+    const proposalPersist = get().proposals.find(p => p.id === id);
+    if (proposalPersist) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalPersist),
+      }).catch(() => undefined);
+    }
   },
 
   updateProposalFinalValue: (id, value) => {
@@ -641,6 +797,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         p.id === id ? { ...p, finalQuoteValue: value, updatedAt: new Date().toISOString() } : p
       ),
     }));
+    const proposal = get().proposals.find(p => p.id === id);
+    if (proposal) {
+      void fetch(apiUrl(`/api/proposals/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposal),
+      }).catch(() => undefined);
+    }
   },
 
   switchRole: (role) => {
@@ -655,11 +819,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   pushNotification: (n) => {
     const notif: Notification = { ...n, id: makeId(), at: new Date().toISOString() };
     set(s => ({ notifications: [notif, ...s.notifications] }));
+    void fetch(apiUrl('/api/notifications'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(notif),
+    }).catch(() => undefined);
   },
 
   // ─── Automation ──────────────────────────────────────────────────────────
+  setAutomationTemplates: (items) => {
+    set({ automationTemplates: items });
+  },
+
+  setAutomationLogs: (items) => {
+    set({ automationLogs: items });
+  },
+
+  setAutomationSettings: (settings) => {
+    set({ automationSettings: settings });
+  },
+
   addAutomationTemplate: (t) => {
     set(s => ({ automationTemplates: [t, ...s.automationTemplates] }));
+    void fetch(apiUrl('/api/automation/templates'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(t),
+    }).catch(() => undefined);
   },
 
   updateAutomationTemplate: (id, updates) => {
@@ -669,10 +855,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         t.id === id ? { ...t, ...updates, updatedAt: now } : t
       ),
     }));
+    const template = get().automationTemplates.find(t => t.id === id);
+    if (template) {
+      void fetch(apiUrl(`/api/automation/templates/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(template),
+      }).catch(() => undefined);
+    }
   },
 
   deleteAutomationTemplate: (id) => {
     set(s => ({ automationTemplates: s.automationTemplates.filter(t => t.id !== id) }));
+    void fetch(apiUrl(`/api/automation/templates/${id}`), { method: 'DELETE' }).catch(() => undefined);
   },
 
   toggleAutomationTemplate: (id) => {
@@ -682,14 +877,33 @@ export const useAppStore = create<AppState>((set, get) => ({
         t.id === id ? { ...t, isActive: !t.isActive, updatedAt: now } : t
       ),
     }));
+    const template = get().automationTemplates.find(t => t.id === id);
+    if (template) {
+      void fetch(apiUrl(`/api/automation/templates/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(template),
+      }).catch(() => undefined);
+    }
   },
 
   appendAutomationLog: (log) => {
     set(s => ({ automationLogs: [log, ...s.automationLogs] }));
+    void fetch(apiUrl('/api/automation/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(log),
+    }).catch(() => undefined);
   },
 
   updateAutomationSettings: (settings) => {
     set(s => ({ automationSettings: { ...s.automationSettings, ...settings } }));
+    const merged = get().automationSettings;
+    void fetch(apiUrl('/api/automation/settings'), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(merged),
+    }).catch(() => undefined);
   },
 
 }));

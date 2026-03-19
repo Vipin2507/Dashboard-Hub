@@ -139,6 +139,7 @@ interface CustomerFormDialogProps {
   onOpenChange: (open: boolean) => void;
   editingCustomer: Customer | null;
   onSaved: () => void;
+  onPersist?: (customer: Customer, mode: "create" | "update") => Promise<void> | void;
 }
 
 export function CustomerFormDialog({
@@ -146,6 +147,7 @@ export function CustomerFormDialog({
   onOpenChange,
   editingCustomer,
   onSaved,
+  onPersist,
 }: CustomerFormDialogProps) {
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
@@ -243,7 +245,7 @@ export function CustomerFormDialog({
             : (teamsInRegion[0] ? users.find((u) => u.teamId === teamsInRegion[0]?.id)?.id : undefined) ?? "",
       });
     }
-  }, [open, editingCustomer?.id, regions, teamsInRegion, me.role, me.id]);
+  }, [open, editingCustomer?.id]);
 
   useEffect(() => {
     if (!regionId) return;
@@ -259,7 +261,7 @@ export function CustomerFormDialog({
     return `CUST-${String(next).padStart(4, "0")}`;
   };
 
-  const onSubmit = (values: FormValues) => {
+  const onSubmit = async (values: FormValues) => {
     const tags = [
       ...(editingCustomer?.tags ?? []),
       ...values.tags
@@ -284,7 +286,7 @@ export function CustomerFormDialog({
     if (editingCustomer) {
       const primary =
         editingCustomer.contacts.find((c) => c.isPrimary) ?? editingCustomer.contacts[0];
-      updateCustomer(editingCustomer.id, {
+      const updates: Partial<Customer> = {
         companyName: values.companyName,
         industry: values.industry || undefined,
         website: values.website || undefined,
@@ -298,7 +300,8 @@ export function CustomerFormDialog({
         assignedTo: values.assignedTo,
         assignedToName: assignedUser?.name ?? "",
         tags: uniqueTags,
-      });
+      };
+      updateCustomer(editingCustomer.id, updates);
       if (primary) {
         updateContact(editingCustomer.id, primary.id, {
           name: values.contactName,
@@ -307,6 +310,25 @@ export function CustomerFormDialog({
           phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
         });
       }
+      const updatedCustomer: Customer = {
+        ...editingCustomer,
+        ...updates,
+        contacts: primary
+          ? editingCustomer.contacts.map((c) =>
+              c.id === primary.id
+                ? {
+                    ...c,
+                    name: values.contactName,
+                    designation: values.contactDesignation || undefined,
+                    email: values.contactEmail,
+                    phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
+                  }
+                : c
+            )
+          : editingCustomer.contacts,
+        updatedAt: new Date().toISOString(),
+      };
+      await onPersist?.(updatedCustomer, "update");
       toast({ title: "Customer updated", description: `${values.companyName} has been updated.` });
     } else {
       const contactId = "cc-" + makeId();
@@ -352,6 +374,7 @@ export function CustomerFormDialog({
         createdBy: me.id,
       };
       addCustomer(newCustomer);
+      await onPersist?.(newCustomer, "create");
       appendActivityLog(newCustomer.id, {
         id: "cal-" + makeId(),
         action: "Customer created",

@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { db, SQLITE_PATH } from "./db.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -7,123 +8,163 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// In-memory demo data for customers.
-// Mirrors src/lib/seed.ts -> seedCustomers.
-let customers = [
-  {
-    id: "c1",
-    leadId: "L-0001",
-    name: "Sunrise Developers",
-    state: "Maharashtra",
-    gstin: "27ABCDE1234F1Z5",
-    regionId: "r2",
-    city: "Mumbai",
-    email: "contact@sunrise.dev",
-    primaryPhone: "+91 90000 00001",
-    status: "active",
-    createdAt: "2026-03-01T10:00:00Z",
-    salesExecutive: "Amit (Sales Rep)",
-    accountManager: "Ravi (Sales Manager)",
-    deliveryExecutive: "Anurag",
-  },
-  {
-    id: "c2",
-    leadId: "L-0002",
-    name: "Greenfield Realty",
-    state: "Gujarat",
-    gstin: null,
-    regionId: "r2",
-    city: "Ahmedabad",
-    email: "info@greenfieldrealty.in",
-    primaryPhone: "+91 90000 00002",
-    status: "active",
-    createdAt: "2026-03-05T11:30:00Z",
-    salesExecutive: "Sana (Sales Rep)",
-    accountManager: "Ravi (Sales Manager)",
-    deliveryExecutive: "Anurag",
-  },
-  {
-    id: "c3",
-    leadId: "L-0003",
-    name: "NorthStar Builders",
-    state: "Delhi",
-    gstin: "07ABCDE1234F1Z5",
-    regionId: "r1",
-    city: "New Delhi",
-    email: "sales@northstar.dev",
-    primaryPhone: "+91 90000 00003",
-    status: "inactive",
-    createdAt: "2026-02-20T09:15:00Z",
-    salesExecutive: "Amit (Sales Rep)",
-    accountManager: "Ravi (Sales Manager)",
-    deliveryExecutive: "Kiran",
-  },
-];
-
-// In-memory inventory (mirrors src/lib/seed.ts -> seedInventoryItems)
-const seedNow = "2026-03-01T10:00:00Z";
-let inventory = [
-  { id: "inv1", name: "Buildesk CRM Pro", description: "Full CRM suite with contacts, pipeline, and reporting", itemType: "product", sku: "CRM-PRO-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 8000, sellingPrice: 15000, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Flagship product" },
-  { id: "inv2", name: "ERP Integration Service", description: "One-time implementation and integration with existing ERP", itemType: "service", sku: "SVC-ERP-001", hsnSacCode: "998313", category: "ERP Platform", unitOfMeasure: "per hour", costPrice: 1200, sellingPrice: 2500, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv3", name: "Analytics Add-on Annual", description: "Advanced analytics and BI dashboards", itemType: "subscription", sku: "SUB-ANAL-ANN", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per year", costPrice: 24000, sellingPrice: 42000, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv4", name: "Enterprise Bundle", description: "CRM + ERP + Analytics, annual commitment", itemType: "bundle", sku: "BND-ENT-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per year", costPrice: 180000, sellingPrice: 320000, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv5", name: "Support & AMC Monthly", description: "Monthly support and annual maintenance contract", itemType: "subscription", sku: "SUB-AMC-MON", hsnSacCode: "998313", category: "Support & AMC", unitOfMeasure: "per month", costPrice: 3000, sellingPrice: 5500, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv6", name: "Implementation Services Pack", description: "On-site implementation and training", itemType: "service", sku: "SVC-IMPL-001", hsnSacCode: "998313", category: "Implementation Services", unitOfMeasure: "per unit", costPrice: 45000, sellingPrice: 75000, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv7", name: "Storage Add-on (per GB)", description: "Additional cloud storage per GB per month", itemType: "subscription", sku: "SUB-STOR-GB", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per GB", costPrice: 2, sellingPrice: 5, taxRate: 18, isActive: true, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1" },
-  { id: "inv8", name: "Legacy CRM Lite (Discontinued)", description: "Legacy lite version - no new sales", itemType: "product", sku: "CRM-LITE-OLD", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 2000, sellingPrice: 3500, taxRate: 18, isActive: false, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Discontinued" },
-];
-
-let masters = {
-  productCategories: [
-    { id: "mc1", name: "CRM Suite", type: "product_category" },
-    { id: "mc2", name: "ERP Platform", type: "product_category" },
-    { id: "mc3", name: "Analytics Add-on", type: "product_category" },
-  ],
-  subscriptionTypes: [
-    { id: "ms1", name: "Monthly", type: "subscription_type" },
-    { id: "ms2", name: "Annual", type: "subscription_type" },
-  ],
-  proposalFormats: [
-    { id: "mf1", name: "Standard", type: "proposal_format" },
-    { id: "mf2", name: "Enterprise", type: "proposal_format" },
-  ],
-};
-
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-// Health check
+function toInventoryResponse(row) {
+  return { ...row, isActive: !!row.isActive };
+}
+
+function toProposalRow(proposal) {
+  return {
+    id: proposal.id,
+    proposalNumber: proposal.proposalNumber,
+    title: proposal.title,
+    customerId: proposal.customerId,
+    assignedTo: proposal.assignedTo,
+    status: proposal.status,
+    grandTotal: Number(proposal.grandTotal) || 0,
+    finalQuoteValue:
+      proposal.finalQuoteValue == null ? null : Number(proposal.finalQuoteValue),
+    createdAt: proposal.createdAt,
+    updatedAt: proposal.updatedAt,
+    data: JSON.stringify(proposal),
+  };
+}
+
+function toDealResponse(row) {
+  return { ...row, value: Number(row.value) || 0, locked: !!row.locked };
+}
+
+function parseJsonSafe(raw, fallback = null) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
 app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, db: "sqlite", dbPath: SQLITE_PATH });
+});
+
+app.get("/api/regions", (_req, res) => {
+  res.json(db.prepare("SELECT * FROM regions ORDER BY name").all());
+});
+
+app.post("/api/regions", (req, res) => {
+  const { id, name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const region = { id: id || "r" + makeId(), name };
+  db.prepare("INSERT INTO regions (id, name) VALUES (@id, @name)").run(region);
+  res.status(201).json(region);
+});
+
+app.put("/api/regions/:id", (req, res) => {
+  const existing = db.prepare("SELECT * FROM regions WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const updated = { ...existing, ...(req.body || {}), id: req.params.id };
+  db.prepare("UPDATE regions SET name = ? WHERE id = ?").run(updated.name, updated.id);
+  res.json(updated);
+});
+
+app.delete("/api/regions/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM regions WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
 
-// Customers API
+app.get("/api/teams", (_req, res) => {
+  res.json(db.prepare("SELECT * FROM teams ORDER BY name").all());
+});
+
+app.post("/api/teams", (req, res) => {
+  const { id, name, regionId } = req.body || {};
+  if (!name || !regionId) return res.status(400).json({ error: "name and regionId are required" });
+  const team = { id: id || "t" + makeId(), name, regionId };
+  db.prepare("INSERT INTO teams (id, name, regionId) VALUES (@id, @name, @regionId)").run(team);
+  res.status(201).json(team);
+});
+
+app.put("/api/teams/:id", (req, res) => {
+  const existing = db.prepare("SELECT * FROM teams WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const updated = { ...existing, ...(req.body || {}), id: req.params.id };
+  db.prepare("UPDATE teams SET name = ?, regionId = ? WHERE id = ?").run(
+    updated.name,
+    updated.regionId,
+    updated.id,
+  );
+  res.json(updated);
+});
+
+app.delete("/api/teams/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM teams WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.get("/api/users", (_req, res) => {
+  res.json(db.prepare("SELECT * FROM users ORDER BY name").all());
+});
+
+app.post("/api/users", (req, res) => {
+  const { id, name, email, password, role, teamId, regionId, status } = req.body || {};
+  if (!name || !email || !password || !role || !teamId || !regionId) {
+    return res.status(400).json({ error: "name, email, password, role, teamId, regionId are required" });
+  }
+  const user = { id: id || "u" + makeId(), name, email, password, role, teamId, regionId, status: status || "active" };
+  db.prepare(
+    "INSERT INTO users (id, name, email, password, role, teamId, regionId, status) VALUES (@id, @name, @email, @password, @role, @teamId, @regionId, @status)"
+  ).run(user);
+  res.status(201).json(user);
+});
+
+app.put("/api/users/:id", (req, res) => {
+  const existing = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const updated = { ...existing, ...(req.body || {}), id: req.params.id };
+  db.prepare(
+    "UPDATE users SET name=@name, email=@email, password=@password, role=@role, teamId=@teamId, regionId=@regionId, status=@status WHERE id=@id"
+  ).run(updated);
+  res.json(updated);
+});
+
+app.delete("/api/users/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM users WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.get("/api/notifications", (_req, res) => {
+  const rows = db.prepare("SELECT * FROM notifications ORDER BY at DESC").all();
+  res.json(rows);
+});
+
+app.post("/api/notifications", (req, res) => {
+  const { id, type, to, subject, entityId, at } = req.body || {};
+  if (!type || !to || !subject || !entityId || !at) {
+    return res.status(400).json({ error: "type, to, subject, entityId, at are required" });
+  }
+  const notification = { id: id || "n" + makeId(), type, to, subject, entityId, at };
+  db.prepare(
+    'INSERT INTO notifications (id, type, "to", subject, entityId, at) VALUES (@id, @type, @to, @subject, @entityId, @at)'
+  ).run(notification);
+  res.status(201).json(notification);
+});
+
 app.get("/api/customers", (_req, res) => {
-  res.json(customers);
+  const rows = db.prepare("SELECT * FROM customers ORDER BY createdAt DESC").all();
+  res.json(rows);
 });
 
 app.post("/api/customers", (req, res) => {
-  const {
-    name,
-    state,
-    gstin,
-    regionId,
-    leadId,
-    city,
-    email,
-    primaryPhone,
-    status,
-    salesExecutive,
-    accountManager,
-    deliveryExecutive,
-  } = req.body || {};
-  if (!name || !regionId) {
-    return res.status(400).json({ error: "name and regionId are required" });
-  }
-  const id = "c" + makeId();
+  const { name, state, gstin, regionId, leadId, city, email, primaryPhone, status, salesExecutive, accountManager, deliveryExecutive } = req.body || {};
+  if (!name || !regionId) return res.status(400).json({ error: "name and regionId are required" });
+
   const customer = {
-    id,
+    id: req.body?.id || "c" + makeId(),
     leadId: leadId || `L-${makeId()}`,
     name,
     state: state || "Unknown",
@@ -138,199 +179,505 @@ app.post("/api/customers", (req, res) => {
     accountManager: accountManager || null,
     deliveryExecutive: deliveryExecutive || null,
   };
-  customers.push(customer);
+
+  db.prepare(`
+    INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive)
+    VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive)
+  `).run(customer);
+
   res.status(201).json(customer);
 });
 
 app.post("/api/customers/bulk", (req, res) => {
   const items = Array.isArray(req.body) ? req.body : [];
-  const created = items
-    .filter((it) => it && it.name && it.regionId)
-    .map((it) => ({
-      id: "c" + makeId(),
-      leadId: it.leadId || `L-${makeId()}`,
-      name: it.name,
-      state: it.state || "Unknown",
-      gstin: it.gstin ?? null,
-      regionId: it.regionId,
-      city: it.city || null,
-      email: it.email || null,
-      primaryPhone: it.primaryPhone || null,
-      status: it.status || "active",
-      createdAt: new Date().toISOString(),
-      salesExecutive: it.salesExecutive || null,
-      accountManager: it.accountManager || null,
-      deliveryExecutive: it.deliveryExecutive || null,
-    }));
+  const insertCustomer = db.prepare(`
+    INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive)
+    VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive)
+  `);
 
-  customers = customers.concat(created);
+  const created = items.filter((it) => it && it.name && it.regionId).map((it) => ({
+    id: it.id || "c" + makeId(),
+    leadId: it.leadId || `L-${makeId()}`,
+    name: it.name,
+    state: it.state || "Unknown",
+    gstin: it.gstin ?? null,
+    regionId: it.regionId,
+    city: it.city || null,
+    email: it.email || null,
+    primaryPhone: it.primaryPhone || null,
+    status: it.status || "active",
+    createdAt: new Date().toISOString(),
+    salesExecutive: it.salesExecutive || null,
+    accountManager: it.accountManager || null,
+    deliveryExecutive: it.deliveryExecutive || null,
+  }));
+
+  db.transaction((rows) => rows.forEach((r) => insertCustomer.run(r)))(created);
   res.status(201).json(created);
 });
 
-// Master data API
+app.get("/api/proposals", (_req, res) => {
+  const rows = db
+    .prepare("SELECT data FROM proposals ORDER BY createdAt DESC")
+    .all();
+  const items = rows
+    .map((r) => {
+      try {
+        return JSON.parse(r.data);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+  res.json(items);
+});
+
+app.post("/api/proposals", (req, res) => {
+  const proposal = req.body || {};
+  if (!proposal.id || !proposal.proposalNumber || !proposal.title || !proposal.customerId) {
+    return res
+      .status(400)
+      .json({ error: "id, proposalNumber, title and customerId are required" });
+  }
+  const row = toProposalRow(proposal);
+  db.prepare(`
+    INSERT INTO proposals (id, proposalNumber, title, customerId, assignedTo, status, grandTotal, finalQuoteValue, createdAt, updatedAt, data)
+    VALUES (@id, @proposalNumber, @title, @customerId, @assignedTo, @status, @grandTotal, @finalQuoteValue, @createdAt, @updatedAt, @data)
+  `).run(row);
+  res.status(201).json(proposal);
+});
+
+app.put("/api/proposals/:id", (req, res) => {
+  const existing = db
+    .prepare("SELECT id FROM proposals WHERE id = ?")
+    .get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const proposal = req.body || {};
+  if (!proposal.id) proposal.id = req.params.id;
+  const row = toProposalRow(proposal);
+  db.prepare(`
+    UPDATE proposals SET
+      proposalNumber=@proposalNumber, title=@title, customerId=@customerId, assignedTo=@assignedTo,
+      status=@status, grandTotal=@grandTotal, finalQuoteValue=@finalQuoteValue, createdAt=@createdAt,
+      updatedAt=@updatedAt, data=@data
+    WHERE id=@id
+  `).run(row);
+  res.json(proposal);
+});
+
+app.delete("/api/proposals/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM proposals WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.get("/api/deals", (_req, res) => {
+  const rows = db.prepare("SELECT * FROM deals ORDER BY id DESC").all().map(toDealResponse);
+  res.json(rows);
+});
+
+app.post("/api/deals", (req, res) => {
+  const {
+    id,
+    name,
+    customerId,
+    ownerUserId,
+    teamId,
+    regionId,
+    stage,
+    value,
+    locked,
+    proposalId,
+  } = req.body || {};
+  if (!name || !customerId || !ownerUserId || !teamId || !regionId || !stage) {
+    return res
+      .status(400)
+      .json({ error: "name, customerId, ownerUserId, teamId, regionId and stage are required" });
+  }
+  const deal = {
+    id: id || "d" + makeId(),
+    name,
+    customerId,
+    ownerUserId,
+    teamId,
+    regionId,
+    stage,
+    value: Number(value) || 0,
+    locked: locked ? 1 : 0,
+    proposalId: proposalId || null,
+  };
+  db.prepare(`
+    INSERT INTO deals (id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId)
+    VALUES (@id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId)
+  `).run(deal);
+  res.status(201).json(toDealResponse(deal));
+});
+
+app.put("/api/deals/:id", (req, res) => {
+  const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const { name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId } =
+    req.body || {};
+  const deal = {
+    ...existing,
+    ...(name !== undefined && { name }),
+    ...(customerId !== undefined && { customerId }),
+    ...(ownerUserId !== undefined && { ownerUserId }),
+    ...(teamId !== undefined && { teamId }),
+    ...(regionId !== undefined && { regionId }),
+    ...(stage !== undefined && { stage }),
+    ...(value !== undefined && { value: Number(value) || 0 }),
+    ...(locked !== undefined && { locked: locked ? 1 : 0 }),
+    ...(proposalId !== undefined && { proposalId: proposalId || null }),
+  };
+  db.prepare(`
+    UPDATE deals SET
+      name=@name, customerId=@customerId, ownerUserId=@ownerUserId, teamId=@teamId, regionId=@regionId,
+      stage=@stage, value=@value, locked=@locked, proposalId=@proposalId
+    WHERE id=@id
+  `).run(deal);
+  res.json(toDealResponse(deal));
+});
+
+app.delete("/api/deals/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM deals WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.get("/api/automation/templates", (_req, res) => {
+  const rows = db
+    .prepare("SELECT data FROM automation_templates ORDER BY updatedAt DESC")
+    .all();
+  const templates = rows.map((r) => parseJsonSafe(r.data)).filter(Boolean);
+  res.json(templates);
+});
+
+app.post("/api/automation/templates", (req, res) => {
+  const template = req.body || {};
+  if (!template.id || !template.trigger || !template.channel) {
+    return res.status(400).json({ error: "id, trigger and channel are required" });
+  }
+  db.prepare(
+    `INSERT INTO automation_templates (id, trigger, channel, isActive, updatedAt, data)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    template.id,
+    template.trigger,
+    template.channel,
+    template.isActive ? 1 : 0,
+    template.updatedAt || new Date().toISOString(),
+    JSON.stringify(template),
+  );
+  res.status(201).json(template);
+});
+
+app.put("/api/automation/templates/:id", (req, res) => {
+  const existing = db
+    .prepare("SELECT id FROM automation_templates WHERE id = ?")
+    .get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const template = { ...(req.body || {}), id: req.params.id };
+  db.prepare(
+    `UPDATE automation_templates
+     SET trigger=?, channel=?, isActive=?, updatedAt=?, data=?
+     WHERE id=?`
+  ).run(
+    template.trigger,
+    template.channel,
+    template.isActive ? 1 : 0,
+    template.updatedAt || new Date().toISOString(),
+    JSON.stringify(template),
+    req.params.id,
+  );
+  res.json(template);
+});
+
+app.delete("/api/automation/templates/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM automation_templates WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.get("/api/automation/logs", (_req, res) => {
+  const rows = db
+    .prepare("SELECT data FROM automation_logs ORDER BY sentAt DESC LIMIT 1000")
+    .all();
+  const logs = rows.map((r) => parseJsonSafe(r.data)).filter(Boolean);
+  res.json(logs);
+});
+
+app.post("/api/automation/logs", (req, res) => {
+  const log = req.body || {};
+  if (!log.id || !log.sentAt || !log.status) {
+    return res.status(400).json({ error: "id, sentAt and status are required" });
+  }
+  db.prepare("INSERT INTO automation_logs (id, sentAt, status, data) VALUES (?, ?, ?, ?)").run(
+    log.id,
+    log.sentAt,
+    log.status,
+    JSON.stringify(log),
+  );
+  res.status(201).json(log);
+});
+
+app.put("/api/automation/logs/:id", (req, res) => {
+  const existing = db.prepare("SELECT id FROM automation_logs WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const log = { ...(req.body || {}), id: req.params.id };
+  db.prepare("UPDATE automation_logs SET sentAt=?, status=?, data=? WHERE id=?").run(
+    log.sentAt || new Date().toISOString(),
+    log.status || "pending",
+    JSON.stringify(log),
+    req.params.id,
+  );
+  res.json(log);
+});
+
+app.get("/api/automation/settings", (_req, res) => {
+  const row = db.prepare("SELECT data FROM automation_settings WHERE id = 1").get();
+  const settings = row ? parseJsonSafe(row.data, {}) : {};
+  res.json(settings);
+});
+
+app.put("/api/automation/settings", (req, res) => {
+  const row = db.prepare("SELECT data FROM automation_settings WHERE id = 1").get();
+  const existing = row ? parseJsonSafe(row.data, {}) : {};
+  const merged = { ...existing, ...(req.body || {}) };
+  db.prepare(
+    `INSERT INTO automation_settings (id, data, updatedAt) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET data=excluded.data, updatedAt=excluded.updatedAt`
+  ).run(JSON.stringify(merged), new Date().toISOString());
+  res.json(merged);
+});
+
+app.put("/api/customers/:id", (req, res) => {
+  const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+
+  const {
+    name,
+    state,
+    gstin,
+    regionId,
+    leadId,
+    city,
+    email,
+    primaryPhone,
+    status,
+    salesExecutive,
+    accountManager,
+    deliveryExecutive,
+  } = req.body || {};
+
+  const updated = {
+    ...existing,
+    ...(name !== undefined && { name }),
+    ...(state !== undefined && { state }),
+    ...(gstin !== undefined && { gstin }),
+    ...(regionId !== undefined && { regionId }),
+    ...(leadId !== undefined && { leadId }),
+    ...(city !== undefined && { city }),
+    ...(email !== undefined && { email }),
+    ...(primaryPhone !== undefined && { primaryPhone }),
+    ...(status !== undefined && { status }),
+    ...(salesExecutive !== undefined && { salesExecutive }),
+    ...(accountManager !== undefined && { accountManager }),
+    ...(deliveryExecutive !== undefined && { deliveryExecutive }),
+  };
+
+  db.prepare(`
+    UPDATE customers SET
+      leadId=@leadId, name=@name, state=@state, gstin=@gstin, regionId=@regionId, city=@city,
+      email=@email, primaryPhone=@primaryPhone, status=@status, salesExecutive=@salesExecutive,
+      accountManager=@accountManager, deliveryExecutive=@deliveryExecutive
+    WHERE id=@id
+  `).run(updated);
+
+  res.json(updated);
+});
+
+app.delete("/api/customers/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM customers WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
 app.get("/api/masters/product-categories", (_req, res) => {
-  res.json(masters.productCategories);
+  res.json(db.prepare("SELECT * FROM masters WHERE type = ? ORDER BY name").all("product_category"));
 });
 
 app.post("/api/masters/product-categories", (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name is required" });
   const item = { id: "mc" + makeId(), name, type: "product_category" };
-  masters.productCategories.push(item);
+  db.prepare("INSERT INTO masters (id, name, type) VALUES (@id, @name, @type)").run(item);
   res.status(201).json(item);
 });
 
 app.delete("/api/masters/product-categories/:id", (req, res) => {
-  const { id } = req.params;
-  masters.productCategories = masters.productCategories.filter((m) => m.id !== id);
+  const info = db.prepare("DELETE FROM masters WHERE id = ? AND type = ?").run(req.params.id, "product_category");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
 
+app.put("/api/masters/product-categories/:id", (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const info = db
+    .prepare("UPDATE masters SET name = ? WHERE id = ? AND type = ?")
+    .run(name, req.params.id, "product_category");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ id: req.params.id, name, type: "product_category" });
+});
+
 app.get("/api/masters/subscription-types", (_req, res) => {
-  res.json(masters.subscriptionTypes);
+  res.json(db.prepare("SELECT * FROM masters WHERE type = ? ORDER BY name").all("subscription_type"));
 });
 
 app.post("/api/masters/subscription-types", (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name is required" });
   const item = { id: "ms" + makeId(), name, type: "subscription_type" };
-  masters.subscriptionTypes.push(item);
+  db.prepare("INSERT INTO masters (id, name, type) VALUES (@id, @name, @type)").run(item);
   res.status(201).json(item);
 });
 
 app.delete("/api/masters/subscription-types/:id", (req, res) => {
-  const { id } = req.params;
-  masters.subscriptionTypes = masters.subscriptionTypes.filter((m) => m.id !== id);
+  const info = db.prepare("DELETE FROM masters WHERE id = ? AND type = ?").run(req.params.id, "subscription_type");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
 
+app.put("/api/masters/subscription-types/:id", (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const info = db
+    .prepare("UPDATE masters SET name = ? WHERE id = ? AND type = ?")
+    .run(name, req.params.id, "subscription_type");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ id: req.params.id, name, type: "subscription_type" });
+});
+
 app.get("/api/masters/proposal-formats", (_req, res) => {
-  res.json(masters.proposalFormats);
+  res.json(db.prepare("SELECT * FROM masters WHERE type = ? ORDER BY name").all("proposal_format"));
 });
 
 app.post("/api/masters/proposal-formats", (req, res) => {
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name is required" });
   const item = { id: "mf" + makeId(), name, type: "proposal_format" };
-  masters.proposalFormats.push(item);
+  db.prepare("INSERT INTO masters (id, name, type) VALUES (@id, @name, @type)").run(item);
   res.status(201).json(item);
 });
 
 app.delete("/api/masters/proposal-formats/:id", (req, res) => {
-  const { id } = req.params;
-  masters.proposalFormats = masters.proposalFormats.filter((m) => m.id !== id);
+  const info = db.prepare("DELETE FROM masters WHERE id = ? AND type = ?").run(req.params.id, "proposal_format");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
 
-// Inventory CRUD API
+app.put("/api/masters/proposal-formats/:id", (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name is required" });
+  const info = db
+    .prepare("UPDATE masters SET name = ? WHERE id = ? AND type = ?")
+    .run(name, req.params.id, "proposal_format");
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ id: req.params.id, name, type: "proposal_format" });
+});
+
 app.get("/api/inventory", (_req, res) => {
-  res.json(inventory);
+  const rows = db.prepare("SELECT * FROM inventory ORDER BY createdAt DESC").all().map(toInventoryResponse);
+  res.json(rows);
 });
 
 app.get("/api/inventory/:id", (req, res) => {
-  const item = inventory.find((i) => i.id === req.params.id);
-  if (!item) return res.status(404).json({ error: "Not found" });
-  res.json(item);
+  const row = db.prepare("SELECT * FROM inventory WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  res.json(toInventoryResponse(row));
 });
 
 app.post("/api/inventory", (req, res) => {
-  const {
-    name,
-    description,
-    itemType,
-    sku,
-    hsnSacCode,
-    category,
-    unitOfMeasure,
-    costPrice,
-    sellingPrice,
-    taxRate,
-    isActive,
-    createdBy,
-    notes,
-  } = req.body || {};
-  if (!name || !sku || !category || unitOfMeasure == null) {
-    return res.status(400).json({ error: "name, sku, category, and unitOfMeasure are required" });
-  }
-  if (inventory.some((i) => i.sku.toUpperCase() === String(sku).trim().toUpperCase())) {
-    return res.status(400).json({ error: "SKU already exists" });
-  }
-  const id = "inv" + makeId();
-  const now = new Date().toISOString();
+  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdBy, notes } = req.body || {};
+  if (!name || !sku || !category || unitOfMeasure == null) return res.status(400).json({ error: "name, sku, category, and unitOfMeasure are required" });
+  if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(String(sku).trim())) return res.status(400).json({ error: "SKU already exists" });
+
   const item = {
-    id,
+    id: "inv" + makeId(),
     name,
-    description: description || undefined,
+    description: description || null,
     itemType: itemType || "product",
     sku: String(sku).trim(),
-    hsnSacCode: hsnSacCode || undefined,
+    hsnSacCode: hsnSacCode || null,
     category,
     unitOfMeasure,
-    costPrice: Number(costPrice) ?? 0,
-    sellingPrice: Number(sellingPrice) ?? 0,
-    taxRate: Number(taxRate) ?? 18,
-    isActive: isActive !== false,
-    createdAt: now,
-    updatedAt: now,
+    costPrice: Number(costPrice) || 0,
+    sellingPrice: Number(sellingPrice) || 0,
+    taxRate: Number(taxRate) || 18,
+    isActive: isActive === false ? 0 : 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     createdBy: createdBy || "u1",
-    notes: notes || undefined,
+    notes: notes || null,
   };
-  inventory.push(item);
-  res.status(201).json(item);
+
+  db.prepare(`
+    INSERT INTO inventory (id, name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdAt, updatedAt, createdBy, notes)
+    VALUES (@id, @name, @description, @itemType, @sku, @hsnSacCode, @category, @unitOfMeasure, @costPrice, @sellingPrice, @taxRate, @isActive, @createdAt, @updatedAt, @createdBy, @notes)
+  `).run(item);
+
+  res.status(201).json(toInventoryResponse(item));
 });
 
 app.put("/api/inventory/:id", (req, res) => {
-  const idx = inventory.findIndex((i) => i.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
-  const existing = inventory[idx];
-  const {
-    name,
-    description,
-    itemType,
-    sku,
-    hsnSacCode,
-    category,
-    unitOfMeasure,
-    costPrice,
-    sellingPrice,
-    taxRate,
-    isActive,
-    notes,
-  } = req.body || {};
-  if (sku !== undefined && sku !== existing.sku && inventory.some((i) => i.sku.toUpperCase() === String(sku).trim().toUpperCase()))) {
-    return res.status(400).json({ error: "SKU already exists" });
+  const existing = db.prepare("SELECT * FROM inventory WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+
+  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, notes } = req.body || {};
+  if (sku !== undefined && String(sku).trim().toUpperCase() !== String(existing.sku).trim().toUpperCase()) {
+    if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku)=UPPER(?) AND id <> ?").get(String(sku).trim(), req.params.id)) {
+      return res.status(400).json({ error: "SKU already exists" });
+    }
   }
-  const now = new Date().toISOString();
+
   const item = {
     ...existing,
     ...(name !== undefined && { name }),
     ...(description !== undefined && { description }),
     ...(itemType !== undefined && { itemType }),
     ...(sku !== undefined && { sku: String(sku).trim() }),
-    ...(hsnSacCode !== undefined && { hsnSacCode: hsnSacCode || undefined }),
+    ...(hsnSacCode !== undefined && { hsnSacCode: hsnSacCode || null }),
     ...(category !== undefined && { category }),
     ...(unitOfMeasure !== undefined && { unitOfMeasure }),
     ...(costPrice !== undefined && { costPrice: Number(costPrice) }),
     ...(sellingPrice !== undefined && { sellingPrice: Number(sellingPrice) }),
     ...(taxRate !== undefined && { taxRate: Number(taxRate) }),
-    ...(isActive !== undefined && { isActive: !!isActive }),
-    ...(notes !== undefined && { notes: notes || undefined }),
-    updatedAt: now,
+    ...(isActive !== undefined && { isActive: isActive ? 1 : 0 }),
+    ...(notes !== undefined && { notes: notes || null }),
+    updatedAt: new Date().toISOString(),
   };
-  inventory[idx] = item;
-  res.json(item);
+
+  db.prepare(`
+    UPDATE inventory SET
+      name=@name, description=@description, itemType=@itemType, sku=@sku, hsnSacCode=@hsnSacCode, category=@category,
+      unitOfMeasure=@unitOfMeasure, costPrice=@costPrice, sellingPrice=@sellingPrice, taxRate=@taxRate, isActive=@isActive,
+      updatedAt=@updatedAt, notes=@notes
+    WHERE id=@id
+  `).run(item);
+
+  res.json(toInventoryResponse(item));
 });
 
 app.delete("/api/inventory/:id", (req, res) => {
-  const idx = inventory.findIndex((i) => i.id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Not found" });
-  inventory = inventory.filter((i) => i.id !== req.params.id);
+  const info = db.prepare("DELETE FROM inventory WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
 
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`API server listening on http://localhost:${PORT}`);
+  // eslint-disable-next-line no-console
+  console.log(`SQLite DB path: ${SQLITE_PATH}`);
 });
-
-

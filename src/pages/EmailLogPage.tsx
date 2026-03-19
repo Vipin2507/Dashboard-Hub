@@ -1,6 +1,9 @@
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
+import { useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { getScope } from '@/lib/rbac';
+import { apiUrl } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -8,8 +11,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 export default function EmailLogPage() {
   const me = useAppStore(s => s.me);
   const notifications = useAppStore(s => s.notifications);
+  const setNotifications = useAppStore(s => s.setNotifications);
   const scope = getScope(me.role, 'email_log');
   const visible = scope === 'NONE' ? [] : notifications;
+
+  const notificationsQuery = useQuery({
+    queryKey: ['notifications'],
+    queryFn: async () => {
+      const res = await fetch(apiUrl('/api/notifications'));
+      if (!res.ok) throw new Error('Failed to load notifications');
+      return res.json() as Promise<import('@/types').Notification[]>;
+    },
+  });
+
+  useEffect(() => {
+    if (!notificationsQuery.data) return;
+    setNotifications(notificationsQuery.data);
+  }, [notificationsQuery.data, setNotifications]);
 
   return (
     <>

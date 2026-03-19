@@ -121,6 +121,43 @@ Terminal 2 — Frontend (optional: point to API):
 npm run dev
 ```
 
+### 3. Run API with SQLite in Docker
+
+This starts the Express API with SQLite persistence in a bind-mounted DB file.
+
+```bash
+docker compose up --build -d api
+```
+
+API URL: **http://localhost:4000**  
+DB file on host: **`./data/app.db`**
+
+To view logs:
+
+```bash
+docker compose logs -f api
+```
+
+To stop:
+
+```bash
+docker compose down
+```
+
+To reset database (destructive):
+
+```bash
+rm -f data/app.db
+docker compose up --build -d api
+```
+
+PowerShell alternative:
+
+```powershell
+Remove-Item .\data\app.db -Force -ErrorAction SilentlyContinue
+docker compose up --build -d api
+```
+
 ---
 
 ## Available Scripts
@@ -132,6 +169,9 @@ npm run dev
 | `npm run build:dev` | Build in development mode |
 | `npm run preview` | Serve the production build locally |
 | `npm run server` | Start Express API server (port 4000) |
+| `docker compose up --build -d api` | Start API in Docker with SQLite bind mount |
+| `docker compose logs -f api` | Follow API container logs |
+| `docker compose down` | Stop API container |
 | `npm run lint` | Run ESLint |
 | `npm run test` | Run Vitest once |
 | `npm run test:watch` | Run Vitest in watch mode |

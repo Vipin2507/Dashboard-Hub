@@ -1254,6 +1254,9 @@ export default function CustomerProfile() {
             await new Promise((r) => setTimeout(r, 100));
             await generateProposalPdf(detailProposal);
             toast({ title: "PDF Downloaded", description: `Proposal-${detailProposal.proposalNumber}.pdf` });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to generate PDF";
+            toast({ title: "PDF generation failed", description: message, variant: "destructive" });
           } finally {
             setPdfLoading(false);
           }

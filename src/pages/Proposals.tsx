@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
@@ -56,6 +57,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { apiUrl } from "@/lib/api";
 
 const PAGE_SIZE = 10;
 const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
@@ -87,6 +89,7 @@ export default function Proposals() {
   const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const proposals = useAppStore((s) => s.proposals);
+  const setProposals = useAppStore((s) => s.setProposals);
   const users = useAppStore((s) => s.users);
   const updateProposal = useAppStore((s) => s.updateProposal);
 
@@ -101,6 +104,11 @@ export default function Proposals() {
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [page, setPage] = useState(1);
   const statusFromUrl = searchParams.get("status");
+  const ownerFromUrl = searchParams.get("owner");
+  const teamFromUrl = searchParams.get("team");
+  const regionFromUrl = searchParams.get("region");
+  const fromFromUrl = searchParams.get("from");
+  const toFromUrl = searchParams.get("to");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -110,6 +118,23 @@ export default function Proposals() {
   const [createDealId, setCreateDealId] = useState<string | null>(null);
   const [deleteProposal, setDeleteProposal] = useState<Proposal | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
+  const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
+
+  const proposalsQuery = useQuery({
+    queryKey: ["proposals-sync"],
+    queryFn: async () => {
+      const res = await fetch(apiUrl("/api/proposals"));
+      if (!res.ok) throw new Error("Failed to load proposals");
+      return (await res.json()) as Proposal[];
+    },
+  });
+
+  useEffect(() => {
+    if (!proposalsQuery.data) return;
+    if (proposalsQuery.data.length === 0) return;
+    setProposals(proposalsQuery.data);
+  }, [proposalsQuery.data]);
 
   const handleDownloadPdf = async (proposalObj: Proposal) => {
     setPdfLoading(true);
@@ -118,6 +143,9 @@ export default function Proposals() {
       await new Promise((r) => setTimeout(r, 100));
       await generateProposalPdf(proposalObj);
       toast({ title: "PDF Downloaded", description: `Proposal-${proposalObj.proposalNumber}.pdf` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate PDF";
+      toast({ title: "PDF generation failed", description: message, variant: "destructive" });
     } finally {
       setPdfLoading(false);
     }
@@ -154,6 +182,13 @@ export default function Proposals() {
       setStatusFilter(statusFromUrl as ProposalStatus | "all");
     }
   }, [statusFromUrl]);
+  useEffect(() => {
+    if (ownerFromUrl) setAssignedToFilter(ownerFromUrl);
+    if (teamFromUrl) setTeamQueryFilter(teamFromUrl);
+    if (regionFromUrl) setRegionQueryFilter(regionFromUrl);
+    if (fromFromUrl) setDateFrom(fromFromUrl);
+    if (toFromUrl) setDateTo(toFromUrl);
+  }, [ownerFromUrl, teamFromUrl, regionFromUrl, fromFromUrl, toFromUrl]);
 
   const filtered = useMemo(() => {
     let list = visible;
@@ -170,11 +205,13 @@ export default function Proposals() {
     if (dateFrom) list = list.filter((p) => p.createdAt >= dateFrom + "T00:00:00");
     if (dateTo) list = list.filter((p) => p.createdAt <= dateTo + "T23:59:59");
     if (assignedToFilter !== "all") list = list.filter((p) => p.assignedTo === assignedToFilter);
+    if (teamQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.teamId === teamQueryFilter);
+    if (regionQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.regionId === regionQueryFilter);
     if (sortBy === "date") list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     else if (sortBy === "value") list = [...list].sort((a, b) => (b.finalQuoteValue ?? b.grandTotal) - (a.finalQuoteValue ?? a.grandTotal));
     else if (sortBy === "customer") list = [...list].sort((a, b) => a.customerName.localeCompare(b.customerName));
     return list;
-  }, [visible, search, statusFilter, dateFrom, dateTo, assignedToFilter, sortBy]);
+  }, [visible, search, statusFilter, dateFrom, dateTo, assignedToFilter, teamQueryFilter, regionQueryFilter, sortBy, users]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -233,6 +270,9 @@ export default function Proposals() {
         subtitle={`${visible.length} proposals`}
       />
       <div className="p-6 space-y-4">
+        {proposalsQuery.isLoading && (
+          <div className="text-sm text-muted-foreground">Loading proposals...</div>
+        )}
         {/* Filters */}
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">

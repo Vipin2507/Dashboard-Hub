@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
+import { apiUrl } from '@/lib/api';
 
 export default function CustomersPage() {
   const me = useAppStore(s => s.me);
@@ -18,12 +19,10 @@ export default function CustomersPage() {
   const users = useAppStore(s => s.users);
 
   const queryClient = useQueryClient();
-  const apiBase = (import.meta as any).env.VITE_API_BASE_URL ?? 'http://localhost:4000';
-
   const customersQuery = useQuery({
     queryKey: ['customers'],
     queryFn: async () => {
-      const res = await fetch(`${apiBase}/api/customers`);
+      const res = await fetch(apiUrl('/api/customers'));
       if (!res.ok) throw new Error('Failed to load customers');
       return res.json() as Promise<import('@/types').Customer[]>;
     },
@@ -43,7 +42,7 @@ export default function CustomersPage() {
       accountManager?: string;
       deliveryExecutive?: string;
     }) => {
-      const res = await fetch(`${apiBase}/api/customers`, {
+      const res = await fetch(apiUrl('/api/customers'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -74,7 +73,7 @@ export default function CustomersPage() {
       accountManager?: string;
       deliveryExecutive?: string;
     }[]) => {
-      const res = await fetch(`${apiBase}/api/customers/bulk`, {
+      const res = await fetch(apiUrl('/api/customers/bulk'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(items),

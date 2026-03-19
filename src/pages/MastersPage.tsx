@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Topbar } from '@/components/Topbar';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,10 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/components/ui/use-toast';
+import { apiUrl } from '@/lib/api';
 
 type MasterItem = import('@/types').MasterItem;
-
-const apiBase = (import.meta as any).env.VITE_API_BASE_URL ?? 'http://localhost:4000';
 
 function useMaster(endpoint: string) {
   const queryClient = useQueryClient();
@@ -17,7 +17,7 @@ function useMaster(endpoint: string) {
   const query = useQuery<MasterItem[]>({
     queryKey: ['masters', endpoint],
     queryFn: async () => {
-      const res = await fetch(`${apiBase}${endpoint}`);
+      const res = await fetch(apiUrl(endpoint));
       if (!res.ok) throw new Error('Failed to load master data');
       return res.json();
     },
@@ -25,7 +25,7 @@ function useMaster(endpoint: string) {
 
   const addMutation = useMutation({
     mutationFn: async (name: string) => {
-      const res = await fetch(`${apiBase}${endpoint}`, {
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -40,7 +40,7 @@ function useMaster(endpoint: string) {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${apiBase}${endpoint}/${id}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`${endpoint}/${id}`), { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete item');
       return res.json();
     },
@@ -49,7 +49,22 @@ function useMaster(endpoint: string) {
     },
   });
 
-  return { query, addMutation, deleteMutation };
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const res = await fetch(apiUrl(`${endpoint}/${id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error('Failed to update item');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['masters', endpoint] });
+    },
+  });
+
+  return { query, addMutation, deleteMutation, updateMutation };
 }
 
 export default function MastersPage() {
@@ -95,8 +110,10 @@ function MasterSection({
   placeholder: string;
   master: ReturnType<typeof useMaster>;
 }) {
-  const [name, setName] = React.useState('');
-  const { query, addMutation, deleteMutation } = master;
+  const [name, setName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const { query, addMutation, deleteMutation, updateMutation } = master;
 
   const items = query.data ?? [];
 
@@ -122,6 +139,28 @@ function MasterSection({
         toast({ title: 'Error', description: `Unable to delete item.`, variant: 'destructive' as any });
       },
     });
+  };
+
+  const handleEdit = (item: MasterItem) => {
+    setEditingId(item.id);
+    setEditingName(item.name);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingId || !editingName.trim()) return;
+    updateMutation.mutate(
+      { id: editingId, name: editingName.trim() },
+      {
+        onSuccess: () => {
+          toast({ title: `${title} updated`, description: `Item has been updated.` });
+          setEditingId(null);
+          setEditingName('');
+        },
+        onError: () => {
+          toast({ title: 'Error', description: `Unable to update item.`, variant: 'destructive' as any });
+        },
+      },
+    );
   };
 
   return (
@@ -156,7 +195,7 @@ function MasterSection({
           <TableHeader>
             <TableRow>
               <TableHead className="text-xs">Name</TableHead>
-              <TableHead className="text-xs w-[80px]">Actions</TableHead>
+              <TableHead className="text-xs w-[180px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -169,17 +208,62 @@ function MasterSection({
             )}
             {!query.isLoading && items.map(item => (
               <TableRow key={item.id}>
-                <TableCell className="text-sm">{item.name}</TableCell>
+                <TableCell className="text-sm">
+                  {editingId === item.id ? (
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  ) : (
+                    item.name
+                  )}
+                </TableCell>
                 <TableCell>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[11px]"
-                    onClick={() => handleDelete(item.id)}
-                    disabled={deleteMutation.isLoading}
-                  >
-                    Delete
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    {editingId === item.id ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[11px]"
+                          onClick={handleSaveEdit}
+                          disabled={updateMutation.isLoading}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[11px]"
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditingName('');
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px]"
+                        onClick={() => handleEdit(item)}
+                      >
+                        Edit
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[11px]"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={deleteMutation.isLoading}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

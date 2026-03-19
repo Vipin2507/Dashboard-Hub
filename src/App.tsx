@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -19,11 +20,47 @@ import Automation from "@/pages/Automation";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import NotFound from "./pages/NotFound.tsx";
+import { useAppStore } from "@/store/useAppStore";
+import { apiUrl } from "@/lib/api";
 
 const queryClient = new QueryClient();
 
+function DataBootstrapper() {
+  const setRegions = useAppStore((s) => s.setRegions);
+  const setTeams = useAppStore((s) => s.setTeams);
+  const setUsers = useAppStore((s) => s.setUsers);
+  const setNotifications = useAppStore((s) => s.setNotifications);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [regionsRes, teamsRes, usersRes, notificationsRes] = await Promise.all([
+          fetch(apiUrl("/api/regions")),
+          fetch(apiUrl("/api/teams")),
+          fetch(apiUrl("/api/users")),
+          fetch(apiUrl("/api/notifications")),
+        ]);
+        if (!mounted) return;
+        if (regionsRes.ok) setRegions(await regionsRes.json());
+        if (teamsRes.ok) setTeams(await teamsRes.json());
+        if (usersRes.ok) setUsers(await usersRes.json());
+        if (notificationsRes.ok) setNotifications(await notificationsRes.json());
+      } catch {
+        // Keep local seeded data if backend isn't reachable.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [setRegions, setTeams, setUsers, setNotifications]);
+
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <DataBootstrapper />
     <TooltipProvider>
       <Toaster />
       <Sonner />

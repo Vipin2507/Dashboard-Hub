@@ -1,12 +1,15 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
 import { getScope, visibleWithScope, formatINR } from '@/lib/rbac';
-import { checkAndTriggerPaymentDue } from '@/lib/automationService';
+import { runAutomationRules } from '@/lib/automationService';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   DollarSign,
   Users,
@@ -39,10 +42,23 @@ const BUILDESK_BLUE = '#0072BC';
 
 export default function DashboardPage() {
   const me = useAppStore((s) => s.me);
+  const users = useAppStore((s) => s.users);
+  const teams = useAppStore((s) => s.teams);
+  const regions = useAppStore((s) => s.regions);
   const customers = useAppStore((s) => s.customers);
   const proposals = useAppStore((s) => s.proposals);
   const deals = useAppStore((s) => s.deals);
   const navigate = useNavigate();
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState('all');
+  const [teamFilter, setTeamFilter] = useState('all');
+  const [regionFilter, setRegionFilter] = useState('all');
+  const [proposalStatusFilter, setProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTitle, setDetailTitle] = useState('');
+  const [detailRows, setDetailRows] = useState<Array<{ key: string; label: string; value: string }>>([]);
+  const [detailLink, setDetailLink] = useState('');
 
   const proposalScope = getScope(me.role, 'proposals');
   const dealScope = getScope(me.role, 'deals');
@@ -52,9 +68,54 @@ export default function DashboardPage() {
   const visibleProposals = visibleWithScope(proposalScope, me, proposals);
   const visibleCustomers = visibleWithScope(customerScope, me, customers);
 
+  const ownerMeta = useMemo(() => {
+    const map = new Map<string, { teamId: string; regionId: string }>();
+    users.forEach((u) => map.set(u.id, { teamId: u.teamId, regionId: u.regionId }));
+    return map;
+  }, [users]);
+
+  const inDateRange = (iso: string): boolean => {
+    if (!iso) return true;
+    const d = iso.slice(0, 10);
+    if (dateFrom && d < dateFrom) return false;
+    if (dateTo && d > dateTo) return false;
+    return true;
+  };
+
+  const filteredProposals = useMemo(() => {
+    return visibleProposals.filter((p) => {
+      if (proposalStatusFilter !== 'all' && p.status !== proposalStatusFilter) return false;
+      if (!inDateRange(p.createdAt)) return false;
+      if (ownerFilter !== 'all' && p.assignedTo !== ownerFilter) return false;
+      const meta = ownerMeta.get(p.assignedTo);
+      if (teamFilter !== 'all' && meta?.teamId !== teamFilter) return false;
+      if (regionFilter !== 'all' && meta?.regionId !== regionFilter) return false;
+      return true;
+    });
+  }, [visibleProposals, proposalStatusFilter, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter, ownerMeta]);
+
+  const filteredDeals = useMemo(() => {
+    return visibleDeals.filter((d) => {
+      if (ownerFilter !== 'all' && d.ownerUserId !== ownerFilter) return false;
+      if (teamFilter !== 'all' && d.teamId !== teamFilter) return false;
+      if (regionFilter !== 'all' && d.regionId !== regionFilter) return false;
+      return true;
+    });
+  }, [visibleDeals, ownerFilter, teamFilter, regionFilter]);
+
+  const filteredCustomers = useMemo(() => {
+    return visibleCustomers.filter((c) => {
+      if (!inDateRange(c.createdAt)) return false;
+      if (ownerFilter !== 'all' && c.assignedTo !== ownerFilter) return false;
+      if (teamFilter !== 'all' && c.teamId !== teamFilter) return false;
+      if (regionFilter !== 'all' && c.regionId !== regionFilter) return false;
+      return true;
+    });
+  }, [visibleCustomers, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter]);
+
   useEffect(() => {
-    checkAndTriggerPaymentDue();
-    const interval = setInterval(() => checkAndTriggerPaymentDue(), 24 * 60 * 60 * 1000);
+    runAutomationRules();
+    const interval = setInterval(() => runAutomationRules(), 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -64,58 +125,58 @@ export default function DashboardPage() {
 
   // Total Revenue — sum of all paid customer payments
   const totalRevenue = useMemo(() => {
-    return visibleCustomers.reduce((sum, c) => {
+    return filteredCustomers.reduce((sum, c) => {
       return sum + (c.payments?.reduce((s, p) => s + p.amount, 0) ?? 0);
     }, 0);
-  }, [visibleCustomers]);
+  }, [filteredCustomers]);
 
   // Active Proposals — sent / approval_pending / approved
   const activeProposalsCount = useMemo(
     () =>
-      visibleProposals.filter(
+      filteredProposals.filter(
         (p) => p.status === 'sent' || p.status === 'approval_pending' || p.status === 'approved'
       ).length,
-    [visibleProposals]
+    [filteredProposals]
   );
 
   // Deals Closed This Month — from customer activityLog "Deal closed" in current month
   const dealsClosedThisMonth = useMemo(() => {
     let count = 0;
-    for (const c of visibleCustomers) {
+    for (const c of filteredCustomers) {
       for (const log of c.activityLog ?? []) {
         if (log.action === 'Deal closed' && log.timestamp >= startOfMonth) count++;
       }
     }
     return count;
-  }, [visibleCustomers, startOfMonth]);
+  }, [filteredCustomers, startOfMonth]);
 
   // New Customers This Month
   const newCustomersThisMonth = useMemo(
-    () => visibleCustomers.filter((c) => c.createdAt >= startOfMonth).length,
-    [visibleCustomers, startOfMonth]
+    () => filteredCustomers.filter((c) => c.createdAt >= startOfMonth).length,
+    [filteredCustomers, startOfMonth]
   );
 
   // Pending Approvals
   const pendingApprovals = useMemo(
-    () => visibleProposals.filter((p) => p.status === 'approval_pending').length,
-    [visibleProposals]
+    () => filteredProposals.filter((p) => p.status === 'approval_pending').length,
+    [filteredProposals]
   );
 
   // Overdue Invoices — unpaid and dueDate < today
   const overdueInvoices = useMemo(() => {
-    return visibleCustomers.reduce((sum, c) => {
+    return filteredCustomers.reduce((sum, c) => {
       return (
         sum +
         (c.invoices?.filter((inv) => (inv.status === 'unpaid' || inv.status === 'overdue') && inv.dueDate < today).length ?? 0)
       );
     }, 0);
-  }, [visibleCustomers, today]);
+  }, [filteredCustomers, today]);
 
   // Expiring Subscriptions (30 days) — product lines expiring within 30 days
   const thirtyDaysFromNow = new Date(now);
   thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
   const expiringSubscriptions = useMemo(() => {
-    return visibleCustomers.reduce((sum, c) => {
+    return filteredCustomers.reduce((sum, c) => {
       return (
         sum +
         (c.productLines?.filter((pl) => {
@@ -124,17 +185,17 @@ export default function DashboardPage() {
         }).length ?? 0)
       );
     }, 0);
-  }, [visibleCustomers, now, thirtyDaysFromNow]);
+  }, [filteredCustomers, now, thirtyDaysFromNow]);
 
   // Open Support Tickets — open + in_progress
   const openSupportTickets = useMemo(() => {
-    return visibleCustomers.reduce(
+    return filteredCustomers.reduce(
       (sum, c) =>
         sum +
         (c.supportTickets?.filter((t) => t.status === 'open' || t.status === 'in_progress').length ?? 0),
       0
     );
-  }, [visibleCustomers]);
+  }, [filteredCustomers]);
 
   // KPI Row 1 — Top 4 cards (large)
   const kpiRow1 = [
@@ -165,7 +226,7 @@ export default function DashboardPage() {
         monthNum: d.getMonth(),
       });
     }
-    for (const c of visibleCustomers) {
+    for (const c of filteredCustomers) {
       for (const p of c.payments ?? []) {
         const paid = new Date(p.paidOn);
         const m = months.find((x) => x.year === paid.getFullYear() && x.monthNum === paid.getMonth());
@@ -173,7 +234,7 @@ export default function DashboardPage() {
       }
     }
     return months.map((m) => ({ month: m.month, full: m.full, revenueLakhs: Math.round((m.revenue / 100_000) * 100) / 100 }));
-  }, [visibleCustomers, now]);
+  }, [filteredCustomers, now]);
 
   // Proposal Pipeline — count per status, horizontal bar
   const pipelineStatuses: ProposalStatus[] = [
@@ -188,10 +249,10 @@ export default function DashboardPage() {
     () =>
       pipelineStatuses.map((status) => ({
         status: status.replace(/_/g, ' '),
-        count: visibleProposals.filter((p) => p.status === status).length,
+        count: filteredProposals.filter((p) => p.status === status).length,
         statusKey: status,
       })),
-    [visibleProposals]
+    [filteredProposals]
   );
 
   const pipelineColors: Record<string, string> = {
@@ -208,16 +269,16 @@ export default function DashboardPage() {
     const statuses = ['active', 'lead', 'inactive', 'churned', 'blacklisted'] as const;
     return statuses.map((status) => ({
       name: status.charAt(0).toUpperCase() + status.slice(1),
-      value: visibleCustomers.filter((c) => c.status === status).length,
+      value: filteredCustomers.filter((c) => c.status === status).length,
     }));
-  }, [visibleCustomers]);
+  }, [filteredCustomers]);
 
   const donutColors = ['#22c55e', '#0072BC', '#94a3b8', '#f97316', '#ef4444'];
 
   // Recent Activity — last 10 across all customers
   const recentActivity = useMemo(() => {
     const all: { id: string; text: string; timestamp: string; action: string }[] = [];
-    for (const c of visibleCustomers) {
+    for (const c of filteredCustomers) {
       for (const log of c.activityLog ?? []) {
         all.push({
           id: log.id,
@@ -229,16 +290,40 @@ export default function DashboardPage() {
     }
     all.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     return all.slice(0, 10);
-  }, [visibleCustomers]);
+  }, [filteredCustomers]);
 
   // Recent Proposals — last 5 by updatedAt desc
   const recentProposals = useMemo(
-    () => [...visibleProposals].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5),
-    [visibleProposals]
+    () => [...filteredProposals].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5),
+    [filteredProposals]
   );
 
-  const handlePipelineBarClick = (statusKey: string) => {
-    navigate(`/proposals?status=${statusKey}`);
+  const applyQuery = (path: string, extra: Record<string, string>) => {
+    const qs = new URLSearchParams();
+    if (dateFrom) qs.set('from', dateFrom);
+    if (dateTo) qs.set('to', dateTo);
+    if (ownerFilter !== 'all') qs.set('owner', ownerFilter);
+    if (teamFilter !== 'all') qs.set('team', teamFilter);
+    if (regionFilter !== 'all') qs.set('region', regionFilter);
+    Object.entries(extra).forEach(([key, value]) => {
+      if (value && value !== 'all') qs.set(key, value);
+    });
+    return `${path}?${qs.toString()}`;
+  };
+
+  const openDetail = (title: string, rows: Array<{ key: string; label: string; value: string }>, link: string) => {
+    setDetailTitle(title);
+    setDetailRows(rows);
+    setDetailLink(link);
+    setDetailOpen(true);
+  };
+
+  const handlePipelineBarClick = (statusKey: string, count: number) => {
+    openDetail(
+      `Proposal Pipeline - ${statusKey.replace(/_/g, ' ')}`,
+      [{ key: statusKey, label: 'Count', value: String(count) }],
+      applyQuery('/proposals', { status: statusKey }),
+    );
   };
 
   return (
@@ -248,10 +333,74 @@ export default function DashboardPage() {
         subtitle="Welcome back! Here's what's happening with your license management workflows."
       />
       <div className="p-6 space-y-6">
+        <Card className="bg-card border border-border">
+          <CardContent className="p-4 flex flex-wrap items-end gap-2">
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">From</p>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[150px]" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">To</p>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[150px]" />
+            </div>
+            <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+              <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Owner" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All owners</SelectItem>
+                {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={teamFilter} onValueChange={setTeamFilter}>
+              <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Team" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                {teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={regionFilter} onValueChange={setRegionFilter}>
+              <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Region" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All regions</SelectItem>
+                {regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={proposalStatusFilter} onValueChange={(v) => setProposalStatusFilter(v as ProposalStatus | 'all')}>
+              <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Proposal status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All proposal statuses</SelectItem>
+                {pipelineStatuses.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              className="h-9"
+              onClick={() => {
+                setDateFrom('');
+                setDateTo('');
+                setOwnerFilter('all');
+                setTeamFilter('all');
+                setRegionFilter('all');
+                setProposalStatusFilter('all');
+              }}
+            >
+              Clear Filters
+            </Button>
+          </CardContent>
+        </Card>
         {/* KPI Row 1 — Top 4 large cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpiRow1.map((s) => (
-            <Card key={s.label} className="bg-card border border-border">
+            <Card
+              key={s.label}
+              className="bg-card border border-border cursor-pointer"
+              onClick={() =>
+                openDetail(
+                  s.label,
+                  [{ key: s.label, label: 'Value', value: s.value }],
+                  applyQuery('/deals', {}),
+                )
+              }
+            >
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm text-muted-foreground font-medium">{s.label}</p>
@@ -312,7 +461,20 @@ export default function DashboardPage() {
                         formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}
                       />
-                      <Bar dataKey="revenueLakhs" fill={BUILDESK_BLUE} name="Revenue" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="revenueLakhs"
+                        fill={BUILDESK_BLUE}
+                        name="Revenue"
+                        radius={[4, 4, 0, 0]}
+                        cursor="pointer"
+                        onClick={(data: { full: string; revenueLakhs: number }) =>
+                          openDetail(
+                            `Revenue - ${data?.full ?? ''}`,
+                            [{ key: data?.full ?? 'month', label: 'Revenue', value: formatINR(Math.round((data?.revenueLakhs ?? 0) * 100_000)) }],
+                            applyQuery('/deals', {}),
+                          )
+                        }
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -337,7 +499,7 @@ export default function DashboardPage() {
                         dataKey="count"
                         name="Count"
                         radius={[0, 4, 4, 0]}
-                        onClick={(data: { statusKey: string }) => data && handlePipelineBarClick(data.statusKey)}
+                        onClick={(data: { statusKey: string; count: number }) => data && handlePipelineBarClick(data.statusKey, data.count)}
                         cursor="pointer"
                       >
                         {pipelineData.map((entry) => (
@@ -369,6 +531,15 @@ export default function DashboardPage() {
                         dataKey="value"
                         nameKey="name"
                         label={({ name, value }) => (value > 0 ? `${name}: ${value}` : '')}
+                        onClick={(slice) => {
+                          if (!slice?.name) return;
+                          const status = String(slice.name).toLowerCase();
+                          openDetail(
+                            `Customer Status - ${slice.name}`,
+                            [{ key: status, label: 'Count', value: String(slice.value ?? 0) }],
+                            applyQuery('/customers', { status }),
+                          );
+                        }}
                       >
                         {customerStatusData.map((_, index) => (
                           <Cell key={index} fill={donutColors[index % donutColors.length]} />
@@ -378,7 +549,7 @@ export default function DashboardPage() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-xl font-bold text-foreground">{visibleCustomers.length}</span>
+                    <span className="text-xl font-bold text-foreground">{filteredCustomers.length}</span>
                   </div>
                 </div>
               </CardContent>
@@ -471,6 +642,38 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{detailTitle}</DialogTitle>
+            <DialogDescription>Filtered analytics preview based on current dashboard filters.</DialogDescription>
+          </DialogHeader>
+          {detailRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No records found for this selection.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Label</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {detailRows.map((r) => (
+                  <TableRow key={r.key}>
+                    <TableCell>{r.label}</TableCell>
+                    <TableCell className="text-right">{r.value}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailOpen(false)}>Close</Button>
+            <Button onClick={() => { setDetailOpen(false); if (detailLink) navigate(detailLink); }}>Open Full Page</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
