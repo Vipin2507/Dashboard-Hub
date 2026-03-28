@@ -1,20 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Topbar } from '@/components/Topbar';
-import { useAppStore } from '@/store/useAppStore';
-import { can, getScope, visibleWithScope, formatINR } from '@/lib/rbac';
-import { apiUrl } from '@/lib/api';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Lock, DollarSign, TrendingUp, CheckCircle, Plus, Pencil, Trash2, Search } from 'lucide-react';
-import type { Deal } from '@/types';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Topbar } from "@/components/Topbar";
+import { useAppStore } from "@/store/useAppStore";
+import { can, getScope, visibleWithScope, formatINR } from "@/lib/rbac";
+import { canDeleteDeal, canEditDeal, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
+import { apiUrl } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import { useUpdateDealStage } from "@/hooks/useWorkflow";
+import {
+  DEAL_STATUSES,
+  DEAL_STATUS_META,
+  DEAL_SOURCES,
+  DEAL_PRIORITIES,
+  normalizeDealStatus,
+  type DealPipelineStatus,
+} from "@/lib/dealStatus";
+import { checkDealFollowUpReminders, triggerAutomation } from "@/lib/automationService";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Lock, DollarSign, TrendingUp, CheckCircle, Plus, Pencil, Trash2, Search, Eye } from "lucide-react";
+import type { Deal } from "@/types";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,99 +38,186 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { toast } from '@/components/ui/use-toast';
+} from "@/components/ui/alert-dialog";
+import { toast } from "@/components/ui/use-toast";
+import { cn } from "@/lib/utils";
+
+type DealAuditRow = {
+  id: string;
+  dealId: string;
+  action: string;
+  detailJson?: string | null;
+  userId: string;
+  userName: string;
+  at: string;
+};
+
+function formatShortDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+const DEFAULT_SALES_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"];
 
 export default function DealsPage() {
+  const queryClient = useQueryClient();
+  const updateDealStage = useUpdateDealStage();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const me = useAppStore(s => s.me);
-  const deals = useAppStore(s => s.deals);
-  const setDeals = useAppStore(s => s.setDeals);
-  const addDealWithId = useAppStore(s => s.addDealWithId);
-  const updateDeal = useAppStore(s => s.updateDeal);
-  const deleteDeal = useAppStore(s => s.deleteDeal);
-  const customers = useAppStore(s => s.customers);
-  const users = useAppStore(s => s.users);
-  const scope = getScope(me.role, 'deals');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const me = useAppStore((s) => s.me);
+  const deals = useAppStore((s) => s.deals);
+  const setDeals = useAppStore((s) => s.setDeals);
+  const customers = useAppStore((s) => s.customers);
+  const users = useAppStore((s) => s.users);
+  const scope = getScope(me.role, "deals");
   const visibleDeals = visibleWithScope(scope, me, deals);
-  const canCreate = can(me.role, 'deals', 'create');
-  const canUpdate = can(me.role, 'deals', 'update');
-  const canDelete = can(me.role, 'deals', 'delete');
+  const scopedActiveDeals = useMemo(
+    () => visibleDeals.filter((d) => !d.deletedAt),
+    [visibleDeals],
+  );
+  const deletedDealsInScope = useMemo(() => {
+    if (!isDealSuperAdmin(me.role)) return [];
+    return visibleWithScope(scope, me, deals).filter((d) => !!d.deletedAt);
+  }, [deals, me, scope]);
+  const canCreate = can(me.role, "deals", "create");
+  const canUpdateDeal = canEditDeal(me.role);
+  const canRemoveDeal = canDeleteDeal(me.role);
 
-  const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('all');
-  const [ownerFilter, setOwnerFilter] = useState('all');
-  const [teamFilter, setTeamFilter] = useState('all');
-  const [regionFilter, setRegionFilter] = useState('all');
-  const [formOpen, setFormOpen] = useState(false);
-  const [editingDeal, setEditingDeal] = useState<Deal | null>(null);
+  const [search, setSearch] = useState("");
+  const [stageFilter, setStageFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | DealPipelineStatus>("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [regionFilter, setRegionFilter] = useState("all");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
+  const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
+  const [lossTarget, setLossTarget] = useState<Deal | null>(null);
+  const [lossReasonDraft, setLossReasonDraft] = useState("");
 
-  const [name, setName] = useState('');
-  const [customerId, setCustomerId] = useState('');
-  const [ownerUserId, setOwnerUserId] = useState('');
-  const [stage, setStage] = useState('Qualified');
-  const [value, setValue] = useState('');
+  const [name, setName] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [ownerUserId, setOwnerUserId] = useState("");
+  const [stage, setStage] = useState("Qualified");
+  const [value, setValue] = useState("");
   const [locked, setLocked] = useState(false);
-  const [proposalId, setProposalId] = useState('');
+  const [proposalId, setProposalId] = useState("");
+  const [dealStatus, setDealStatus] = useState<DealPipelineStatus>("Active");
+  const [dealSource, setDealSource] = useState<string>("Direct");
+  const [expectedCloseDate, setExpectedCloseDate] = useState("");
+  const [priority, setPriority] = useState("Medium");
+  const [nextFollowUpDate, setNextFollowUpDate] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [remarks, setRemarks] = useState("");
+
+  const statusOptions = useMemo(() => [...dealStatusOptionsForRole(me.role)], [me.role]);
 
   const dealsQuery = useQuery({
-    queryKey: ['deals-sync'],
+    queryKey: [...QK.deals({ role: me.role })],
     queryFn: async () => {
-      const res = await fetch(apiUrl('/api/deals'));
-      if (!res.ok) throw new Error('Failed to load deals');
+      const q =
+        me.role === "super_admin"
+          ? "?includeDeleted=1&actorRole=super_admin"
+          : "";
+      const res = await fetch(apiUrl(`/api/deals${q}`));
+      if (!res.ok) throw new Error("Failed to load deals");
       return (await res.json()) as Deal[];
     },
+  });
+
+  const auditQuery = useQuery({
+    queryKey: ["deal-audit", sheetDeal?.id],
+    queryFn: async () => {
+      const res = await fetch(apiUrl(`/api/deals/${sheetDeal!.id}/audit`));
+      if (!res.ok) throw new Error("Failed to load audit");
+      return res.json() as Promise<DealAuditRow[]>;
+    },
+    enabled: sheetOpen && !!sheetDeal?.id && sheetMode !== "create",
   });
 
   useEffect(() => {
     if (!dealsQuery.data) return;
     setDeals(dealsQuery.data);
-  }, [dealsQuery.data]);
+  }, [dealsQuery.data, setDeals]);
 
   useEffect(() => {
-    if (!formOpen) return;
-    if (editingDeal) {
-      setName(editingDeal.name);
-      setCustomerId(editingDeal.customerId);
-      setOwnerUserId(editingDeal.ownerUserId);
-      setStage(editingDeal.stage);
-      setValue(String(editingDeal.value));
-      setLocked(editingDeal.locked);
-      setProposalId(editingDeal.proposalId ?? '');
-      return;
-    }
-    setName('');
-    setCustomerId(customers[0]?.id ?? '');
-    setOwnerUserId(users[0]?.id ?? me.id);
-    setStage('Qualified');
-    setValue('');
-    setLocked(false);
-    setProposalId('');
-  }, [formOpen, editingDeal?.id]);
+    checkDealFollowUpReminders(deals);
+  }, [deals]);
 
   useEffect(() => {
-    const q = searchParams.get('q');
-    const stage = searchParams.get('stage');
-    const owner = searchParams.get('owner');
-    const team = searchParams.get('team');
-    const region = searchParams.get('region');
+    const q = searchParams.get("q");
+    const stage = searchParams.get("stage");
+    const status = searchParams.get("status") as DealPipelineStatus | null;
+    const owner = searchParams.get("owner");
+    const team = searchParams.get("team");
+    const region = searchParams.get("region");
     if (q) setSearch(q);
     if (stage) setStageFilter(stage);
+    if (status && (DEAL_STATUSES as readonly string[]).includes(status)) setStatusFilter(status);
     if (owner) setOwnerFilter(owner);
     if (team) setTeamFilter(team);
     if (region) setRegionFilter(region);
   }, [searchParams]);
 
+  useEffect(() => {
+    if (!sheetOpen) return;
+    if (sheetMode !== "create" && sheetDeal) {
+      setName(sheetDeal.name);
+      setCustomerId(sheetDeal.customerId);
+      setOwnerUserId(sheetDeal.ownerUserId);
+      setStage(sheetDeal.stage);
+      setValue(String(sheetDeal.value));
+      setLocked(sheetDeal.locked);
+      setProposalId(sheetDeal.proposalId ?? "");
+      setDealStatus(normalizeDealStatus(sheetDeal.dealStatus));
+      setDealSource(sheetDeal.dealSource ?? "Direct");
+      setExpectedCloseDate(sheetDeal.expectedCloseDate ?? "");
+      setPriority(sheetDeal.priority ?? "Medium");
+      setNextFollowUpDate(sheetDeal.nextFollowUpDate ?? "");
+      setContactPhone(sheetDeal.contactPhone ?? "");
+      setRemarks(sheetDeal.remarks ?? "");
+      return;
+    }
+    if (sheetMode === "create") {
+      setName("");
+      setCustomerId(customers[0]?.id ?? "");
+      setOwnerUserId(users[0]?.id ?? me.id);
+      setStage("Qualified");
+      setValue("");
+      setLocked(false);
+      setProposalId("");
+      setDealStatus("Active");
+      setDealSource("Direct");
+      setExpectedCloseDate("");
+      setPriority("Medium");
+      setNextFollowUpDate("");
+      setContactPhone("");
+      setRemarks("");
+    }
+  }, [sheetOpen, sheetMode, sheetDeal?.id, customers, users, me.id]);
+
   const createMutation = useMutation({
     mutationFn: async (deal: Deal) => {
-      const res = await fetch(apiUrl('/api/deals'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(deal),
+      const { id: _omitId, ...rest } = deal;
+      const res = await fetch(apiUrl("/api/deals"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...rest,
+          locked: deal.locked,
+          changedByUserId: me.id,
+          changedByName: me.name,
+          createdByUserId: me.id,
+          createdByName: me.name,
+          actorRole: me.role,
+        }),
       });
-      if (!res.ok) throw new Error('Failed to create deal');
+      if (!res.ok) throw new Error("Failed to create deal");
       return (await res.json()) as Deal;
     },
     onSuccess: () => dealsQuery.refetch(),
@@ -125,29 +226,147 @@ export default function DealsPage() {
   const updateMutation = useMutation({
     mutationFn: async (deal: Deal) => {
       const res = await fetch(apiUrl(`/api/deals/${deal.id}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(deal),
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...deal,
+          locked: deal.locked,
+          changedByUserId: me.id,
+          changedByName: me.name,
+          actorRole: me.role,
+        }),
       });
-      if (!res.ok) throw new Error('Failed to update deal');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update deal");
+      }
       return (await res.json()) as Deal;
     },
-    onSuccess: () => dealsQuery.refetch(),
+    onSuccess: () => {
+      dealsQuery.refetch();
+      queryClient.invalidateQueries({ queryKey: ["deal-audit"] });
+    },
+  });
+
+  const patchDealApi = useCallback(
+    async (current: Deal, patch: Partial<Deal>) => {
+      const next: Deal = {
+        ...current,
+        ...patch,
+        lossReason:
+          patch.dealStatus === "Closed/Lost"
+            ? patch.lossReason ?? current.lossReason
+            : patch.dealStatus !== undefined && patch.dealStatus !== "Closed/Lost"
+              ? null
+              : current.lossReason,
+      };
+      const res = await fetch(apiUrl(`/api/deals/${current.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...next,
+          locked: next.locked,
+          changedByUserId: me.id,
+          changedByName: me.name,
+          actorRole: me.role,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Update failed");
+      }
+      return (await res.json()) as Deal;
+    },
+    [me.id, me.name],
+  );
+
+  const patchDealMutation = useMutation({
+    mutationFn: async ({
+      deal,
+      patch,
+      prevStatus,
+    }: {
+      deal: Deal;
+      patch: Partial<Deal>;
+      prevStatus: DealPipelineStatus;
+    }) => {
+      return patchDealApi(deal, patch);
+    },
+    onSuccess: async (data, vars) => {
+      await dealsQuery.refetch();
+      const nextS = normalizeDealStatus(data.dealStatus);
+      const prevS = vars.prevStatus;
+      const rep = users.find((u) => u.id === data.ownerUserId);
+      if (nextS === "Closed/Won" && prevS !== "Closed/Won") {
+        const customer = customers.find((c) => c.id === data.customerId);
+        const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+        await triggerAutomation("deal_won", {
+          dealId: data.id,
+          dealTitle: data.name,
+          dealValue: data.value,
+          customerId: data.customerId,
+          customerName: customer?.companyName,
+          customerPhone: primary?.phone,
+          customerEmail: primary?.email,
+          salesRepId: rep?.id,
+          salesRepName: rep?.name,
+          companyName: "Cravingcode Technologies Pvt. Ltd.",
+        });
+        toast({ title: "Deal won", description: "Team notification sent (if templates are active)." });
+      }
+      if (nextS === "Closed/Lost" && prevS !== "Closed/Lost") {
+        const customer = customers.find((c) => c.id === data.customerId);
+        await triggerAutomation("deal_lost", {
+          dealId: data.id,
+          dealTitle: data.name,
+          dealValue: data.value,
+          customerId: data.customerId,
+          customerName: customer?.companyName,
+          salesRepId: rep?.id,
+          salesRepName: rep?.name,
+          lossReason: data.lossReason ?? "",
+          companyName: "Cravingcode Technologies Pvt. Ltd.",
+        });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Update failed", description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(apiUrl(`/api/deals/${id}`), { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to delete deal');
+      const res = await fetch(apiUrl(`/api/deals/${id}`), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actorRole: me.role,
+          deletedByUserId: me.id,
+          deletedByName: me.name,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to delete deal");
+      }
     },
     onSuccess: () => dealsQuery.refetch(),
   });
 
+  const statusCounts = useMemo(() => {
+    const c = {} as Record<DealPipelineStatus, number>;
+    DEAL_STATUSES.forEach((s) => {
+      c[s] = 0;
+    });
+    scopedActiveDeals.forEach((d) => {
+      c[normalizeDealStatus(d.dealStatus)]++;
+    });
+    return c;
+  }, [scopedActiveDeals]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return visibleDeals.filter((d) => {
+    return scopedActiveDeals.filter((d) => {
       if (q) {
-        const customerName = customers.find((c) => c.id === d.customerId)?.companyName ?? '';
+        const customerName = customers.find((c) => c.id === d.customerId)?.companyName ?? "";
         if (
           !d.id.toLowerCase().includes(q) &&
           !d.name.toLowerCase().includes(q) &&
@@ -156,30 +375,51 @@ export default function DealsPage() {
           return false;
         }
       }
-      if (stageFilter !== 'all' && d.stage !== stageFilter) return false;
-      if (ownerFilter !== 'all' && d.ownerUserId !== ownerFilter) return false;
-      if (teamFilter !== 'all' && d.teamId !== teamFilter) return false;
-      if (regionFilter !== 'all' && d.regionId !== regionFilter) return false;
+      if (stageFilter !== "all" && d.stage !== stageFilter) return false;
+      if (statusFilter !== "all" && normalizeDealStatus(d.dealStatus) !== statusFilter) return false;
+      if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
+      if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
+      if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
       return true;
     });
-  }, [visibleDeals, search, stageFilter, ownerFilter, teamFilter, regionFilter, customers]);
+  }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, customers]);
 
   const totalValue = visible.reduce((s, d) => s + d.value, 0);
 
   const allStages = useMemo(() => {
-    const set = new Set(visibleDeals.map((d) => d.stage));
+    const set = new Set(scopedActiveDeals.map((d) => d.stage));
     return Array.from(set);
-  }, [visibleDeals]);
+  }, [scopedActiveDeals]);
+
+  const stageSelectOptions = useMemo(() => {
+    return Array.from(new Set([...DEFAULT_SALES_STAGES, ...allStages]));
+  }, [allStages]);
+
+  const setStatusFilterAndUrl = (s: "all" | DealPipelineStatus) => {
+    setStatusFilter(s);
+    const next = new URLSearchParams(searchParams);
+    if (s === "all") next.delete("status");
+    else next.set("status", s);
+    setSearchParams(next, { replace: true });
+  };
 
   const handleSaveDeal = async () => {
+    if (sheetMode === "view") return;
     const owner = users.find((u) => u.id === ownerUserId);
     const parsedValue = Number(value);
     if (!name.trim() || !customerId || !ownerUserId || !Number.isFinite(parsedValue) || parsedValue <= 0) {
-      toast({ title: 'Missing fields', description: 'Fill required fields correctly.', variant: 'destructive' });
+      toast({ title: "Missing fields", description: "Fill required fields correctly.", variant: "destructive" });
       return;
     }
-    const payload: Deal = {
-      id: editingDeal?.id ?? `d${Math.random().toString(36).slice(2, 10)}`,
+    if (!priority.trim()) {
+      toast({ title: "Priority required", variant: "destructive" });
+      return;
+    }
+    if (dealStatus === "Closed/Lost" && !lossReasonDraft.trim() && !sheetDeal?.lossReason) {
+      toast({ title: "Loss reason required", description: "Enter a loss reason for Closed/Lost.", variant: "destructive" });
+      return;
+    }
+    const base = {
       name: name.trim(),
       customerId,
       ownerUserId,
@@ -189,48 +429,139 @@ export default function DealsPage() {
       value: parsedValue,
       locked,
       proposalId: proposalId.trim() ? proposalId.trim() : null,
+      dealStatus,
+      dealSource: dealSource || null,
+      expectedCloseDate: expectedCloseDate.trim() || null,
+      priority,
+      nextFollowUpDate: nextFollowUpDate.trim() || null,
+      contactPhone: contactPhone.trim() || null,
+      remarks: remarks.trim() || null,
+      lossReason:
+        dealStatus === "Closed/Lost"
+          ? (lossReasonDraft.trim() || sheetDeal?.lossReason || "").trim() || null
+          : null,
     };
 
-    if (editingDeal) {
-      updateDeal(editingDeal.id, payload);
+    if (sheetMode === "edit" && sheetDeal) {
       try {
-        await updateMutation.mutateAsync(payload);
-        toast({ title: 'Deal updated', description: `${payload.name} updated successfully.` });
+        const prev = normalizeDealStatus(sheetDeal.dealStatus);
+        const payload: Deal = { ...sheetDeal, ...base };
+        const saved = await updateMutation.mutateAsync(payload);
+        const rep = users.find((u) => u.id === saved.ownerUserId);
+        if (normalizeDealStatus(saved.dealStatus) === "Closed/Won" && prev !== "Closed/Won") {
+          const customer = customers.find((c) => c.id === saved.customerId);
+          const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+          await triggerAutomation("deal_won", {
+            dealId: saved.id,
+            dealTitle: saved.name,
+            dealValue: saved.value,
+            customerId: saved.customerId,
+            customerName: customer?.companyName,
+            customerPhone: primary?.phone,
+            customerEmail: primary?.email,
+            salesRepId: rep?.id,
+            salesRepName: rep?.name,
+            companyName: "Cravingcode Technologies Pvt. Ltd.",
+          });
+          toast({ title: "Deal updated", description: "Won notification sent (if templates are active)." });
+        } else if (normalizeDealStatus(saved.dealStatus) === "Closed/Lost" && prev !== "Closed/Lost") {
+          await triggerAutomation("deal_lost", {
+            dealId: saved.id,
+            dealTitle: saved.name,
+            dealValue: saved.value,
+            customerId: saved.customerId,
+            customerName: customer?.companyName,
+            salesRepId: rep?.id,
+            salesRepName: rep?.name,
+            lossReason: saved.lossReason ?? "",
+            companyName: "Cravingcode Technologies Pvt. Ltd.",
+          });
+          toast({ title: "Deal updated", description: "Loss recorded and automation sent (if configured)." });
+        } else {
+          toast({ title: "Deal updated", description: `${base.name} updated successfully.` });
+        }
       } catch (e) {
-        toast({ title: 'Update failed', description: (e as Error).message, variant: 'destructive' });
+        toast({ title: "Update failed", description: (e as Error).message, variant: "destructive" });
       }
-    } else {
-      addDealWithId(payload);
+    } else if (sheetMode === "create") {
       try {
-        await createMutation.mutateAsync(payload);
-        toast({ title: 'Deal created', description: `${payload.name} created successfully.` });
+        const temp: Deal = {
+          id: "pending",
+          ...base,
+        };
+        const saved = await createMutation.mutateAsync(temp);
+        const customer = customers.find((c) => c.id === saved.customerId);
+        const rep = users.find((u) => u.id === saved.ownerUserId);
+        await triggerAutomation("deal_created", {
+          dealId: saved.id,
+          dealTitle: saved.name,
+          dealValue: saved.value,
+          customerId: saved.customerId,
+          customerName: customer?.companyName,
+          salesRepId: rep?.id,
+          salesRepName: rep?.name,
+          companyName: "Cravingcode Technologies Pvt. Ltd.",
+        });
+        toast({ title: "Deal created", description: `${saved.name} (${saved.id})` });
       } catch (e) {
-        toast({ title: 'Create failed', description: (e as Error).message, variant: 'destructive' });
+        toast({ title: "Create failed", description: (e as Error).message, variant: "destructive" });
       }
     }
-    setFormOpen(false);
-    setEditingDeal(null);
+    setSheetOpen(false);
+    setSheetDeal(null);
+    setLossReasonDraft("");
   };
 
   const handleDeleteDeal = async () => {
     if (!deleteTarget) return;
-    deleteDeal(deleteTarget.id);
     try {
       await deleteMutation.mutateAsync(deleteTarget.id);
-      toast({ title: 'Deal deleted', description: `${deleteTarget.name} removed.` });
+      toast({ title: "Deal archived", description: `${deleteTarget.name} was soft-deleted (Super Admin can view in Deleted records).` });
     } catch (e) {
-      toast({ title: 'Delete failed', description: (e as Error).message, variant: 'destructive' });
+      toast({ title: "Delete failed", description: (e as Error).message, variant: "destructive" });
     }
     setDeleteTarget(null);
+  };
+
+  const onInlineStatusChange = (d: Deal, value: string) => {
+    if (!canUpdateDeal || d.locked || d.deletedAt) return;
+    const next = value as DealPipelineStatus;
+    const prev = normalizeDealStatus(d.dealStatus);
+    if (next === "Closed/Lost") {
+      setLossTarget(d);
+      setLossReasonDraft("");
+      return;
+    }
+    patchDealMutation.mutate({ deal: d, patch: { dealStatus: next }, prevStatus: prev });
+  };
+
+  const submitLossReason = () => {
+    if (!lossTarget) return;
+    if (!lossReasonDraft.trim()) {
+      toast({ title: "Required", description: "Enter a loss reason.", variant: "destructive" });
+      return;
+    }
+    const prev = normalizeDealStatus(lossTarget.dealStatus);
+    patchDealMutation.mutate(
+      {
+        deal: lossTarget,
+        patch: { dealStatus: "Closed/Lost", lossReason: lossReasonDraft.trim() },
+        prevStatus: prev,
+      },
+      {
+        onSettled: () => {
+          setLossTarget(null);
+          setLossReasonDraft("");
+        },
+      },
+    );
   };
 
   return (
     <>
       <Topbar title="Deals" subtitle="Track and manage all deals" />
       <div className="p-6 space-y-6">
-        {dealsQuery.isLoading && (
-          <p className="text-sm text-muted-foreground">Loading deals...</p>
-        )}
+        {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -248,7 +579,9 @@ export default function DealsPage() {
             <SelectContent>
               <SelectItem value="all">All stages</SelectItem>
               {allStages.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -259,7 +592,9 @@ export default function DealsPage() {
             <SelectContent>
               <SelectItem value="all">All owners</SelectItem>
               {users.map((u) => (
-                <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                <SelectItem key={u.id} value={u.id}>
+                  {u.name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -267,13 +602,63 @@ export default function DealsPage() {
             <Button
               className="h-9"
               onClick={() => {
-                setEditingDeal(null);
-                setFormOpen(true);
+                setSheetDeal(null);
+                setSheetMode("create");
+                setSheetOpen(true);
               }}
             >
               <Plus className="w-4 h-4 mr-1.5" /> New Deal
             </Button>
           )}
+        </div>
+
+        {/* Pipeline status summary cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {DEAL_STATUSES.map((st) => {
+            const meta = DEAL_STATUS_META[st];
+            const count = statusCounts[st];
+            const active = statusFilter === st;
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
+                className={cn(
+                  "text-left rounded-lg border p-3 transition-all hover:ring-2 hover:ring-primary/30",
+                  meta.cardClass,
+                  active && "ring-2 ring-primary",
+                )}
+              >
+                <p className="text-xs font-semibold text-foreground/90">{st}</p>
+                <p className="text-2xl font-bold mt-1 tabular-nums">{count}</p>
+                <p className="text-[10px] text-muted-foreground leading-snug mt-1 line-clamp-2">{meta.description}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filter chips */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-medium text-muted-foreground mr-1">Status:</span>
+          <Button
+            variant={statusFilter === "all" ? "default" : "outline"}
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => setStatusFilterAndUrl("all")}
+          >
+            All
+          </Button>
+          {DEAL_STATUSES.map((st) => (
+            <Button
+              key={st}
+              variant={statusFilter === st ? "default" : "outline"}
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setStatusFilterAndUrl(st)}
+            >
+              {st}
+            </Button>
+          ))}
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -289,7 +674,7 @@ export default function DealsPage() {
           <Card className="bg-card border border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground font-medium">Total Deals</p>
+                <p className="text-xs text-muted-foreground font-medium">Visible Deals</p>
                 <TrendingUp className="w-4 h-4 text-muted-foreground" />
               </div>
               <p className="text-2xl font-bold">{visible.length}</p>
@@ -301,7 +686,7 @@ export default function DealsPage() {
                 <p className="text-xs text-muted-foreground font-medium">Locked Deals</p>
                 <CheckCircle className="w-4 h-4 text-muted-foreground" />
               </div>
-              <p className="text-2xl font-bold text-success">{visible.filter(d => d.locked).length}</p>
+              <p className="text-2xl font-bold text-success">{visible.filter((d) => d.locked).length}</p>
             </CardContent>
           </Card>
         </div>
@@ -311,168 +696,565 @@ export default function DealsPage() {
             <div className="px-5 py-4 border-b border-border">
               <h3 className="font-semibold text-foreground">All Deals</h3>
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">Deal ID</TableHead>
-                  <TableHead className="text-xs">Name</TableHead>
-                  <TableHead className="text-xs">Customer</TableHead>
-                  <TableHead className="text-xs">Stage</TableHead>
-                  <TableHead className="text-xs">Owner</TableHead>
-                  <TableHead className="text-xs text-right">Value</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {visible.map(d => (
-                  <TableRow key={d.id}>
-                    <TableCell className="font-mono-id">{d.id}</TableCell>
-                    <TableCell className="text-sm font-medium">{d.name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                        {customers.find(c => c.id === d.customerId) ? (
-                          <button
-                            type="button"
-                            className="text-primary hover:underline text-left"
-                            onClick={() => navigate(`/customers/${d.customerId}`)}
-                          >
-                            {customers.find(c => c.id === d.customerId)?.companyName}
-                          </button>
-                        ) : (
-                          '—'
-                        )}
-                      </TableCell>
-                    <TableCell><Badge variant="outline" className="text-[10px]">{d.stage}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{users.find(u => u.id === d.ownerUserId)?.name}</TableCell>
-                    <TableCell className="text-sm text-right font-mono">{formatINR(d.value)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-between gap-2">
-                        {d.locked ? (
-                          <span className="flex items-center gap-1 text-xs text-success"><Lock className="w-3 h-3" /> Locked</span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-xs text-warning"><span className="w-2 h-2 rounded-full bg-warning" /> Open</span>
-                        )}
-                        <div className="flex items-center gap-1">
-                          {canUpdate && !d.locked && (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs whitespace-nowrap">Deal ID</TableHead>
+                    <TableHead className="text-xs">Name</TableHead>
+                    <TableHead className="text-xs">Customer</TableHead>
+                    <TableHead className="text-xs">Stage</TableHead>
+                    <TableHead className="text-xs">Deal status</TableHead>
+                    <TableHead className="text-xs">Source</TableHead>
+                    <TableHead className="text-xs">Priority</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Exp. close</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Last activity</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap">Next follow-up</TableHead>
+                    <TableHead className="text-xs">Owner</TableHead>
+                    <TableHead className="text-xs text-right">Value</TableHead>
+                    <TableHead className="text-xs">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((d) => {
+                    const st = normalizeDealStatus(d.dealStatus);
+                    const badgeClass = DEAL_STATUS_META[st].badgeClass;
+                    return (
+                      <TableRow key={d.id}>
+                        <TableCell className="font-mono text-xs">{d.id}</TableCell>
+                        <TableCell className="text-sm font-medium">{d.name}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {customers.find((c) => c.id === d.customerId) ? (
+                            <button
+                              type="button"
+                              className="text-primary hover:underline text-left"
+                              onClick={() => navigate(`/customers/${d.customerId}`)}
+                            >
+                              {customers.find((c) => c.id === d.customerId)?.companyName}
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {canUpdateDeal && !d.locked ? (
+                            <Select
+                              value={d.stage}
+                              disabled={updateDealStage.isPending}
+                              onValueChange={(v) =>
+                                updateDealStage.mutate({
+                                  dealId: d.id,
+                                  stage: v,
+                                  prevDealStatus: normalizeDealStatus(d.dealStatus),
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-[150px] text-[10px] px-2">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {stageSelectOptions.map((s) => (
+                                  <SelectItem key={s} value={s} className="text-xs">
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">
+                              {d.stage}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-[140px]">
+                          {canUpdateDeal && !d.locked ? (
+                            <Select value={st} onValueChange={(v) => onInlineStatusChange(d, v)}>
+                              <SelectTrigger className={cn("h-8 text-xs border", badgeClass)}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {statusOptions.map((s) => (
+                                  <SelectItem key={s} value={s}>
+                                    {s}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge variant="outline" className={cn("text-[10px] border", badgeClass)}>
+                              {st}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{d.dealSource ?? "—"}</TableCell>
+                        <TableCell className="text-xs">{d.priority ?? "—"}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{d.expectedCloseDate ?? "—"}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{formatShortDate(d.lastActivityAt)}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{d.nextFollowUpDate ?? "—"}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {users.find((u) => u.id === d.ownerUserId)?.name}
+                        </TableCell>
+                        <TableCell className="text-sm text-right font-mono">{formatINR(d.value)}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap items-center gap-1">
+                            {d.locked ? (
+                              <span className="flex items-center gap-1 text-xs text-success">
+                                <Lock className="w-3 h-3" /> Locked
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-xs text-warning">
+                                <span className="w-2 h-2 rounded-full bg-warning" /> Open
+                              </span>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7"
+                              title="View"
                               onClick={() => {
-                                setEditingDeal(d);
-                                setFormOpen(true);
+                                setSheetDeal(d);
+                                setSheetMode("view");
+                                setSheetOpen(true);
                               }}
                             >
-                              <Pencil className="w-4 h-4" />
+                              <Eye className="w-4 h-4" />
                             </Button>
-                          )}
-                          {canDelete && !d.locked && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive"
-                              onClick={() => setDeleteTarget(d)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {visible.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-12">No deals in scope</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
+                            {canUpdateDeal && !d.locked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                title="Edit"
+                                onClick={() => {
+                                  setSheetDeal(d);
+                                  setSheetMode("edit");
+                                  setSheetOpen(true);
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {canRemoveDeal && !d.locked && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive"
+                                title="Delete"
+                                onClick={() => setDeleteTarget(d)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {visible.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-12">
+                        No active deals in scope
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </CardContent>
         </Card>
 
         <Card className="bg-card border border-border">
           <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
-            <p><strong className="text-foreground">Before Deal:</strong> Proposal values can be updated by authorized roles.</p>
-            <p><strong className="text-foreground">After Deal:</strong> Deal is locked. Only Super Admin can override final value (triggers audit).</p>
-            <p><strong className="text-foreground">Enforcement:</strong> Lock state is checked on every action in the Proposals detail panel.</p>
+            <p>
+              <strong className="text-foreground">Pipeline status</strong> drives reminders and win/loss automation.
+              Changing to <strong>Closed/Won</strong> notifies the team (deal_won templates).{" "}
+              <strong>Closed/Lost</strong> requires a loss reason and fires deal_lost templates.
+            </p>
+            <p>
+              <strong className="text-foreground">Follow-up:</strong> Set “Next follow-up” to trigger{" "}
+              <strong>deal_follow_up</strong> automation 1 day before and on that date. New deals fire{" "}
+              <strong>deal_created</strong> for the assignee.
+            </p>
+            <p>
+              <strong className="text-foreground">Roles:</strong> Super Admin can edit, archive (soft delete), and set{" "}
+              <strong>Closed/Lost</strong>. Other roles can create and view.
+            </p>
           </CardContent>
         </Card>
+
+        {deletedDealsInScope.length > 0 && (
+          <Card className="bg-card border border-destructive/30">
+            <CardContent className="p-0">
+              <div className="px-5 py-4 border-b border-border">
+                <h3 className="font-semibold text-foreground">Deleted records (soft-deleted)</h3>
+                <p className="text-xs text-muted-foreground mt-1">Visible to Super Admin only. Rows stay in the database for audit.</p>
+              </div>
+              <div className="overflow-x-auto p-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Deal ID</TableHead>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Deleted at</TableHead>
+                      <TableHead className="text-xs">By</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deletedDealsInScope.map((d) => (
+                      <TableRow key={d.id}>
+                        <TableCell className="font-mono text-xs">{d.id}</TableCell>
+                        <TableCell className="text-sm">{d.name}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{formatShortDate(d.deletedAt)}</TableCell>
+                        <TableCell className="text-xs">{d.deletedByName ?? "—"}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => {
+                              setSheetDeal(d);
+                              setSheetMode("view");
+                              setSheetOpen(true);
+                            }}
+                          >
+                            View
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingDeal ? 'Edit Deal' : 'New Deal'}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Deal name *</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Deal name" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+      <Sheet
+        open={sheetOpen}
+        onOpenChange={(o) => {
+          if (!o) setSheetDeal(null);
+          setSheetOpen(o);
+        }}
+      >
+        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col max-h-[100vh] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>
+              {sheetMode === "view" ? "Deal details" : sheetMode === "edit" ? "Edit deal" : "New deal"}
+            </SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="flex-1 max-h-[calc(100vh-8rem)] pr-3">
+            <div className="space-y-4 pb-4">
+              {sheetDeal && (sheetMode === "view" || sheetMode === "edit") && (
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-xs space-y-1">
+                  <p>
+                    <span className="text-muted-foreground">Deal ID:</span>{" "}
+                    <span className="font-mono font-medium">{sheetDeal.id}</span>
+                  </p>
+                  {sheetDeal.createdAt && (
+                    <p>
+                      <span className="text-muted-foreground">Created:</span> {formatShortDate(sheetDeal.createdAt)} by{" "}
+                      {sheetDeal.createdByName ?? sheetDeal.createdByUserId ?? "—"}
+                    </p>
+                  )}
+                  {sheetDeal.updatedAt && (
+                    <p>
+                      <span className="text-muted-foreground">Last updated:</span> {formatShortDate(sheetDeal.updatedAt)}
+                    </p>
+                  )}
+                  {sheetDeal.deletedAt && (
+                    <p className="text-destructive">
+                      Archived {formatShortDate(sheetDeal.deletedAt)}
+                      {sheetDeal.deletedByName ? ` by ${sheetDeal.deletedByName}` : ""}
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-2">
-                <Label>Customer *</Label>
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
+                <Label>Deal title *</Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Deal title"
+                  disabled={sheetMode === "view"}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Customer *</Label>
+                  <Select value={customerId} onValueChange={setCustomerId} disabled={sheetMode === "view"}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select customer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.companyName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Assigned to *</Label>
+                  <Select value={ownerUserId} onValueChange={setOwnerUserId} disabled={sheetMode === "view"}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select owner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Sales stage *</Label>
+                  <Input
+                    value={stage}
+                    onChange={(e) => setStage(e.target.value)}
+                    placeholder="Qualified"
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pipeline status *</Label>
+                  <Select
+                    value={dealStatus}
+                    onValueChange={(v) => setDealStatus(v as DealPipelineStatus)}
+                    disabled={sheetMode === "view"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Deal source</Label>
+                  <Select value={dealSource} onValueChange={setDealSource} disabled={sheetMode === "view"}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEAL_SOURCES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Priority *</Label>
+                  <Select value={priority} onValueChange={setPriority} disabled={sheetMode === "view"}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DEAL_PRIORITIES.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Expected close date</Label>
+                  <Input
+                    type="date"
+                    value={expectedCloseDate}
+                    onChange={(e) => setExpectedCloseDate(e.target.value)}
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Next follow-up date</Label>
+                  <Input
+                    type="date"
+                    value={nextFollowUpDate}
+                    onChange={(e) => setNextFollowUpDate(e.target.value)}
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Deal value (₹) *</Label>
+                  <Input
+                    type="number"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    placeholder="0"
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Contact number</Label>
+                  <Input
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    placeholder="+91…"
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Remarks / notes</Label>
+                  {sheetMode === "view" && !isDealSuperAdmin(me.role) ? (
+                    <p className="text-xs text-muted-foreground border rounded-md p-3 bg-muted/20">
+                      Internal remarks are visible to Super Admin only.
+                    </p>
+                  ) : (
+                    <Textarea
+                      value={remarks}
+                      onChange={(e) => setRemarks(e.target.value)}
+                      placeholder="Internal notes…"
+                      className="min-h-[72px]"
+                      disabled={sheetMode === "view"}
+                    />
+                  )}
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Proposal ID (optional)</Label>
+                  <Input
+                    value={proposalId}
+                    onChange={(e) => setProposalId(e.target.value)}
+                    placeholder="p1234"
+                    disabled={sheetMode === "view"}
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>Lock deal</Label>
+                  <Select
+                    value={locked ? "locked" : "open"}
+                    onValueChange={(v) => setLocked(v === "locked")}
+                    disabled={sheetMode === "view"}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="locked">Locked</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {dealStatus === "Closed/Lost" && sheetMode !== "view" && (
+                  <div className="space-y-2 col-span-2">
+                    <Label>Loss reason *</Label>
+                    <Textarea
+                      value={lossReasonDraft || sheetDeal?.lossReason || ""}
+                      onChange={(e) => setLossReasonDraft(e.target.value)}
+                      placeholder="Why was this deal lost?"
+                      className="min-h-[72px]"
+                    />
+                  </div>
+                )}
+                {dealStatus === "Closed/Lost" && sheetMode === "view" && sheetDeal?.lossReason && (
+                  <div className="space-y-2 col-span-2">
+                    <Label>Loss reason</Label>
+                    <p className="text-sm border rounded-md p-3 bg-muted/20">{sheetDeal.lossReason}</p>
+                  </div>
+                )}
+              </div>
+              {sheetDeal?.id && sheetMode !== "create" && (
+                <div className="border rounded-md p-3 space-y-2">
+                  <p className="text-xs font-semibold">Activity log</p>
+                  {auditQuery.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+                  <ul className="space-y-2 max-h-52 overflow-y-auto text-xs">
+                    {(auditQuery.data ?? []).map((a) => (
+                      <li key={a.id} className="border-b border-border/60 pb-2">
+                        <span className="text-muted-foreground">{formatShortDate(a.at)}</span> —{" "}
+                        <span className="font-medium">{a.userName}</span>{" "}
+                        <Badge variant="outline" className="ml-1 text-[10px]">
+                          {a.action.replace(/^deal_/, "").replace(/_/g, " ")}
+                        </Badge>
+                        <pre className="mt-1 text-[10px] whitespace-pre-wrap break-all opacity-80">
+                          {a.detailJson}
+                        </pre>
+                      </li>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Owner *</Label>
-                <Select value={ownerUserId} onValueChange={setOwnerUserId}>
-                  <SelectTrigger><SelectValue placeholder="Select owner" /></SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Stage *</Label>
-                <Input value={stage} onChange={(e) => setStage(e.target.value)} placeholder="Qualified" />
-              </div>
-              <div className="space-y-2">
-                <Label>Value *</Label>
-                <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>Proposal ID (optional)</Label>
-                <Input value={proposalId} onChange={(e) => setProposalId(e.target.value)} placeholder="p1234" />
-              </div>
-              <div className="space-y-2">
-                <Label>Status</Label>
-                <Select value={locked ? 'locked' : 'open'} onValueChange={(v) => setLocked(v === 'locked')}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="open">Open</SelectItem>
-                    <SelectItem value="locked">Locked</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                    {(auditQuery.data?.length ?? 0) === 0 && !auditQuery.isLoading && (
+                      <li className="text-muted-foreground">No activity yet.</li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setFormOpen(false)}>Cancel</Button>
-            <Button onClick={handleSaveDeal}>{editingDeal ? 'Save Changes' : 'Create Deal'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ScrollArea>
+          <SheetFooter className="mt-4 gap-2 sm:gap-0">
+            {sheetMode === "view" ? (
+              <>
+                <Button variant="outline" onClick={() => setSheetOpen(false)}>
+                  Close
+                </Button>
+                {canUpdateDeal && sheetDeal && !sheetDeal.locked && !sheetDeal.deletedAt && (
+                  <Button
+                    onClick={() => {
+                      setSheetMode("edit");
+                    }}
+                  >
+                    Edit
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setSheetOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveDeal} disabled={!!sheetDeal?.deletedAt}>
+                  {sheetMode === "edit" ? "Save changes" : "Create deal"}
+                </Button>
+              </>
+            )}
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={!!lossTarget} onOpenChange={(open) => !open && setLossTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Loss reason required</AlertDialogTitle>
+            <AlertDialogDescription>
+              Marking <strong>{lossTarget?.name}</strong> as Closed/Lost requires a reason for the audit trail and
+              automation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            value={lossReasonDraft}
+            onChange={(e) => setLossReasonDraft(e.target.value)}
+            placeholder="e.g. Budget frozen, chose competitor, timing…"
+            className="min-h-[100px]"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setLossTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={submitLossReason}>Save as Closed/Lost</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete deal?</AlertDialogTitle>
+            <AlertDialogTitle>Archive this deal?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove <strong>{deleteTarget?.name}</strong>.
+              This will soft-delete <strong>{deleteTarget?.name}</strong> (record kept for audit). Only Super Admin can
+              see it under Deleted records.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={handleDeleteDeal}>
-              Delete
+              Archive
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

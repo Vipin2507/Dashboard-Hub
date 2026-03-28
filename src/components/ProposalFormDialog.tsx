@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +61,7 @@ export function ProposalFormDialog({
   initialCustomerId,
   onSaved,
 }: ProposalFormDialogProps) {
+  const queryClient = useQueryClient();
   const me = useAppStore((s) => s.me);
   const proposals = useAppStore((s) => s.proposals);
   const customers = useAppStore((s) => s.customers);
@@ -70,6 +72,11 @@ export function ProposalFormDialog({
   const saveNewVersion = useAppStore((s) => s.saveNewVersion);
   const submitForApproval = useAppStore((s) => s.submitForApproval);
   const sendProposal = useAppStore((s) => s.sendProposal);
+
+  const invalidateProposalQueries = () => {
+    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    void queryClient.invalidateQueries({ queryKey: QK.dashboard() });
+  };
 
   const defaultValidUntil = () => {
     const d = new Date();
@@ -231,6 +238,7 @@ export function ProposalFormDialog({
       } as Proposal);
       toast({ title: "Proposal created", description: `${payload.proposalNumber} saved as draft.` });
     }
+    invalidateProposalQueries();
     onSaved();
     onOpenChange(false);
   };
@@ -254,6 +262,7 @@ export function ProposalFormDialog({
       if (added) submitForApproval(id);
     }
     toast({ title: "Submitted for approval", description: "Proposal has been sent for approval." });
+    invalidateProposalQueries();
     onSaved();
     onOpenChange(false);
   };
@@ -277,6 +286,7 @@ export function ProposalFormDialog({
       useAppStore.getState().sendProposal(id);
     }
     toast({ title: "Proposal sent", description: "Proposal has been sent to customer." });
+    invalidateProposalQueries();
     onSaved();
     onOpenChange(false);
   };

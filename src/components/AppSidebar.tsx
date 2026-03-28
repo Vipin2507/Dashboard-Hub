@@ -1,11 +1,14 @@
 import { useAppStore } from '@/store/useAppStore';
 import { hasModuleAccess, getScope, visibleWithScope } from '@/lib/rbac';
+import { useSidebarBadges } from '@/hooks/useSidebarBadges';
 import { ROLE_LABELS } from '@/types';
 import type { Module, Role } from '@/types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, Handshake, Users, Building2, Map, Mail, UsersRound, RotateCcw, Package, Settings,
   Zap,
+  Banknote,
+  Database,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -32,6 +35,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Proposals', module: 'proposals', path: '/proposals', icon: FileText },
       { label: 'Deals', module: 'deals', path: '/deals', icon: Handshake },
       { label: 'Automation', module: 'automation', path: '/automation', icon: Zap },
+      { label: 'Payments', module: 'payments', path: '/payments', icon: Banknote },
       { label: 'Inventory', module: 'inventory', path: '/inventory', icon: Package },
     ],
   },
@@ -43,6 +47,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Regions', module: 'regions', path: '/regions', icon: Map },
       { label: 'Email Log', module: 'email_log', path: '/email-log', icon: Mail },
       { label: 'Masters', module: 'masters', path: '/masters', icon: Settings },
+      { label: 'Data Control', module: 'data_control_center', path: '/admin/data-control', icon: Database },
     ],
   },
 ];
@@ -51,20 +56,21 @@ const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', '
 
 export function AppSidebar() {
   const me = useAppStore(s => s.me);
-  const proposals = useAppStore(s => s.proposals);
   const customers = useAppStore(s => s.customers);
   const automationLogs = useAppStore(s => s.automationLogs);
   const switchRole = useAppStore(s => s.switchRole);
   const resetDemo = useAppStore(s => s.resetDemo);
   const navigate = useNavigate();
   const location = useLocation();
-  const proposalScope = getScope(me.role, 'proposals');
+  const { proposalsBadge, dealsBadge, paymentsBadge } = useSidebarBadges();
   const customerScope = getScope(me.role, 'customers');
-  const visibleProposals = visibleWithScope(proposalScope, me, proposals);
   const visibleCustomers = visibleWithScope(customerScope, me, customers);
-  const pendingCount = visibleProposals.filter(p => p.status === 'approval_pending').length;
   const leadCount = visibleCustomers.filter(c => c.status === 'lead').length;
-  const showProposalBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && pendingCount > 0;
+  const showProposalBadge =
+    (me.role === 'super_admin' || me.role === 'sales_manager') && proposalsBadge > 0;
+  const showDealsBadge = dealsBadge > 0;
+  const showPaymentsBadge =
+    (me.role === 'super_admin' || me.role === 'finance') && paymentsBadge > 0;
   const showCustomerLeadBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && leadCount > 0;
   const failedLogsCount = automationLogs.filter(l => l.status === 'failed').length;
   const showAutomationBadge = failedLogsCount > 0;
@@ -91,8 +97,13 @@ export function AppSidebar() {
               </p>
               <div className="space-y-0.5">
                 {visibleItems.map(item => {
-                  const active = location.pathname === item.path || (item.path === '/customers' && location.pathname.startsWith('/customers/'));
+                  const active =
+                    location.pathname === item.path ||
+                    (item.path === '/customers' && location.pathname.startsWith('/customers/')) ||
+                    (item.path === '/payments' && location.pathname.startsWith('/payments'));
                   const isProposals = item.module === 'proposals';
+                  const isDeals = item.module === 'deals';
+                  const isPayments = item.module === 'payments';
                   const isCustomers = item.module === 'customers';
                   const isAutomation = item.module === 'automation';
                   return (
@@ -108,8 +119,24 @@ export function AppSidebar() {
                       <item.icon className="w-4 h-4 flex-shrink-0" />
                       <span>{item.label}</span>
                       {isProposals && showProposalBadge && (
+                        <Badge
+                          variant="outline"
+                          className="ml-auto h-5 min-w-5 px-1.5 text-[10px] border-0 bg-amber-500 text-white hover:bg-amber-500"
+                        >
+                          {proposalsBadge > 99 ? '99+' : proposalsBadge}
+                        </Badge>
+                      )}
+                      {isDeals && showDealsBadge && (
+                        <Badge
+                          variant="outline"
+                          className="ml-auto h-5 min-w-5 px-1.5 text-[10px] border-0 bg-blue-600 text-white hover:bg-blue-600"
+                        >
+                          {dealsBadge > 99 ? '99+' : dealsBadge}
+                        </Badge>
+                      )}
+                      {isPayments && showPaymentsBadge && (
                         <Badge variant="destructive" className="ml-auto h-5 min-w-5 px-1.5 text-[10px]">
-                          {pendingCount}
+                          {paymentsBadge > 99 ? '99+' : paymentsBadge}
                         </Badge>
                       )}
                       {isCustomers && showCustomerLeadBadge && (

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +11,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { toast } from "@/components/ui/use-toast";
+import { api } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import { useApproveProposal } from "@/hooks/useWorkflow";
+import type { Proposal } from "@/types";
 
 interface ApproveProposalDialogProps {
   proposalId: string;
@@ -18,16 +22,21 @@ interface ApproveProposalDialogProps {
 }
 
 export function ApproveProposalDialog({ proposalId, onClose }: ApproveProposalDialogProps) {
-  const proposal = useAppStore((s) => s.proposals.find((p) => p.id === proposalId));
-  const approveProposal = useAppStore((s) => s.approveProposal);
   const me = useAppStore((s) => s.me);
+  const approve = useApproveProposal();
+  const { data: proposals } = useQuery({
+    queryKey: QK.proposals(),
+    queryFn: () => api.get<Proposal[]>("/proposals"),
+  });
+  const proposal = proposals?.find((p) => p.id === proposalId);
 
   if (!proposal) return null;
 
   const handleApprove = () => {
-    approveProposal(proposalId, me.id);
-    toast({ title: "Proposal approved", description: `${proposal.proposalNumber} has been approved.` });
-    onClose();
+    approve.mutate(
+      { proposalId, approverId: me.id },
+      { onSuccess: () => onClose() },
+    );
   };
 
   return (
@@ -41,7 +50,9 @@ export function ApproveProposalDialog({ proposalId, onClose }: ApproveProposalDi
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleApprove}>Approve proposal</AlertDialogAction>
+          <AlertDialogAction onClick={handleApprove} disabled={approve.isPending}>
+            {approve.isPending ? "Approving…" : "Approve proposal"}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

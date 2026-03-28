@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
-import { getScope, visibleWithScope, formatINR } from '@/lib/rbac';
+import { formatINR } from '@/lib/rbac';
 import { runAutomationRules } from '@/lib/automationService';
+import { useDashboardData } from '@/hooks/useDashboardData';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -20,6 +21,8 @@ import {
   AlertCircle,
   CalendarClock,
   Ticket,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -37,6 +40,7 @@ import {
 } from 'recharts';
 import { formatDistanceToNow } from 'date-fns';
 import type { ProposalStatus } from '@/types';
+import { normalizeDealStatus } from '@/lib/dealStatus';
 
 const BUILDESK_BLUE = '#0072BC';
 
@@ -45,9 +49,19 @@ export default function DashboardPage() {
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
-  const customers = useAppStore((s) => s.customers);
-  const proposals = useAppStore((s) => s.proposals);
-  const deals = useAppStore((s) => s.deals);
+  const dealsForAutomation = useAppStore((s) => s.deals);
+  const {
+    scopedProposals,
+    scopedDeals,
+    scopedCustomers,
+    kpis,
+    paymentHistory,
+    isLoading: dashboardLoading,
+    refetchAll,
+    proposalsQuery,
+    dealsQuery,
+    customersQuery,
+  } = useDashboardData();
   const navigate = useNavigate();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -59,14 +73,6 @@ export default function DashboardPage() {
   const [detailTitle, setDetailTitle] = useState('');
   const [detailRows, setDetailRows] = useState<Array<{ key: string; label: string; value: string }>>([]);
   const [detailLink, setDetailLink] = useState('');
-
-  const proposalScope = getScope(me.role, 'proposals');
-  const dealScope = getScope(me.role, 'deals');
-  const customerScope = getScope(me.role, 'customers');
-
-  const visibleDeals = visibleWithScope(dealScope, me, deals);
-  const visibleProposals = visibleWithScope(proposalScope, me, proposals);
-  const visibleCustomers = visibleWithScope(customerScope, me, customers);
 
   const ownerMeta = useMemo(() => {
     const map = new Map<string, { teamId: string; regionId: string }>();
@@ -83,7 +89,7 @@ export default function DashboardPage() {
   };
 
   const filteredProposals = useMemo(() => {
-    return visibleProposals.filter((p) => {
+    return scopedProposals.filter((p) => {
       if (proposalStatusFilter !== 'all' && p.status !== proposalStatusFilter) return false;
       if (!inDateRange(p.createdAt)) return false;
       if (ownerFilter !== 'all' && p.assignedTo !== ownerFilter) return false;
@@ -92,26 +98,26 @@ export default function DashboardPage() {
       if (regionFilter !== 'all' && meta?.regionId !== regionFilter) return false;
       return true;
     });
-  }, [visibleProposals, proposalStatusFilter, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter, ownerMeta]);
+  }, [scopedProposals, proposalStatusFilter, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter, ownerMeta]);
 
   const filteredDeals = useMemo(() => {
-    return visibleDeals.filter((d) => {
+    return scopedDeals.filter((d) => {
       if (ownerFilter !== 'all' && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== 'all' && d.teamId !== teamFilter) return false;
       if (regionFilter !== 'all' && d.regionId !== regionFilter) return false;
       return true;
     });
-  }, [visibleDeals, ownerFilter, teamFilter, regionFilter]);
+  }, [scopedDeals, ownerFilter, teamFilter, regionFilter]);
 
   const filteredCustomers = useMemo(() => {
-    return visibleCustomers.filter((c) => {
+    return scopedCustomers.filter((c) => {
       if (!inDateRange(c.createdAt)) return false;
-      if (ownerFilter !== 'all' && c.assignedTo !== ownerFilter) return false;
-      if (teamFilter !== 'all' && c.teamId !== teamFilter) return false;
+      if (ownerFilter !== 'all' && c.assignedTo && c.assignedTo !== ownerFilter) return false;
+      if (teamFilter !== 'all' && c.teamId && c.teamId !== teamFilter) return false;
       if (regionFilter !== 'all' && c.regionId !== regionFilter) return false;
       return true;
     });
-  }, [visibleCustomers, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter]);
+  }, [scopedCustomers, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter]);
 
   useEffect(() => {
     runAutomationRules();
@@ -123,56 +129,47 @@ export default function DashboardPage() {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const today = new Date().toISOString().slice(0, 10);
 
-  // Total Revenue — sum of all paid customer payments
   const totalRevenue = useMemo(() => {
-    return filteredCustomers.reduce((sum, c) => {
-      return sum + (c.payments?.reduce((s, p) => s + p.amount, 0) ?? 0);
-    }, 0);
-  }, [filteredCustomers]);
+    const ids = new Set(filteredCustomers.map((c) => c.id));
+    return paymentHistory
+      .filter((r) => ids.has(r.customerId) && (!r.paymentStatus || r.paymentStatus === "confirmed"))
+      .reduce((s, r) => s + Number(r.amountPaid ?? 0), 0);
+  }, [filteredCustomers, paymentHistory]);
 
-  // Active Proposals — sent / approval_pending / approved
   const activeProposalsCount = useMemo(
     () =>
       filteredProposals.filter(
-        (p) => p.status === 'sent' || p.status === 'approval_pending' || p.status === 'approved'
+        (p) => p.status === "sent" || p.status === "approval_pending" || p.status === "approved",
       ).length,
-    [filteredProposals]
+    [filteredProposals],
   );
 
-  // Deals Closed This Month — from customer activityLog "Deal closed" in current month
   const dealsClosedThisMonth = useMemo(() => {
-    let count = 0;
-    for (const c of filteredCustomers) {
-      for (const log of c.activityLog ?? []) {
-        if (log.action === 'Deal closed' && log.timestamp >= startOfMonth) count++;
-      }
-    }
-    return count;
-  }, [filteredCustomers, startOfMonth]);
+    const m = now.getMonth();
+    const y = now.getFullYear();
+    return filteredDeals.filter((d) => {
+      if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return false;
+      const ts = d.updatedAt ?? d.lastActivityAt ?? "";
+      if (!ts) return false;
+      const dt = new Date(ts);
+      return dt.getMonth() === m && dt.getFullYear() === y;
+    }).length;
+  }, [filteredDeals, now]);
 
-  // New Customers This Month
-  const newCustomersThisMonth = useMemo(
-    () => filteredCustomers.filter((c) => c.createdAt >= startOfMonth).length,
-    [filteredCustomers, startOfMonth]
-  );
+  const newCustomersThisMonth = useMemo(() => {
+    return filteredCustomers.filter((c) => {
+      const d = new Date(c.createdAt);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+  }, [filteredCustomers, now]);
 
-  // Pending Approvals
   const pendingApprovals = useMemo(
-    () => filteredProposals.filter((p) => p.status === 'approval_pending').length,
-    [filteredProposals]
+    () => filteredProposals.filter((p) => p.status === "approval_pending").length,
+    [filteredProposals],
   );
 
-  // Overdue Invoices — unpaid and dueDate < today
-  const overdueInvoices = useMemo(() => {
-    return filteredCustomers.reduce((sum, c) => {
-      return (
-        sum +
-        (c.invoices?.filter((inv) => (inv.status === 'unpaid' || inv.status === 'overdue') && inv.dueDate < today).length ?? 0)
-      );
-    }, 0);
-  }, [filteredCustomers, today]);
+  const overdueInvoices = kpis.overduePayments;
 
-  // Expiring Subscriptions (30 days) — product lines expiring within 30 days
   const thirtyDaysFromNow = new Date(now);
   thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
   const expiringSubscriptions = useMemo(() => {
@@ -187,7 +184,6 @@ export default function DashboardPage() {
     }, 0);
   }, [filteredCustomers, now, thirtyDaysFromNow]);
 
-  // Open Support Tickets — open + in_progress
   const openSupportTickets = useMemo(() => {
     return filteredCustomers.reduce(
       (sum, c) =>
@@ -213,7 +209,7 @@ export default function DashboardPage() {
     { label: 'Open Support Tickets', value: String(openSupportTickets), sub: 'Open + In progress', icon: Ticket, color: 'text-muted-foreground' },
   ];
 
-  // Monthly Revenue — last 6 months, paid payments grouped by month, Y in lakhs
+  // Monthly Revenue — last 6 months from API payment history (confirmed), Y in lakhs
   const monthlyRevenueData = useMemo(() => {
     const months: { month: string; revenue: number; full: string; year: number; monthNum: number }[] = [];
     for (let i = 5; i >= 0; i--) {
@@ -226,15 +222,16 @@ export default function DashboardPage() {
         monthNum: d.getMonth(),
       });
     }
-    for (const c of filteredCustomers) {
-      for (const p of c.payments ?? []) {
-        const paid = new Date(p.paidOn);
-        const m = months.find((x) => x.year === paid.getFullYear() && x.monthNum === paid.getMonth());
-        if (m) m.revenue += p.amount;
-      }
+    const ids = new Set(filteredCustomers.map((c) => c.id));
+    for (const r of paymentHistory) {
+      if (!ids.has(r.customerId)) continue;
+      if (r.paymentStatus && r.paymentStatus !== "confirmed") continue;
+      const paid = new Date(r.paymentDate);
+      const m = months.find((x) => x.year === paid.getFullYear() && x.monthNum === paid.getMonth());
+      if (m) m.revenue += Number(r.amountPaid ?? 0);
     }
     return months.map((m) => ({ month: m.month, full: m.full, revenueLakhs: Math.round((m.revenue / 100_000) * 100) / 100 }));
-  }, [filteredCustomers, now]);
+  }, [filteredCustomers, paymentHistory, now]);
 
   // Proposal Pipeline — count per status, horizontal bar
   const pipelineStatuses: ProposalStatus[] = [
@@ -275,7 +272,7 @@ export default function DashboardPage() {
 
   const donutColors = ['#22c55e', '#0072BC', '#94a3b8', '#f97316', '#ef4444'];
 
-  // Recent Activity — last 10 across all customers
+  // Recent Activity — requires rich customer records; API-only customers have no activityLog
   const recentActivity = useMemo(() => {
     const all: { id: string; text: string; timestamp: string; action: string }[] = [];
     for (const c of filteredCustomers) {
@@ -385,8 +382,27 @@ export default function DashboardPage() {
             >
               Clear Filters
             </Button>
+            <Button
+              variant="secondary"
+              className="h-9 gap-2"
+              type="button"
+              disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
+              onClick={() => refetchAll()}
+            >
+              {dashboardLoading || proposalsQuery.isFetching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Refresh data
+            </Button>
           </CardContent>
         </Card>
+        {dashboardLoading && (
+          <p className="text-xs text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading live metrics from API…
+          </p>
+        )}
         {/* KPI Row 1 — Top 4 large cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpiRow1.map((s) => (

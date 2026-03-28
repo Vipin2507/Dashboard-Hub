@@ -1,5 +1,14 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
+import { api } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import {
+  CustomerProposalsLiveTable,
+  CustomerDealsLiveTable,
+  CustomerPaymentsLiveSection,
+  CustomerActivityLiveFeed,
+} from "@/components/customer-profile/CustomerLiveSections";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
@@ -68,7 +77,7 @@ import {
   Ticket,
   IndianRupee,
 } from "lucide-react";
-import type { Customer, CustomerStatus } from "@/types";
+import type { Customer, CustomerStatus, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
@@ -127,7 +136,6 @@ export default function CustomerProfile() {
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
   const proposals = useAppStore((s) => s.proposals);
-  const deals = useAppStore((s) => s.deals);
   const users = useAppStore((s) => s.users);
   const regions = useAppStore((s) => s.regions);
   const teams = useAppStore((s) => s.teams);
@@ -158,10 +166,12 @@ export default function CustomerProfile() {
   const canManageTickets = can(me.role, "customers", "manage_tickets");
   const canUpdateCustomer = customer && (scope === "ALL" || customer.assignedTo === me.id);
 
-  const customerProposals = customer
-    ? proposals.filter((p) => p.customerId === customer.id)
-    : [];
-  const customerDeals = customer ? deals.filter((d) => d.customerId === customer.id) : [];
+  const { data: liveProposals = [] } = useQuery({
+    queryKey: QK.customerProposals(customer?.id ?? ""),
+    queryFn: () => api.get<Proposal[]>(`/proposals?customerId=${encodeURIComponent(customer!.id)}`),
+    enabled: !!customer?.id,
+    staleTime: 30_000,
+  });
 
   const openTicketsCount = customer?.supportTickets.filter(
     (t) => t.status === "open" || t.status === "in_progress"
@@ -184,7 +194,7 @@ export default function CustomerProfile() {
   const primaryContact = customer.contacts.find((c) => c.isPrimary) ?? customer.contacts[0];
   const assignedUser = users.find((u) => u.id === customer.assignedTo);
   const detailProposal = proposalDetailId
-    ? proposals.find((p) => p.id === proposalDetailId)
+    ? liveProposals.find((p) => p.id === proposalDetailId) ?? proposals.find((p) => p.id === proposalDetailId)
     : null;
 
   const addressLines = [
@@ -543,147 +553,21 @@ export default function CustomerProfile() {
                 <AccordionItem value="proposals" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Proposals</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    <div className="overflow-x-auto rounded-md border border-border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Proposal #</TableHead>
-                          <TableHead className="text-xs">Title</TableHead>
-                          <TableHead className="text-xs text-right">Value</TableHead>
-                          <TableHead className="text-xs">Status</TableHead>
-                          <TableHead className="text-xs">Created</TableHead>
-                          <TableHead className="text-xs">Valid Until</TableHead>
-                          <TableHead className="text-xs w-[80px]">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {customerProposals
-                          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-                          .map((p) => (
-                            <TableRow key={p.id}>
-                              <TableCell className="font-mono text-xs">{p.proposalNumber}</TableCell>
-                              <TableCell className="text-sm">{p.title}</TableCell>
-                              <TableCell className="text-right font-mono text-sm">
-                                {formatINR(p.finalQuoteValue ?? p.grandTotal)}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-[10px]">
-                                  {p.status.replace("_", " ")}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {p.createdAt.slice(0, 10)}
-                              </TableCell>
-                              <TableCell className="text-xs">{p.validUntil}</TableCell>
-                              <TableCell>
-                                <Button variant="ghost" size="sm" className="h-7" onClick={() => setProposalDetailId(p.id)}>
-                                  View
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        {customerProposals.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
-                              No proposals
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                    </div>
+                    <CustomerProposalsLiveTable customerId={customer.id} onViewProposal={(id) => setProposalDetailId(id)} />
                   </AccordionContent>
                 </AccordionItem>
 
                 <AccordionItem value="deals" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Deals</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    <div className="overflow-x-auto rounded-md border border-border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Deal #</TableHead>
-                          <TableHead className="text-xs">Title</TableHead>
-                          <TableHead className="text-xs text-right">Value</TableHead>
-                          <TableHead className="text-xs">Stage</TableHead>
-                          <TableHead className="text-xs">Created</TableHead>
-                          <TableHead className="text-xs w-[80px]">Action</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {customerDeals.map((d) => (
-                          <TableRow key={d.id}>
-                            <TableCell className="font-mono text-xs">{d.id}</TableCell>
-                            <TableCell className="text-sm">{d.name}</TableCell>
-                            <TableCell className="text-right font-mono text-sm">{formatINR(d.value)}</TableCell>
-                            <TableCell><Badge variant="outline" className="text-[10px]">{d.stage}</Badge></TableCell>
-                            <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm" className="h-7" onClick={() => navigate("/deals")}>
-                                View
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {customerDeals.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">
-                              No deals
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                    </div>
+                    <CustomerDealsLiveTable customerId={customer.id} />
                   </AccordionContent>
                 </AccordionItem>
 
                 <AccordionItem value="payments" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Payments</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    {(can(me.role, "customers", "view") && (me.role === "finance" || me.role === "super_admin")) && (
-                      <Button size="sm" variant="outline" className="mb-4" onClick={() => setRecordPaymentOpen(true)}>
-                        <Plus className="w-4 h-4 mr-1" /> Record Payment
-                      </Button>
-                    )}
-                    <div className="overflow-x-auto rounded-md border border-border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Date</TableHead>
-                          <TableHead className="text-xs">Deal</TableHead>
-                          <TableHead className="text-xs text-right">Amount</TableHead>
-                          <TableHead className="text-xs">Mode</TableHead>
-                          <TableHead className="text-xs">Reference</TableHead>
-                          <TableHead className="text-xs">Notes</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {customer.payments.map((pay) => (
-                          <TableRow key={pay.id}>
-                            <TableCell className="text-xs">{pay.paidOn}</TableCell>
-                            <TableCell className="text-sm">{pay.dealTitle}</TableCell>
-                            <TableCell className="text-right font-mono text-sm">{formatINR(pay.amount)}</TableCell>
-                            <TableCell className="text-xs">{pay.mode}</TableCell>
-                            <TableCell className="text-xs font-mono">{pay.reference}</TableCell>
-                            <TableCell className="text-xs text-muted-foreground">{pay.notes ?? "—"}</TableCell>
-                          </TableRow>
-                        ))}
-                        {customer.payments.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-6">
-                              No payments recorded
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                    </div>
-                    {customer.payments.length > 0 && (
-                      <p className="text-sm font-medium mt-4">
-                        Total Paid: {formatINR(customer.payments.reduce((s, p) => s + p.amount, 0))}
-                      </p>
-                    )}
+                    <CustomerPaymentsLiveSection customerId={customer.id} onRecordPayment={() => setRecordPaymentOpen(true)} />
                   </AccordionContent>
                 </AccordionItem>
 
@@ -1159,45 +1043,29 @@ export default function CustomerProfile() {
             <TabsContent value="activity" className="mt-6 space-y-4">
               <Card className="border border-border overflow-hidden">
                 <CardHeader className="flex flex-row items-center justify-between px-6 py-4 border-b border-border">
-                  <CardTitle className="text-base font-semibold">Activity Log</CardTitle>
+                  <CardTitle className="text-base font-semibold">Activity (live)</CardTitle>
                   <Button size="sm" variant="outline" className="shrink-0" onClick={() => setLogActivityOpen(true)}>
                     <Plus className="w-4 h-4 mr-1" /> Log Activity
                   </Button>
                 </CardHeader>
                 <CardContent className="p-6">
-              <div className="space-y-3">
-                {customer.activityLog.slice(0, 20).map((entry) => (
-                  <div key={entry.id} className="flex gap-3 items-start">
-                    <div
-                      className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-primary"
-                      style={{
-                        backgroundColor:
-                          entry.entityType === "proposal"
-                            ? "var(--color-blue-500)"
-                            : entry.entityType === "deal"
-                            ? "var(--color-purple-500)"
-                            : entry.entityType === "payment"
-                            ? "var(--color-green-500)"
-                            : entry.entityType === "ticket"
-                            ? "var(--color-orange-500)"
-                            : entry.entityType === "note"
-                            ? "var(--color-gray-500)"
-                            : "var(--color-teal-500)",
-                      }}
-                    />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">{entry.action}</p>
-                      <p className="text-xs text-muted-foreground">{entry.description}</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        by {entry.performedByName} · {formatDate(entry.timestamp)}
-                      </p>
+                  <CustomerActivityLiveFeed customerId={customer.id} />
+                  {customer.activityLog.length > 0 && (
+                    <div className="mt-8 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase">Local notes</p>
+                      <div className="space-y-3">
+                        {customer.activityLog.slice(0, 10).map((entry) => (
+                          <div key={entry.id} className="flex gap-3 items-start text-sm">
+                            <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-muted" />
+                            <div>
+                              <p className="font-medium">{entry.action}</p>
+                              <p className="text-xs text-muted-foreground">{entry.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {customer.activityLog.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No activity yet.</p>
-                )}
-              </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

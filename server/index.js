@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import { db, SQLITE_PATH } from "./db.js";
+import { registerPaymentsApi } from "./paymentsApi.js";
+import { registerDataControlApi } from "./dataControlApi.js";
+import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -12,8 +15,63 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function nextDealId() {
+  return db.transaction(() => {
+    const year = new Date().getFullYear();
+    db.prepare("INSERT INTO deal_sequence (year, lastSeq) VALUES (?, 0) ON CONFLICT(year) DO NOTHING").run(year);
+    db.prepare("UPDATE deal_sequence SET lastSeq = lastSeq + 1 WHERE year = ?").run(year);
+    const row = db.prepare("SELECT lastSeq FROM deal_sequence WHERE year = ?").get(year);
+    return `DEAL-${year}-${String(row.lastSeq).padStart(4, "0")}`;
+  })();
+}
+
+function isSuperAdminRole(role) {
+  return role === "super_admin";
+}
+
+function serializeDealField(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number") return String(v);
+  return String(v);
+}
+
+function logDealFieldChanges(dbConn, dealId, before, after, userId, userName) {
+  const keys = [
+    "name",
+    "customerId",
+    "ownerUserId",
+    "teamId",
+    "regionId",
+    "stage",
+    "value",
+    "locked",
+    "proposalId",
+    "dealSource",
+    "expectedCloseDate",
+    "priority",
+    "nextFollowUpDate",
+    "lossReason",
+    "contactPhone",
+    "remarks",
+  ];
+  for (const field of keys) {
+    const oldVal = serializeDealField(before[field]);
+    const newVal = serializeDealField(after[field]);
+    if (oldVal !== newVal) {
+      logDealAudit(dbConn, dealId, "deal_field_changed", { field, oldValue: oldVal, newValue: newVal }, userId, userName);
+    }
+  }
+}
+
 function toInventoryResponse(row) {
-  return { ...row, isActive: !!row.isActive };
+  return {
+    ...row,
+    isActive: !!row.isActive,
+    stockQty: row.stockQty != null ? Number(row.stockQty) : 0,
+    supplier: row.supplier ?? null,
+    location: row.location ?? null,
+  };
 }
 
 function toProposalRow(proposal) {
@@ -34,7 +92,42 @@ function toProposalRow(proposal) {
 }
 
 function toDealResponse(row) {
-  return { ...row, value: Number(row.value) || 0, locked: !!row.locked };
+  if (!row) return row;
+  return {
+    ...row,
+    value: Number(row.value) || 0,
+    locked: !!row.locked,
+    dealStatus: row.dealStatus || "Active",
+    dealSource: row.dealSource ?? null,
+    expectedCloseDate: row.expectedCloseDate ?? null,
+    priority: row.priority || "Medium",
+    lastActivityAt: row.lastActivityAt ?? null,
+    nextFollowUpDate: row.nextFollowUpDate ?? null,
+    lossReason: row.lossReason ?? null,
+    contactPhone: row.contactPhone ?? null,
+    remarks: row.remarks ?? null,
+    createdByUserId: row.createdByUserId ?? null,
+    createdByName: row.createdByName ?? null,
+    createdAt: row.createdAt ?? null,
+    updatedAt: row.updatedAt ?? null,
+    deletedAt: row.deletedAt ?? null,
+    deletedByUserId: row.deletedByUserId ?? null,
+    deletedByName: row.deletedByName ?? null,
+  };
+}
+
+function logDealAudit(db, dealId, action, detail, userId, userName) {
+  db.prepare(
+    `INSERT INTO deal_audit (id, dealId, action, detailJson, userId, userName, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    "da" + makeId(),
+    dealId,
+    action,
+    JSON.stringify(detail ?? {}),
+    userId || "system",
+    userName || "System",
+    new Date().toISOString(),
+  );
 }
 
 function parseJsonSafe(raw, fallback = null) {
@@ -126,8 +219,13 @@ app.put("/api/users/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   const updated = { ...existing, ...(req.body || {}), id: req.params.id };
   db.prepare(
-    "UPDATE users SET name=@name, email=@email, password=@password, role=@role, teamId=@teamId, regionId=@regionId, status=@status WHERE id=@id"
-  ).run(updated);
+    "UPDATE users SET name=@name, email=@email, password=@password, role=@role, teamId=@teamId, regionId=@regionId, status=@status, phone=@phone, joinDate=@joinDate, remarks=@remarks WHERE id=@id"
+  ).run({
+    ...updated,
+    phone: updated.phone ?? null,
+    joinDate: updated.joinDate ?? null,
+    remarks: updated.remarks ?? null,
+  });
   res.json(updated);
 });
 
@@ -159,8 +257,14 @@ app.get("/api/customers", (_req, res) => {
   res.json(rows);
 });
 
+app.get("/api/customers/:id", (req, res) => {
+  const row = db.prepare("SELECT * FROM customers WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  res.json(row);
+});
+
 app.post("/api/customers", (req, res) => {
-  const { name, state, gstin, regionId, leadId, city, email, primaryPhone, status, salesExecutive, accountManager, deliveryExecutive } = req.body || {};
+  const { name, state, gstin, regionId, leadId, city, email, primaryPhone, status, salesExecutive, accountManager, deliveryExecutive, remarks } = req.body || {};
   if (!name || !regionId) return res.status(400).json({ error: "name and regionId are required" });
 
   const customer = {
@@ -178,11 +282,12 @@ app.post("/api/customers", (req, res) => {
     salesExecutive: salesExecutive || null,
     accountManager: accountManager || null,
     deliveryExecutive: deliveryExecutive || null,
+    remarks: remarks ?? null,
   };
 
   db.prepare(`
-    INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive)
-    VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive)
+    INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks)
+    VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks)
   `).run(customer);
 
   res.status(201).json(customer);
@@ -197,30 +302,30 @@ app.post("/api/customers/bulk", (req, res) => {
 
   const created = items.filter((it) => it && it.name && it.regionId).map((it) => ({
     id: it.id || "c" + makeId(),
-    leadId: it.leadId || `L-${makeId()}`,
-    name: it.name,
-    state: it.state || "Unknown",
-    gstin: it.gstin ?? null,
-    regionId: it.regionId,
-    city: it.city || null,
-    email: it.email || null,
-    primaryPhone: it.primaryPhone || null,
-    status: it.status || "active",
-    createdAt: new Date().toISOString(),
-    salesExecutive: it.salesExecutive || null,
-    accountManager: it.accountManager || null,
-    deliveryExecutive: it.deliveryExecutive || null,
-  }));
+      leadId: it.leadId || `L-${makeId()}`,
+      name: it.name,
+      state: it.state || "Unknown",
+      gstin: it.gstin ?? null,
+      regionId: it.regionId,
+      city: it.city || null,
+      email: it.email || null,
+      primaryPhone: it.primaryPhone || null,
+      status: it.status || "active",
+      createdAt: new Date().toISOString(),
+      salesExecutive: it.salesExecutive || null,
+      accountManager: it.accountManager || null,
+      deliveryExecutive: it.deliveryExecutive || null,
+    }));
 
   db.transaction((rows) => rows.forEach((r) => insertCustomer.run(r)))(created);
   res.status(201).json(created);
 });
 
-app.get("/api/proposals", (_req, res) => {
+app.get("/api/proposals", (req, res) => {
   const rows = db
     .prepare("SELECT data FROM proposals ORDER BY createdAt DESC")
     .all();
-  const items = rows
+  let items = rows
     .map((r) => {
       try {
         return JSON.parse(r.data);
@@ -229,6 +334,13 @@ app.get("/api/proposals", (_req, res) => {
       }
     })
     .filter(Boolean);
+  const { customerId, status } = req.query || {};
+  if (customerId) {
+    items = items.filter((p) => p && p.customerId === customerId);
+  }
+  if (status) {
+    items = items.filter((p) => p && p.status === status);
+  }
   res.json(items);
 });
 
@@ -271,14 +383,28 @@ app.delete("/api/proposals/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/deals", (_req, res) => {
-  const rows = db.prepare("SELECT * FROM deals ORDER BY id DESC").all().map(toDealResponse);
+app.get("/api/deals", (req, res) => {
+  const includeDeleted = req.query.includeDeleted === "1" && req.query.actorRole === "super_admin";
+  let rows = (
+    includeDeleted
+      ? db.prepare("SELECT * FROM deals ORDER BY id DESC").all()
+      : db
+          .prepare("SELECT * FROM deals WHERE (deletedAt IS NULL OR deletedAt = '') ORDER BY id DESC")
+          .all()
+  ).map(toDealResponse);
+  const { customerId, stage } = req.query || {};
+  if (customerId) {
+    rows = rows.filter((d) => d.customerId === customerId);
+  }
+  if (stage) {
+    const sl = String(stage).toLowerCase();
+    rows = rows.filter((d) => String(d.stage).toLowerCase() === sl);
+  }
   res.json(rows);
 });
 
 app.post("/api/deals", (req, res) => {
   const {
-    id,
     name,
     customerId,
     ownerUserId,
@@ -288,14 +414,38 @@ app.post("/api/deals", (req, res) => {
     value,
     locked,
     proposalId,
+    dealStatus,
+    dealSource,
+    expectedCloseDate,
+    priority,
+    nextFollowUpDate,
+    lossReason,
+    contactPhone,
+    remarks,
+    changedByUserId,
+    changedByName,
+    createdByUserId,
+    createdByName,
+    actorRole,
   } = req.body || {};
   if (!name || !customerId || !ownerUserId || !teamId || !regionId || !stage) {
     return res
       .status(400)
       .json({ error: "name, customerId, ownerUserId, teamId, regionId and stage are required" });
   }
+  const numVal = Number(value);
+  if (!Number.isFinite(numVal) || numVal <= 0) {
+    return res.status(400).json({ error: "value must be a positive number" });
+  }
+  const ds = dealStatus || "Active";
+  if (ds === "Closed/Lost" && !isSuperAdminRole(actorRole)) {
+    return res.status(403).json({ error: "Only super admin can create a deal with status Closed/Lost" });
+  }
+  const now = new Date().toISOString();
+  const creatorId = createdByUserId || changedByUserId;
+  const creatorName = createdByName || changedByName;
   const deal = {
-    id: id || "d" + makeId(),
+    id: nextDealId(),
     name,
     customerId,
     ownerUserId,
@@ -305,19 +455,97 @@ app.post("/api/deals", (req, res) => {
     value: Number(value) || 0,
     locked: locked ? 1 : 0,
     proposalId: proposalId || null,
+    dealStatus: ds,
+    dealSource: dealSource || null,
+    expectedCloseDate: expectedCloseDate || null,
+    priority: priority || "Medium",
+    lastActivityAt: now,
+    nextFollowUpDate: nextFollowUpDate || null,
+    lossReason: lossReason || null,
+    contactPhone: contactPhone != null && String(contactPhone).trim() ? String(contactPhone).trim() : null,
+    remarks: remarks != null && String(remarks).trim() ? String(remarks).trim() : null,
+    createdByUserId: creatorId || null,
+    createdByName: creatorName || null,
+    createdAt: now,
+    updatedAt: now,
   };
+  if (deal.dealStatus === "Closed/Lost" && (!deal.lossReason || !String(deal.lossReason).trim())) {
+    return res.status(400).json({ error: "lossReason is required when status is Closed/Lost" });
+  }
   db.prepare(`
-    INSERT INTO deals (id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId)
-    VALUES (@id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId)
+    INSERT INTO deals (
+      id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
+      dealStatus, dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
+      contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt
+    ) VALUES (
+      @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
+      @dealStatus, @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
+      @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt
+    )
   `).run(deal);
+  logDealAudit(
+    db,
+    deal.id,
+    "deal_created",
+    {
+      dealId: deal.id,
+      dealStatus: deal.dealStatus,
+      name: deal.name,
+      value: deal.value,
+      customerId: deal.customerId,
+      ownerUserId: deal.ownerUserId,
+    },
+    changedByUserId,
+    changedByName,
+  );
   res.status(201).json(toDealResponse(deal));
 });
 
 app.put("/api/deals/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
-  const { name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId } =
-    req.body || {};
+  if (existing.deletedAt) return res.status(410).json({ error: "Deal has been deleted" });
+
+  const { actorRole, changedByUserId, changedByName } = req.body || {};
+  if (!isSuperAdminRole(actorRole)) {
+    return res.status(403).json({ error: "Only super admin can update deals" });
+  }
+
+  const {
+    name,
+    customerId,
+    ownerUserId,
+    teamId,
+    regionId,
+    stage,
+    value,
+    locked,
+    proposalId,
+    dealStatus,
+    dealSource,
+    expectedCloseDate,
+    priority,
+    nextFollowUpDate,
+    lossReason,
+    contactPhone,
+    remarks,
+  } = req.body || {};
+
+  const prevStatus = existing.dealStatus || "Active";
+  const mergedStatus = dealStatus !== undefined ? dealStatus : prevStatus;
+  const mergedLossReason =
+    mergedStatus === "Closed/Lost"
+      ? lossReason !== undefined
+        ? lossReason
+        : existing.lossReason
+      : null;
+
+  if (mergedStatus === "Closed/Lost" && (!mergedLossReason || !String(mergedLossReason).trim())) {
+    return res.status(400).json({ error: "lossReason is required when status is Closed/Lost" });
+  }
+
+  const now = new Date().toISOString();
+  const beforeSnapshot = { ...existing };
   const deal = {
     ...existing,
     ...(name !== undefined && { name }),
@@ -329,19 +557,79 @@ app.put("/api/deals/:id", (req, res) => {
     ...(value !== undefined && { value: Number(value) || 0 }),
     ...(locked !== undefined && { locked: locked ? 1 : 0 }),
     ...(proposalId !== undefined && { proposalId: proposalId || null }),
+    dealStatus: mergedStatus,
+    ...(dealSource !== undefined && { dealSource: dealSource || null }),
+    ...(expectedCloseDate !== undefined && { expectedCloseDate: expectedCloseDate || null }),
+    ...(priority !== undefined && { priority: priority || "Medium" }),
+    ...(nextFollowUpDate !== undefined && { nextFollowUpDate: nextFollowUpDate || null }),
+    lossReason: mergedLossReason,
+    lastActivityAt: now,
+    updatedAt: now,
+    ...(contactPhone !== undefined && {
+      contactPhone: contactPhone != null && String(contactPhone).trim() ? String(contactPhone).trim() : null,
+    }),
+    ...(remarks !== undefined && {
+      remarks: remarks != null && String(remarks).trim() ? String(remarks).trim() : null,
+    }),
   };
+
   db.prepare(`
     UPDATE deals SET
       name=@name, customerId=@customerId, ownerUserId=@ownerUserId, teamId=@teamId, regionId=@regionId,
-      stage=@stage, value=@value, locked=@locked, proposalId=@proposalId
+      stage=@stage, value=@value, locked=@locked, proposalId=@proposalId,
+      dealStatus=@dealStatus, dealSource=@dealSource, expectedCloseDate=@expectedCloseDate,
+      priority=@priority, lastActivityAt=@lastActivityAt, nextFollowUpDate=@nextFollowUpDate, lossReason=@lossReason,
+      contactPhone=@contactPhone, remarks=@remarks, updatedAt=@updatedAt
     WHERE id=@id
-  `).run(deal);
-  res.json(toDealResponse(deal));
+  `).run({
+    ...deal,
+    dealStatus: deal.dealStatus || "Active",
+    priority: deal.priority || "Medium",
+  });
+
+  if (mergedStatus !== prevStatus) {
+    logDealAudit(
+      db,
+      deal.id,
+      "deal_status_changed",
+      {
+        from: prevStatus,
+        to: mergedStatus,
+        ...(mergedLossReason ? { lossReason: mergedLossReason } : {}),
+      },
+      changedByUserId,
+      changedByName,
+    );
+  }
+
+  logDealFieldChanges(db, deal.id, beforeSnapshot, deal, changedByUserId, changedByName);
+
+  const out = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
+  res.json(toDealResponse(out));
+});
+
+app.get("/api/deals/:id/audit", (req, res) => {
+  const rows = db
+    .prepare("SELECT * FROM deal_audit WHERE dealId = ? ORDER BY at DESC LIMIT 200")
+    .all(req.params.id);
+  res.json(rows);
 });
 
 app.delete("/api/deals/:id", (req, res) => {
-  const info = db.prepare("DELETE FROM deals WHERE id = ?").run(req.params.id);
-  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  let body = req.body;
+  if (!body || typeof body !== "object") body = {};
+  const { actorRole, deletedByUserId, deletedByName } = body;
+  if (!isSuperAdminRole(actorRole)) {
+    return res.status(403).json({ error: "Only super admin can delete deals" });
+  }
+  const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  if (existing.deletedAt) return res.json({ ok: true });
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE deals SET deletedAt = ?, deletedByUserId = ?, deletedByName = ?, updatedAt = ? WHERE id = ?`,
+  ).run(now, deletedByUserId || null, deletedByName || null, now, req.params.id);
+  logDealAudit(db, req.params.id, "deal_soft_deleted", {}, deletedByUserId, deletedByName);
   res.json({ ok: true });
 });
 
@@ -468,6 +756,7 @@ app.put("/api/customers/:id", (req, res) => {
     salesExecutive,
     accountManager,
     deliveryExecutive,
+    remarks,
   } = req.body || {};
 
   const updated = {
@@ -484,13 +773,14 @@ app.put("/api/customers/:id", (req, res) => {
     ...(salesExecutive !== undefined && { salesExecutive }),
     ...(accountManager !== undefined && { accountManager }),
     ...(deliveryExecutive !== undefined && { deliveryExecutive }),
+    ...(remarks !== undefined && { remarks }),
   };
 
   db.prepare(`
     UPDATE customers SET
       leadId=@leadId, name=@name, state=@state, gstin=@gstin, regionId=@regionId, city=@city,
       email=@email, primaryPhone=@primaryPhone, status=@status, salesExecutive=@salesExecutive,
-      accountManager=@accountManager, deliveryExecutive=@deliveryExecutive
+      accountManager=@accountManager, deliveryExecutive=@deliveryExecutive, remarks=@remarks
     WHERE id=@id
   `).run(updated);
 
@@ -599,7 +889,7 @@ app.get("/api/inventory/:id", (req, res) => {
 });
 
 app.post("/api/inventory", (req, res) => {
-  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdBy, notes } = req.body || {};
+  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdBy, notes, stockQty, supplier, location } = req.body || {};
   if (!name || !sku || !category || unitOfMeasure == null) return res.status(400).json({ error: "name, sku, category, and unitOfMeasure are required" });
   if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(String(sku).trim())) return res.status(400).json({ error: "SKU already exists" });
 
@@ -620,11 +910,14 @@ app.post("/api/inventory", (req, res) => {
     updatedAt: new Date().toISOString(),
     createdBy: createdBy || "u1",
     notes: notes || null,
+    stockQty: Number(stockQty) || 0,
+    supplier: supplier || null,
+    location: location || null,
   };
 
   db.prepare(`
-    INSERT INTO inventory (id, name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdAt, updatedAt, createdBy, notes)
-    VALUES (@id, @name, @description, @itemType, @sku, @hsnSacCode, @category, @unitOfMeasure, @costPrice, @sellingPrice, @taxRate, @isActive, @createdAt, @updatedAt, @createdBy, @notes)
+    INSERT INTO inventory (id, name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdAt, updatedAt, createdBy, notes, stockQty, supplier, location)
+    VALUES (@id, @name, @description, @itemType, @sku, @hsnSacCode, @category, @unitOfMeasure, @costPrice, @sellingPrice, @taxRate, @isActive, @createdAt, @updatedAt, @createdBy, @notes, @stockQty, @supplier, @location)
   `).run(item);
 
   res.status(201).json(toInventoryResponse(item));
@@ -634,7 +927,7 @@ app.put("/api/inventory/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM inventory WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
 
-  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, notes } = req.body || {};
+  const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, notes, stockQty, supplier, location } = req.body || {};
   if (sku !== undefined && String(sku).trim().toUpperCase() !== String(existing.sku).trim().toUpperCase()) {
     if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku)=UPPER(?) AND id <> ?").get(String(sku).trim(), req.params.id)) {
       return res.status(400).json({ error: "SKU already exists" });
@@ -655,6 +948,9 @@ app.put("/api/inventory/:id", (req, res) => {
     ...(taxRate !== undefined && { taxRate: Number(taxRate) }),
     ...(isActive !== undefined && { isActive: isActive ? 1 : 0 }),
     ...(notes !== undefined && { notes: notes || null }),
+    ...(stockQty !== undefined && { stockQty: Number(stockQty) || 0 }),
+    ...(supplier !== undefined && { supplier: supplier || null }),
+    ...(location !== undefined && { location: location || null }),
     updatedAt: new Date().toISOString(),
   };
 
@@ -662,7 +958,7 @@ app.put("/api/inventory/:id", (req, res) => {
     UPDATE inventory SET
       name=@name, description=@description, itemType=@itemType, sku=@sku, hsnSacCode=@hsnSacCode, category=@category,
       unitOfMeasure=@unitOfMeasure, costPrice=@costPrice, sellingPrice=@sellingPrice, taxRate=@taxRate, isActive=@isActive,
-      updatedAt=@updatedAt, notes=@notes
+      updatedAt=@updatedAt, notes=@notes, stockQty=@stockQty, supplier=@supplier, location=@location
     WHERE id=@id
   `).run(item);
 
@@ -675,9 +971,11 @@ app.delete("/api/inventory/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+registerPaymentsApi(app, db);
+registerDataControlApi(app, db, { makeId, nextDealId });
+registerSubscriptionRenewalApi(app, db);
+
 app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
   console.log(`API server listening on http://localhost:${PORT}`);
-  // eslint-disable-next-line no-console
   console.log(`SQLite DB path: ${SQLITE_PATH}`);
 });

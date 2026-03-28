@@ -51,12 +51,18 @@ const ALL_TRIGGERS: AutomationTrigger[] = [
   "proposal_follow_up",
   "proposal_approved",
   "proposal_rejected",
+  "deal_created",
   "deal_won",
   "deal_lost",
+  "deal_follow_up",
   "payment_due",
   "payment_received",
   "invoice_overdue",
   "subscription_expiring",
+  "subscription_renewal_30d",
+  "subscription_expiry_day",
+  "subscription_overdue",
+  "subscription_renewed_confirm",
 ];
 
 const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
@@ -64,17 +70,24 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   proposal_follow_up: "Proposal Follow-up",
   proposal_approved: "Proposal Approved",
   proposal_rejected: "Proposal Rejected",
+  deal_created: "Deal Created",
   deal_won: "Deal Won",
   deal_lost: "Deal Lost",
+  deal_follow_up: "Deal Follow-up Reminder",
   payment_due: "Payment Due",
   payment_received: "Payment Received",
   invoice_overdue: "Invoice Overdue",
   subscription_expiring: "Subscription Expiring",
+  subscription_renewal_30d: "Subscription — 30 days before",
+  subscription_expiry_day: "Subscription — expiry day",
+  subscription_overdue: "Subscription — overdue",
+  subscription_renewed_confirm: "Subscription — renewed confirmation",
 };
 
 const CHANNEL_ICON: Record<AutomationChannel, React.ReactNode> = {
   whatsapp: <MessageSquare className="h-4 w-4 text-green-600" />,
   email: <Mail className="h-4 w-4 text-blue-600" />,
+  sms: <MessageSquare className="h-4 w-4 text-orange-600" />,
   in_app: <Bell className="h-4 w-4 text-purple-600" />,
 };
 
@@ -584,8 +597,10 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
   const schema = z.object({
     name: z.string().min(3),
     trigger: z.enum(ALL_TRIGGERS as [AutomationTrigger, ...AutomationTrigger[]]),
-    channel: z.enum(["whatsapp", "email", "in_app"]),
-    recipients: z.array(z.enum(["customer", "sales_rep", "sales_manager", "finance"])).min(1),
+    channel: z.enum(["whatsapp", "email", "sms", "in_app"]),
+    recipients: z
+      .array(z.enum(["customer", "sales_rep", "sales_manager", "finance", "super_admin"]))
+      .min(1),
     subject: z.string().optional(),
     body: z.string().min(10),
     isActive: z.boolean(),
@@ -728,7 +743,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
           <div>
             <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Recipients</label>
             <div className="flex flex-wrap gap-2">
-              {(["customer", "sales_rep", "sales_manager", "finance"] as const).map((r) => {
+              {(["customer", "sales_rep", "sales_manager", "finance", "super_admin"] as const).map((r) => {
                 const checked = form.watch("recipients")?.includes(r);
                 return (
                   <button

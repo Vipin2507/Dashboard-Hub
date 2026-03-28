@@ -20,6 +20,8 @@ export const RBAC_POLICY: RBACPolicy = {
     masters: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete'] },
     email_log: { scope: 'ALL', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
+    payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
+    data_control_center: { scope: 'ALL', actions: ['view', 'update', 'export'] },
   },
   finance: {
     dashboard: { scope: 'ALL', actions: ['view'] },
@@ -29,14 +31,17 @@ export const RBAC_POLICY: RBACPolicy = {
     automation: { scope: 'ALL', actions: ['view'] },
     email_log: { scope: 'ALL', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view', 'export'] },
+    payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
   },
   sales_manager: {
     dashboard: { scope: 'TEAM', actions: ['view'] },
     proposals: { scope: 'TEAM', actions: ['view', 'create', 'update', 'approve', 'reject', 'send', 'export', 'override_final_value'] },
-    deals: { scope: 'TEAM', actions: ['view', 'create', 'update'] },
+    /** Deals: create + view only; updates/deletes are super_admin-only (enforced in UI + API). */
+    deals: { scope: 'TEAM', actions: ['view', 'create', 'export'] },
     customers: { scope: 'REGION', actions: ['view', 'create', 'update', 'export', 'manage_tickets'] },
     automation: { scope: 'TEAM', actions: ['view', 'create', 'update', 'test'] },
     inventory: { scope: 'ALL', actions: ['view', 'create', 'update', 'export'] },
+    payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
   },
   sales_rep: {
     dashboard: { scope: 'SELF', actions: ['view'] },
@@ -54,6 +59,7 @@ export const RBAC_POLICY: RBACPolicy = {
     customers: { scope: 'REGION', actions: ['view', 'manage_tickets'] },
     email_log: { scope: 'REGION', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view'] },
+    payments: { scope: 'ALL', actions: ['view'] },
   },
 };
 

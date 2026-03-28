@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/components/ui/use-toast";
+import { api } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import { useRejectProposal } from "@/hooks/useWorkflow";
+import type { Proposal } from "@/types";
 
 interface RejectProposalDialogProps {
   proposalId: string;
@@ -18,10 +22,13 @@ interface RejectProposalDialogProps {
 }
 
 export function RejectProposalDialog({ proposalId, onClose }: RejectProposalDialogProps) {
-  const proposal = useAppStore((s) => s.proposals.find((p) => p.id === proposalId));
-  const rejectProposal = useAppStore((s) => s.rejectProposal);
-  const me = useAppStore((s) => s.me);
+  const reject = useRejectProposal();
   const [reason, setReason] = useState("");
+  const { data: proposals } = useQuery({
+    queryKey: QK.proposals(),
+    queryFn: () => api.get<Proposal[]>("/proposals"),
+  });
+  const proposal = proposals?.find((p) => p.id === proposalId);
 
   if (!proposal) return null;
 
@@ -30,9 +37,10 @@ export function RejectProposalDialog({ proposalId, onClose }: RejectProposalDial
       toast({ title: "Reason required", description: "Please enter at least 10 characters.", variant: "destructive" });
       return;
     }
-    rejectProposal(proposalId, me.id, reason.trim());
-    toast({ title: "Proposal rejected", description: `${proposal.proposalNumber} has been rejected.` });
-    onClose();
+    reject.mutate(
+      { proposalId, reason: reason.trim() },
+      { onSuccess: () => onClose() },
+    );
   };
 
   return (
@@ -56,8 +64,8 @@ export function RejectProposalDialog({ proposalId, onClose }: RejectProposalDial
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={handleReject} disabled={reason.trim().length < 10}>
-            Reject proposal
+          <Button variant="destructive" onClick={handleReject} disabled={reason.trim().length < 10 || reject.isPending}>
+            {reject.isPending ? "Rejecting…" : "Reject proposal"}
           </Button>
         </DialogFooter>
       </DialogContent>

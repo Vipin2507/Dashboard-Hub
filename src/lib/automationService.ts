@@ -9,27 +9,48 @@ import type {
 } from "@/types";
 
 const RULE_STATE_KEY = "buildesk_automation_rule_state_v1";
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:4000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
 type RuleState = {
   followUpRuns: Record<string, number>;
   paymentDueRuns: Record<string, string>;
   invoiceOverdueRuns: Record<string, string>;
+  installmentReminderRuns: Record<string, string>;
+  dealFollowUpRuns: Record<string, string>;
+  subscriptionRenewalRuns: Record<string, string>;
 };
 
 function getRuleState(): RuleState {
   try {
     const raw = localStorage.getItem(RULE_STATE_KEY);
-    if (!raw) return { followUpRuns: {}, paymentDueRuns: {}, invoiceOverdueRuns: {} };
+    if (!raw)
+      return {
+        followUpRuns: {},
+        paymentDueRuns: {},
+        invoiceOverdueRuns: {},
+        installmentReminderRuns: {},
+        dealFollowUpRuns: {},
+        subscriptionRenewalRuns: {},
+      };
     const parsed = JSON.parse(raw) as Partial<RuleState>;
     return {
       followUpRuns: parsed.followUpRuns ?? {},
       paymentDueRuns: parsed.paymentDueRuns ?? {},
       invoiceOverdueRuns: parsed.invoiceOverdueRuns ?? {},
+      installmentReminderRuns: parsed.installmentReminderRuns ?? {},
+      dealFollowUpRuns: parsed.dealFollowUpRuns ?? {},
+      subscriptionRenewalRuns: parsed.subscriptionRenewalRuns ?? {},
     };
   } catch {
-    return { followUpRuns: {}, paymentDueRuns: {}, invoiceOverdueRuns: {} };
+    return {
+      followUpRuns: {},
+      paymentDueRuns: {},
+      invoiceOverdueRuns: {},
+      installmentReminderRuns: {},
+      dealFollowUpRuns: {},
+      subscriptionRenewalRuns: {},
+    };
   }
 }
 
@@ -70,7 +91,7 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
       await sendInAppNotification(template, resolvedBody, context);
     } else if (template.channel === "whatsapp") {
       await fireWhatsAppDirect(template, resolvedBody, context, automationSettings);
-    } else {
+    } else if (template.channel === "email" || template.channel === "sms") {
       await fireN8nWebhook(template, resolvedBody, resolvedSubject, context, automationSettings);
     }
   }
@@ -88,6 +109,8 @@ export interface AutomationContext {
   dealId?: string;
   dealTitle?: string;
   dealValue?: number;
+  nextFollowUpDate?: string;
+  lossReason?: string;
   // Customer
   customerId?: string;
   customerName?: string;
@@ -102,8 +125,13 @@ export interface AutomationContext {
   daysOverdue?: number;
   // Product/subscription
   productName?: string;
+  planName?: string;
   expiryDate?: string;
   daysUntilExpiry?: number;
+  renewalLink?: string;
+  renewalAmount?: number;
+  subscriptionId?: string;
+  planStartDate?: string;
   // Rep/manager
   salesRepId?: string;
   salesRepName?: string;
@@ -114,6 +142,12 @@ export interface AutomationContext {
   // Payments
   amountPaid?: number;
   paymentDate?: string;
+  receiptNumber?: string;
+  planName?: string;
+  paymentsMadeCount?: number;
+  paymentsRemainingCount?: number;
+  nextDueDate?: string;
+  planDetails?: string;
   // Company
   companyName?: string;
 }
@@ -142,8 +176,11 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{sales_rep_name}}": ctx.salesRepName ?? "",
     "{{sales_rep_phone}}": ctx.salesRepPhone ?? "",
     "{{company_name}}": ctx.companyName ?? "Cravingcode Technologies Pvt. Ltd.",
+    "{{deal_id}}": ctx.dealId ?? "",
     "{{deal_title}}": ctx.dealTitle ?? "",
     "{{deal_value}}": formatINRInline(ctx.dealValue),
+    "{{next_follow_up_date}}": ctx.nextFollowUpDate ?? "",
+    "{{loss_reason}}": ctx.lossReason ?? ctx.rejectionReason ?? "",
     "{{invoice_number}}": ctx.invoiceNumber ?? "",
     "{{amount_due}}": formatINRInline(ctx.amountDue),
     "{{due_date}}": ctx.dueDate ?? "",
@@ -153,9 +190,19 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{rejection_reason}}": ctx.rejectionReason ?? "",
     "{{amount_paid}}": formatINRInline(ctx.amountPaid),
     "{{payment_date}}": ctx.paymentDate ?? "",
-    "{{product_name}}": ctx.productName ?? "",
+    "{{customer_id}}": ctx.customerId ?? "",
+    "{{receipt_number}}": ctx.receiptNumber ?? "",
+    "{{payments_made_count}}": String(ctx.paymentsMadeCount ?? ""),
+    "{{payments_remaining_count}}": String(ctx.paymentsRemainingCount ?? ""),
+    "{{next_due_date}}": ctx.nextDueDate ?? "",
+    "{{plan_details}}": ctx.planDetails ?? "",
+    "{{product_name}}": ctx.productName ?? ctx.planName ?? "",
+    "{{plan_name}}": ctx.planName ?? ctx.productName ?? "",
     "{{expiry_date}}": ctx.expiryDate ?? "",
     "{{days_until_expiry}}": String(ctx.daysUntilExpiry ?? ""),
+    "{{renewal_link}}": ctx.renewalLink ?? "",
+    "{{renewal_amount}}": formatINRInline(ctx.renewalAmount),
+    "{{plan_start_date}}": ctx.planStartDate ?? "",
   };
 
   return Object.entries(map).reduce((text, [token, value]) => text.replaceAll(token, value), template);
@@ -203,6 +250,11 @@ function resolveRecipients(roles: AutomationRecipient[], ctx: AutomationContext)
       const finance = users.filter((u) => u.role === "finance");
       finance.forEach((f) => result.push({ name: f.name, email: f.email, userId: f.id }));
     }
+
+    if (role === "super_admin") {
+      const admins = users.filter((u) => u.role === "super_admin");
+      admins.forEach((a) => result.push({ name: a.name, email: a.email, userId: a.id }));
+    }
   }
 
   return result;
@@ -221,7 +273,7 @@ async function fireN8nWebhook(
   for (const recipient of recipients) {
     const webhookPath = "buildesk-email";
     const normalizedPhone =
-      template.channel === "whatsapp"
+      template.channel === "whatsapp" || template.channel === "sms"
         ? normalizeIndiaPhone(recipient.phone)
         : recipient.phone;
 
@@ -236,7 +288,7 @@ async function fireN8nWebhook(
     const entityName = ctx.proposalTitle ?? ctx.dealTitle ?? ctx.invoiceNumber ?? ctx.customerName ?? "";
 
     const payload = {
-      channel: "email" as const,
+      channel: (template.channel === "sms" ? "sms" : "email") as "email" | "sms",
       templateId: template.id,
       templateName: template.name,
       trigger: template.trigger,
@@ -498,8 +550,342 @@ export function checkAndTriggerProposalFollowUps(): void {
   if (changed) setRuleState(state);
 }
 
+const INSTALLMENT_REMINDER_SETTINGS_KEY = "buildesk_payment_installment_reminder_settings_v1";
+
+export type InstallmentReminderSettings = {
+  /** e.g. [1] = one day before due */
+  remindDaysBefore: number[];
+  remindOnDue: boolean;
+  /** e.g. [3] = send on 3rd day after due (overdue nudge) */
+  remindDaysAfterDue: number[];
+};
+
+export function getInstallmentReminderSettings(): InstallmentReminderSettings {
+  try {
+    const raw = localStorage.getItem(INSTALLMENT_REMINDER_SETTINGS_KEY);
+    if (!raw) {
+      return { remindDaysBefore: [1], remindOnDue: true, remindDaysAfterDue: [3] };
+    }
+    const p = JSON.parse(raw) as Partial<InstallmentReminderSettings>;
+    return {
+      remindDaysBefore: Array.isArray(p.remindDaysBefore) ? p.remindDaysBefore : [1],
+      remindOnDue: p.remindOnDue !== false,
+      remindDaysAfterDue: Array.isArray(p.remindDaysAfterDue) ? p.remindDaysAfterDue : [3],
+    };
+  } catch {
+    return { remindDaysBefore: [1], remindOnDue: true, remindDaysAfterDue: [3] };
+  }
+}
+
+export function saveInstallmentReminderSettings(s: InstallmentReminderSettings): void {
+  localStorage.setItem(INSTALLMENT_REMINDER_SETTINGS_KEY, JSON.stringify(s));
+}
+
+function calendarDayDiff(fromIsoDate: string, toIsoDate: string): number {
+  const a = new Date(`${fromIsoDate}T12:00:00`).getTime();
+  const b = new Date(`${toIsoDate}T12:00:00`).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
+/** Call when payment plan “remaining” rows are loaded (e.g. Payment Center). Uses payment_due / invoice_overdue templates. */
+export function checkInstallmentPaymentReminders(
+  rows: Array<{
+    customerId: string;
+    customerName?: string;
+    dueDate: string;
+    dueAmount: number;
+    category: string;
+    planName?: string;
+    planId?: string;
+  }>,
+  settings: InstallmentReminderSettings,
+): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const { customers, users } = useAppStore.getState();
+  const state = getRuleState();
+  if (!state.installmentReminderRuns) state.installmentReminderRuns = {};
+  let changed = false;
+
+  rows.forEach((row) => {
+    if (row.category === "paid") return;
+    const due = row.dueDate;
+    const daysUntilDue = calendarDayDiff(today, due);
+    const daysAfterDue = calendarDayDiff(due, today);
+
+    const customer = customers.find((c) => c.id === row.customerId);
+    const rep = users.find((u) => u.id === customer?.assignedTo);
+    const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+
+    const baseCtx = {
+      customerId: row.customerId,
+      customerName: customer?.companyName ?? row.customerName ?? "Customer",
+      customerPhone: primary?.phone,
+      customerEmail: primary?.email,
+      invoiceNumber: row.planName ? `${row.planName} · installment` : "Installment",
+      amountDue: row.dueAmount,
+      dueDate: new Date(due + "T12:00:00").toLocaleDateString("en-IN"),
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+    };
+
+    const fire = (trigger: "payment_due" | "invoice_overdue", keySuffix: string, extra: Record<string, unknown>) => {
+      const key = `${row.customerId}:${row.planId ?? "plan"}:${due}:${keySuffix}:${today}`;
+      if (state.installmentReminderRuns[key] === today) return;
+      changed = true;
+      state.installmentReminderRuns[key] = today;
+      void triggerAutomation(trigger, { ...baseCtx, ...extra } as AutomationContext);
+    };
+
+    if (settings.remindDaysBefore.includes(daysUntilDue)) {
+      fire("payment_due", `before:${daysUntilDue}`, { daysUntilDue });
+    }
+    if (settings.remindOnDue && daysUntilDue === 0) {
+      fire("payment_due", "on_due", { daysUntilDue: 0 });
+    }
+    if (daysAfterDue >= 1 && settings.remindDaysAfterDue.includes(daysAfterDue)) {
+      fire("invoice_overdue", `after:${daysAfterDue}`, { daysOverdue: daysAfterDue });
+    }
+  });
+
+  if (changed) setRuleState(state);
+}
+
+/** Fire deal_follow_up templates 1 day before and on next follow-up date (per deal, once per day). */
+export function checkDealFollowUpReminders(
+  deals: Array<{
+    id: string;
+    name: string;
+    customerId: string;
+    ownerUserId: string;
+    value: number;
+    nextFollowUpDate?: string | null;
+    dealStatus?: string | null;
+  }>,
+): void {
+  const today = new Date().toISOString().slice(0, 10);
+  const { customers, users } = useAppStore.getState();
+  const state = getRuleState();
+  if (!state.dealFollowUpRuns) state.dealFollowUpRuns = {};
+  let changed = false;
+
+  deals.forEach((deal) => {
+    const fu = deal.nextFollowUpDate;
+    if (!fu) return;
+    if ((deal as { deletedAt?: string | null }).deletedAt) return;
+    if (deal.dealStatus === "Closed/Won" || deal.dealStatus === "Closed/Lost") return;
+    const daysUntil = calendarDayDiff(today, fu);
+    if (daysUntil !== 1 && daysUntil !== 0) return;
+
+    const customer = customers.find((c) => c.id === deal.customerId);
+    const rep = users.find((u) => u.id === deal.ownerUserId);
+    const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+    const key = `${deal.id}:${fu}:${daysUntil}:${today}`;
+    if (state.dealFollowUpRuns[key] === today) return;
+    changed = true;
+    state.dealFollowUpRuns[key] = today;
+    void triggerAutomation("deal_follow_up", {
+      dealId: deal.id,
+      dealTitle: deal.name,
+      dealValue: deal.value,
+      nextFollowUpDate: new Date(fu + "T12:00:00").toLocaleDateString("en-IN"),
+      customerId: deal.customerId,
+      customerName: customer?.companyName,
+      customerPhone: primary?.phone,
+      customerEmail: primary?.email,
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+      companyName: "Cravingcode Technologies Pvt. Ltd.",
+    });
+  });
+
+  if (changed) setRuleState(state);
+}
+
 export function runAutomationRules(): void {
   checkAndTriggerPaymentDue();
   checkAndTriggerProposalFollowUps();
+  const { deals } = useAppStore.getState();
+  checkDealFollowUpReminders(deals);
+  void checkSubscriptionRenewalAutomation();
+}
+
+type RenewalSettingsApi = {
+  enabled30d?: boolean;
+  enabledExpiryDay?: boolean;
+  enabledOverdue?: boolean;
+  autoStopOnRenewal?: boolean;
+  channels30d?: Array<"whatsapp" | "email" | "sms">;
+  channelsExpiryDay?: Array<"whatsapp" | "email" | "sms">;
+  channelsOverdue?: Array<"whatsapp" | "email" | "sms">;
+  overdueRepeatDays?: number;
+  template30d?: string;
+  templateExpiryDay?: string;
+  templateOverdue?: string;
+};
+
+/** Manual / bulk send — uses the same WhatsApp + n8n paths as templates. */
+export async function sendSubscriptionReminderChannels(
+  channels: Array<"whatsapp" | "email" | "sms">,
+  body: string,
+  subject: string,
+  ctx: AutomationContext,
+): Promise<void> {
+  const { automationSettings, automationTemplates } = useAppStore.getState();
+  const uniq = [...new Set(channels)];
+  const baseFake = (): AutomationTemplate => ({
+    id: "direct-renewal",
+    name: "Subscription reminder",
+    trigger: "subscription_renewal_30d",
+    channel: "whatsapp",
+    recipients: ["customer"],
+    body: "",
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  for (const ch of uniq) {
+    const tpl = { ...baseFake(), channel: ch };
+    if (ch === "whatsapp") {
+      await fireWhatsAppDirect(tpl, body, ctx, automationSettings);
+    } else {
+      await fireN8nWebhook(tpl, body, subject, ctx, automationSettings);
+    }
+  }
+}
+
+async function recordSubscriptionReminderKind(subscriptionId: string, kind: "30d" | "expiry_day" | "overdue") {
+  try {
+    await fetch(apiUrl(`/api/subscriptions/${encodeURIComponent(subscriptionId)}/record-reminder`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind }),
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export async function checkSubscriptionRenewalAutomation(): Promise<void> {
+  try {
+    const res = await fetch(apiUrl("/api/subscriptions/tracker"));
+    if (!res.ok) return;
+    const data = (await res.json()) as {
+      rows: Array<{
+        id: string;
+        customerId: string;
+        customerName: string;
+        customerEmail?: string;
+        customerPhone?: string;
+        planName: string;
+        expiryDate: string;
+        renewalAmount: number;
+        daysLeft: number;
+        bucket: string;
+        pendingAutomations: boolean;
+      }>;
+      settings: RenewalSettingsApi;
+    };
+    const settings = data.settings;
+    const state = getRuleState();
+    if (!state.subscriptionRenewalRuns) state.subscriptionRenewalRuns = {};
+    const today = new Date().toISOString().slice(0, 10);
+    const { customers, users, automationTemplates } = useAppStore.getState();
+    let changed = false;
+
+    const renewalBaseUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/customers/`
+        : "https://localhost:5173/customers/";
+
+    for (const row of data.rows) {
+      if (!row.pendingAutomations) continue;
+      if (row.bucket === "renewed_month") continue;
+
+      const customer = customers.find((c) => c.id === row.customerId);
+      const rep = users.find((u) => u.id === customer?.assignedTo);
+      const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+      const renewalLink = `${renewalBaseUrl}${row.customerId}?tab=payments`;
+
+      const ctx: AutomationContext = {
+        customerId: row.customerId,
+        customerName: row.customerName ?? customer?.companyName,
+        customerPhone: row.customerPhone ?? primary?.phone,
+        customerEmail: row.customerEmail ?? primary?.email,
+        planName: row.planName,
+        productName: row.planName,
+        expiryDate: row.expiryDate,
+        daysUntilExpiry: row.daysLeft,
+        renewalAmount: row.renewalAmount,
+        renewalLink,
+        subscriptionId: row.id,
+        salesRepId: rep?.id,
+        salesRepName: rep?.name,
+      };
+
+      const daysLeft = row.daysLeft;
+
+      const fireWithFallback = async (
+        trigger: AutomationTrigger,
+        apiKind: "30d" | "expiry_day" | "overdue",
+        tplKey: keyof RenewalSettingsApi,
+        channelsKey: keyof RenewalSettingsApi,
+      ) => {
+        const tpls = automationTemplates.filter((t) => t.trigger === trigger && t.isActive);
+        if (tpls.length > 0) {
+          await triggerAutomation(trigger, { ...ctx, daysOverdue: daysLeft < 0 ? Math.abs(daysLeft) : undefined });
+        } else {
+          const tmpl =
+            (settings[tplKey] as string) ||
+            "Reminder: {{plan_name}} for {{customer_name}} expires {{expiry_date}}. {{renewal_link}}";
+          const text = resolveVariables(tmpl, {
+            ...ctx,
+            daysOverdue: daysLeft < 0 ? Math.abs(daysLeft) : undefined,
+          });
+          const chs = (settings[channelsKey] as Array<"whatsapp" | "email" | "sms">) ?? ["email"];
+          await sendSubscriptionReminderChannels(chs, text, "Subscription renewal", {
+            ...ctx,
+            daysOverdue: daysLeft < 0 ? Math.abs(daysLeft) : undefined,
+          });
+        }
+        await recordSubscriptionReminderKind(row.id, apiKind);
+      };
+
+      if (settings.enabled30d !== false && daysLeft === 30) {
+        const key = `${row.id}:pre30:${today}`;
+        if (state.subscriptionRenewalRuns[key] !== today) {
+          changed = true;
+          state.subscriptionRenewalRuns[key] = today;
+          await fireWithFallback("subscription_renewal_30d", "30d", "template30d", "channels30d");
+        }
+      }
+
+      if (settings.enabledExpiryDay !== false && daysLeft === 0) {
+        const key = `${row.id}:exp0:${today}`;
+        if (state.subscriptionRenewalRuns[key] !== today) {
+          changed = true;
+          state.subscriptionRenewalRuns[key] = today;
+          await fireWithFallback("subscription_expiry_day", "expiry_day", "templateExpiryDay", "channelsExpiryDay");
+        }
+      }
+
+      if (settings.enabledOverdue !== false && daysLeft < 0) {
+        const overdueDays = Math.abs(daysLeft);
+        const interval = Math.max(1, settings.overdueRepeatDays ?? 7);
+        if (overdueDays % interval === 0) {
+          const key = `${row.id}:od:${overdueDays}:${today}`;
+          if (state.subscriptionRenewalRuns[key] !== today) {
+            changed = true;
+            state.subscriptionRenewalRuns[key] = today;
+            ctx.daysOverdue = overdueDays;
+            await fireWithFallback("subscription_overdue", "overdue", "templateOverdue", "channelsOverdue");
+          }
+        }
+      }
+    }
+
+    if (changed) setRuleState(state);
+  } catch {
+    /* offline API */
+  }
 }
 

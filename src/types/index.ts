@@ -11,7 +11,9 @@ export type Module =
   | 'regions'
   | 'email_log'
   | 'masters'
-  | 'inventory';
+  | 'inventory'
+  | 'payments'
+  | 'data_control_center';
 
 export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'SELF' | 'NONE';
 
@@ -300,6 +302,24 @@ export interface Deal {
   value: number;
   locked: boolean;
   proposalId: string | null;
+  /** Pipeline status: Hot, Cold, Active, Pending, Closed/Won, Closed/Lost */
+  dealStatus?: string;
+  dealSource?: string | null;
+  expectedCloseDate?: string | null;
+  priority?: string;
+  lastActivityAt?: string | null;
+  nextFollowUpDate?: string | null;
+  lossReason?: string | null;
+  contactPhone?: string | null;
+  remarks?: string | null;
+  createdByUserId?: string | null;
+  createdByName?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  /** Soft delete — super admin can list deleted deals */
+  deletedAt?: string | null;
+  deletedByUserId?: string | null;
+  deletedByName?: string | null;
 }
 
 export type NotificationType = 'CUSTOMER_EMAIL' | 'INTERNAL_EMAIL' | 'AUDIT_EMAIL';

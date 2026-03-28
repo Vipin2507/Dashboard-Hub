@@ -12,6 +12,60 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(fs.readFileSync(schemaPath, "utf8"));
 
+/** Add deal columns on existing DBs (CREATE TABLE already has them for new installs). */
+function migrateDealSchema() {
+  const cols = db.prepare("PRAGMA table_info(deals)").all();
+  const names = new Set(cols.map((c) => c.name));
+  const add = (sql) => db.exec(sql);
+  if (!names.has("dealStatus")) add("ALTER TABLE deals ADD COLUMN dealStatus TEXT DEFAULT 'Active'");
+  if (!names.has("dealSource")) add("ALTER TABLE deals ADD COLUMN dealSource TEXT");
+  if (!names.has("expectedCloseDate")) add("ALTER TABLE deals ADD COLUMN expectedCloseDate TEXT");
+  if (!names.has("priority")) add("ALTER TABLE deals ADD COLUMN priority TEXT DEFAULT 'Medium'");
+  if (!names.has("lastActivityAt")) add("ALTER TABLE deals ADD COLUMN lastActivityAt TEXT");
+  if (!names.has("nextFollowUpDate")) add("ALTER TABLE deals ADD COLUMN nextFollowUpDate TEXT");
+  if (!names.has("lossReason")) add("ALTER TABLE deals ADD COLUMN lossReason TEXT");
+  if (!names.has("contactPhone")) add("ALTER TABLE deals ADD COLUMN contactPhone TEXT");
+  if (!names.has("remarks")) add("ALTER TABLE deals ADD COLUMN remarks TEXT");
+  if (!names.has("createdByUserId")) add("ALTER TABLE deals ADD COLUMN createdByUserId TEXT");
+  if (!names.has("createdByName")) add("ALTER TABLE deals ADD COLUMN createdByName TEXT");
+  if (!names.has("createdAt")) add("ALTER TABLE deals ADD COLUMN createdAt TEXT");
+  if (!names.has("updatedAt")) add("ALTER TABLE deals ADD COLUMN updatedAt TEXT");
+  if (!names.has("deletedAt")) add("ALTER TABLE deals ADD COLUMN deletedAt TEXT");
+  if (!names.has("deletedByUserId")) add("ALTER TABLE deals ADD COLUMN deletedByUserId TEXT");
+  if (!names.has("deletedByName")) add("ALTER TABLE deals ADD COLUMN deletedByName TEXT");
+  db.prepare("UPDATE deals SET dealStatus = 'Active' WHERE dealStatus IS NULL OR dealStatus = ''").run();
+  db.prepare("UPDATE deals SET priority = 'Medium' WHERE priority IS NULL OR priority = ''").run();
+  db.prepare(
+    "UPDATE deals SET createdAt = COALESCE(createdAt, lastActivityAt, datetime('now')) WHERE createdAt IS NULL OR createdAt = ''",
+  ).run();
+  // Safe after ALTERs: older DBs may not have had dealStatus until migrateDealSchema ran.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_dealStatus ON deals(dealStatus)`);
+}
+migrateDealSchema();
+
+function migrateDataControlColumns() {
+  const addCol = (table, col, sqlType) => {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+    if (cols.some((c) => c.name === col)) return;
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${sqlType}`);
+  };
+  addCol("customers", "remarks", "TEXT");
+  addCol("users", "phone", "TEXT");
+  addCol("users", "joinDate", "TEXT");
+  addCol("users", "remarks", "TEXT");
+  addCol("inventory", "stockQty", "REAL NOT NULL DEFAULT 0");
+  addCol("inventory", "supplier", "TEXT");
+  addCol("inventory", "location", "TEXT");
+}
+migrateDataControlColumns();
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS deal_sequence (
+    year INTEGER PRIMARY KEY,
+    lastSeq INTEGER NOT NULL DEFAULT 0
+  );
+`);
+
 const seedNow = "2026-03-01T10:00:00Z";
 
 const seedCustomers = [
@@ -98,6 +152,22 @@ const seedDeals = [
     value: 385000,
     locked: 1,
     proposalId: "p6",
+    dealStatus: "Hot",
+    dealSource: "Referral",
+    expectedCloseDate: "2026-06-30",
+    priority: "High",
+    lastActivityAt: seedNow,
+    nextFollowUpDate: "2026-03-10",
+    lossReason: null,
+    contactPhone: "+91 90000 00001",
+    remarks: "Renewal — exec sponsor engaged",
+    createdByUserId: "u1",
+    createdByName: "Raj Bansal",
+    createdAt: seedNow,
+    updatedAt: seedNow,
+    deletedAt: null,
+    deletedByUserId: null,
+    deletedByName: null,
   },
   {
     id: "d2",
@@ -110,6 +180,22 @@ const seedDeals = [
     value: 220000,
     locked: 0,
     proposalId: null,
+    dealStatus: "Cold",
+    dealSource: "Campaign",
+    expectedCloseDate: "2026-09-15",
+    priority: "Medium",
+    lastActivityAt: seedNow,
+    nextFollowUpDate: null,
+    lossReason: null,
+    contactPhone: null,
+    remarks: null,
+    createdByUserId: "u2",
+    createdByName: "Ravi Sharma",
+    createdAt: seedNow,
+    updatedAt: seedNow,
+    deletedAt: null,
+    deletedByUserId: null,
+    deletedByName: null,
   },
 ];
 
@@ -136,6 +222,12 @@ const seedUsers = [
 const seedNotifications = [
   { id: "n1", type: "CUSTOMER_EMAIL", to: "accounts@sunrise.dev", subject: "Buildesk Proposal PROP-2026-0007 shared", entityId: "p1", at: "2026-03-10T15:00:00Z" },
   { id: "n2", type: "INTERNAL_EMAIL", to: "admin@buildesk.com", subject: "Final quote value overridden (Sales Manager)", entityId: "p1", at: "2026-03-10T14:35:00Z" },
+];
+
+const seedPaymentPlanCatalog = [
+  { id: "ppc1", name: "Enterprise Annual", defaultBillingCycle: "yearly", defaultGraceDays: 7, suggestedInstallments: 1, createdAt: seedNow },
+  { id: "ppc2", name: "Standard Quarterly", defaultBillingCycle: "quarterly", defaultGraceDays: 5, suggestedInstallments: 4, createdAt: seedNow },
+  { id: "ppc3", name: "SMB Monthly", defaultBillingCycle: "monthly", defaultGraceDays: 3, suggestedInstallments: 12, createdAt: seedNow },
 ];
 
 function seedIfEmpty() {
@@ -176,9 +268,13 @@ function seedIfEmpty() {
   if (dealsCount === 0) {
     const insertDeal = db.prepare(`
       INSERT INTO deals (
-        id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId
+        id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
+        dealStatus, dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
+        contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt, deletedAt, deletedByUserId, deletedByName
       ) VALUES (
-        @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId
+        @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
+        @dealStatus, @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
+        @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt, @deletedAt, @deletedByUserId, @deletedByName
       )
     `);
     const tx = db.transaction((rows) => rows.forEach((r) => insertDeal.run(r)));
@@ -231,6 +327,15 @@ function seedIfEmpty() {
       "INSERT INTO notifications (id, type, \"to\", subject, entityId, at) VALUES (@id, @type, @to, @subject, @entityId, @at)"
     );
     db.transaction((rows) => rows.forEach((r) => stmt.run(r)))(seedNotifications);
+  }
+
+  const ppcCount = db.prepare("SELECT COUNT(*) AS c FROM payment_plan_catalog").get().c;
+  if (ppcCount === 0) {
+    const stmt = db.prepare(
+      `INSERT INTO payment_plan_catalog (id, name, defaultBillingCycle, defaultGraceDays, suggestedInstallments, createdAt)
+       VALUES (@id, @name, @defaultBillingCycle, @defaultGraceDays, @suggestedInstallments, @createdAt)`
+    );
+    db.transaction((rows) => rows.forEach((r) => stmt.run(r)))(seedPaymentPlanCatalog);
   }
 }
 

@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,7 +11,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { toast } from "@/components/ui/use-toast";
+import { api } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import { useSendProposal } from "@/hooks/useWorkflow";
+import type { Proposal } from "@/types";
 
 interface SendProposalDialogProps {
   proposalId: string;
@@ -18,18 +22,20 @@ interface SendProposalDialogProps {
 }
 
 export function SendProposalDialog({ proposalId, onClose }: SendProposalDialogProps) {
-  const proposal = useAppStore((s) => s.proposals.find((p) => p.id === proposalId));
   const customers = useAppStore((s) => s.customers);
-  const sendProposal = useAppStore((s) => s.sendProposal);
+  const send = useSendProposal();
+  const { data: proposals } = useQuery({
+    queryKey: QK.proposals(),
+    queryFn: () => api.get<Proposal[]>("/proposals"),
+  });
+  const proposal = proposals?.find((p) => p.id === proposalId);
 
   if (!proposal) return null;
   const customer = customers.find((c) => c.id === proposal.customerId);
   const email = customer?.email ?? "customer@example.com";
 
   const handleSend = () => {
-    sendProposal(proposalId);
-    toast({ title: "Proposal sent", description: `Proposal ${proposal.proposalNumber} sent to ${email}.` });
-    onClose();
+    send.mutate(proposalId, { onSuccess: () => onClose() });
   };
 
   return (
@@ -43,7 +49,9 @@ export function SendProposalDialog({ proposalId, onClose }: SendProposalDialogPr
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleSend}>Send</AlertDialogAction>
+          <AlertDialogAction onClick={handleSend} disabled={send.isPending}>
+            {send.isPending ? "Sending…" : "Send"}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

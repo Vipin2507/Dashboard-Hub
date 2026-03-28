@@ -3,16 +3,27 @@ export type AutomationTrigger =
   | "proposal_follow_up"
   | "proposal_approved"
   | "proposal_rejected"
+  | "deal_created"
   | "deal_won"
   | "deal_lost"
+  | "deal_follow_up"
   | "payment_due"
   | "payment_received"
   | "invoice_overdue"
-  | "subscription_expiring";
+  | "subscription_expiring"
+  | "subscription_renewal_30d"
+  | "subscription_expiry_day"
+  | "subscription_overdue"
+  | "subscription_renewed_confirm";
 
-export type AutomationChannel = "whatsapp" | "email" | "in_app";
+export type AutomationChannel = "whatsapp" | "email" | "sms" | "in_app";
 
-export type AutomationRecipient = "customer" | "sales_rep" | "sales_manager" | "finance";
+export type AutomationRecipient =
+  | "customer"
+  | "sales_rep"
+  | "sales_manager"
+  | "finance"
+  | "super_admin";
 
 export interface AutomationTemplate {
   id: string;
@@ -83,8 +94,11 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
   proposal_approved: [
     "{{customer_name}}",
     "{{proposal_number}}",
+    "{{proposal_title}}",
     "{{approved_by}}",
     "{{grand_total}}",
+    "{{plan_name}}",
+    "{{next_due_date}}",
     "{{sales_rep_name}}",
   ],
   proposal_rejected: [
@@ -93,6 +107,14 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
     "{{rejection_reason}}",
     "{{sales_rep_name}}",
   ],
+  deal_created: [
+    "{{deal_id}}",
+    "{{deal_title}}",
+    "{{deal_value}}",
+    "{{customer_name}}",
+    "{{sales_rep_name}}",
+    "{{company_name}}",
+  ],
   deal_won: [
     "{{customer_name}}",
     "{{deal_title}}",
@@ -100,7 +122,20 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
     "{{sales_rep_name}}",
     "{{company_name}}",
   ],
-  deal_lost: ["{{customer_name}}", "{{deal_title}}", "{{sales_rep_name}}"],
+  deal_lost: [
+    "{{customer_name}}",
+    "{{deal_title}}",
+    "{{deal_value}}",
+    "{{loss_reason}}",
+    "{{sales_rep_name}}",
+  ],
+  deal_follow_up: [
+    "{{customer_name}}",
+    "{{deal_title}}",
+    "{{next_follow_up_date}}",
+    "{{deal_value}}",
+    "{{sales_rep_name}}",
+  ],
   payment_due: [
     "{{customer_name}}",
     "{{invoice_number}}",
@@ -111,9 +146,16 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
   ],
   payment_received: [
     "{{customer_name}}",
+    "{{customer_id}}",
     "{{amount_paid}}",
     "{{payment_date}}",
     "{{invoice_number}}",
+    "{{receipt_number}}",
+    "{{plan_name}}",
+    "{{payments_made_count}}",
+    "{{payments_remaining_count}}",
+    "{{next_due_date}}",
+    "{{plan_details}}",
     "{{sales_rep_name}}",
   ],
   invoice_overdue: [
@@ -129,6 +171,38 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
     "{{product_name}}",
     "{{expiry_date}}",
     "{{days_until_expiry}}",
+    "{{sales_rep_name}}",
+  ],
+  subscription_renewal_30d: [
+    "{{customer_name}}",
+    "{{plan_name}}",
+    "{{expiry_date}}",
+    "{{renewal_amount}}",
+    "{{renewal_link}}",
+    "{{sales_rep_name}}",
+  ],
+  subscription_expiry_day: [
+    "{{customer_name}}",
+    "{{plan_name}}",
+    "{{expiry_date}}",
+    "{{renewal_amount}}",
+    "{{renewal_link}}",
+    "{{sales_rep_name}}",
+  ],
+  subscription_overdue: [
+    "{{customer_name}}",
+    "{{plan_name}}",
+    "{{expiry_date}}",
+    "{{renewal_amount}}",
+    "{{renewal_link}}",
+    "{{days_overdue}}",
+    "{{sales_rep_name}}",
+  ],
+  subscription_renewed_confirm: [
+    "{{customer_name}}",
+    "{{plan_name}}",
+    "{{plan_start_date}}",
+    "{{expiry_date}}",
     "{{sales_rep_name}}",
   ],
 };

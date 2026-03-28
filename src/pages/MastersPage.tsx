@@ -125,7 +125,7 @@ function MasterSection({
         setName('');
       },
       onError: () => {
-        toast({ title: 'Error', description: `Unable to add ${title.toLowerCase()}.`, variant: 'destructive' as any });
+        toast({ title: 'Error', description: `Unable to add ${title.toLowerCase()}.`, variant: 'destructive' });
       },
     });
   };
@@ -136,7 +136,7 @@ function MasterSection({
         toast({ title: `${title} updated`, description: `Item has been removed.` });
       },
       onError: () => {
-        toast({ title: 'Error', description: `Unable to delete item.`, variant: 'destructive' as any });
+        toast({ title: 'Error', description: `Unable to delete item.`, variant: 'destructive' });
       },
     });
   };
@@ -157,7 +157,7 @@ function MasterSection({
           setEditingName('');
         },
         onError: () => {
-          toast({ title: 'Error', description: `Unable to update item.`, variant: 'destructive' as any });
+          toast({ title: 'Error', description: `Unable to update item.`, variant: 'destructive' });
         },
       },
     );

@@ -47,9 +47,10 @@ export default function Login() {
       setStep("otp");
       setTimer(30);
       toast.success("OTP sent successfully!");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
-      toast.error(error.message || "Failed to send OTP. Please try again.");
+      const msg = error instanceof Error ? error.message : "Failed to send OTP. Please try again.";
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -63,7 +64,7 @@ export default function Login() {
       await confirmationResult.confirm(otp);
       toast.success("Logged in successfully!");
       navigate("/");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       toast.error("Invalid OTP. Please try again.");
     } finally {

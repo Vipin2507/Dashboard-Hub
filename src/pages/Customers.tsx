@@ -43,6 +43,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Customer, CustomerStatus } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
+import { RenewalSubscriptionTracker } from "@/components/RenewalSubscriptionTracker";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -264,6 +265,7 @@ export default function Customers() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [customerModuleTab, setCustomerModuleTab] = useState<"directory" | "renewals">("directory");
 
   useEffect(() => {
     const stored = localStorage.getItem(VIEW_STORAGE_KEY) as "table" | "card" | null;
@@ -409,11 +411,40 @@ export default function Customers() {
 
   return (
     <>
-      <Topbar title="Customers" subtitle={`${visible.length} customers`} />
+      <Topbar
+        title="Customers"
+        subtitle={
+          customerModuleTab === "renewals"
+            ? "Renewal & subscription tracker"
+            : `${visible.length} customers`
+        }
+      />
       <div className="p-6 max-w-[1400px] mx-auto">
         {customersQuery.isLoading && (
           <div className="mb-4 text-sm text-muted-foreground">Loading customers...</div>
         )}
+        <div className="flex flex-wrap gap-2 mb-6">
+          <Button
+            type="button"
+            variant={customerModuleTab === "directory" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setCustomerModuleTab("directory")}
+          >
+            Customer directory
+          </Button>
+          <Button
+            type="button"
+            variant={customerModuleTab === "renewals" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setCustomerModuleTab("renewals")}
+          >
+            Renewal &amp; subscription tracker
+          </Button>
+        </div>
+        {customerModuleTab === "renewals" ? (
+          <RenewalSubscriptionTracker />
+        ) : (
+          <>
         {/* Zone 1: Page title row */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -839,6 +870,8 @@ export default function Customers() {
               </Button>
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -9,9 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { toast } from "@/components/ui/use-toast";
+import { api } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import { useCreateDealFromProposal } from "@/hooks/useWorkflow";
+import type { Proposal } from "@/types";
+import { toast } from "sonner";
 
 interface CreateDealDialogProps {
   proposalId: string;
@@ -19,37 +23,38 @@ interface CreateDealDialogProps {
 }
 
 export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps) {
-  const proposal = useAppStore((s) => s.proposals.find((p) => p.id === proposalId));
-  const addDealWithId = useAppStore((s) => s.addDealWithId);
-  const createDealFromProposal = useAppStore((s) => s.createDealFromProposal);
+  const createDeal = useCreateDealFromProposal();
+  const { data: proposals } = useQuery({
+    queryKey: QK.proposals(),
+    queryFn: () => api.get<Proposal[]>("/proposals"),
+  });
+  const proposal = proposals?.find((p) => p.id === proposalId);
 
   const [title, setTitle] = useState(proposal?.title ?? "");
   const [value, setValue] = useState(String(proposal?.finalQuoteValue ?? proposal?.grandTotal ?? 0));
+
+  useEffect(() => {
+    if (!proposal) return;
+    setTitle(proposal.title);
+    setValue(String(proposal.finalQuoteValue ?? proposal.grandTotal ?? 0));
+  }, [proposalId, proposal]);
 
   if (!proposal) return null;
 
   const handleCreate = () => {
     const numValue = Number(value);
     if (!Number.isFinite(numValue) || numValue <= 0) {
-      toast({ title: "Invalid value", variant: "destructive" });
+      toast.error("Enter a valid positive value.");
       return;
     }
-    const dealId = "d" + Math.random().toString(36).slice(2, 10);
-    addDealWithId({
-      id: dealId,
-      name: title || `Deal - ${proposal.customerName}`,
-      customerId: proposal.customerId,
-      ownerUserId: proposal.assignedTo,
-      teamId: proposal.teamId,
-      regionId: proposal.regionId,
-      stage: "Qualified",
-      value: numValue,
-      locked: true,
-      proposalId,
+    const merged: Proposal = {
+      ...proposal,
+      title: title.trim() || proposal.title,
+      finalQuoteValue: numValue,
+    };
+    createDeal.mutate(merged, {
+      onSuccess: () => onClose(),
     });
-    createDealFromProposal(proposalId, dealId);
-    toast({ title: "Deal created", description: `Deal created from proposal ${proposal.proposalNumber}.` });
-    onClose();
   };
 
   return (
@@ -73,8 +78,12 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleCreate}>Create deal</Button>
+          <Button variant="outline" onClick={onClose} disabled={createDeal.isPending}>
+            Cancel
+          </Button>
+          <Button onClick={handleCreate} disabled={createDeal.isPending}>
+            {createDeal.isPending ? "Creating…" : "Create deal"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

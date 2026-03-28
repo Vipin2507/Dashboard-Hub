@@ -1,9 +1,10 @@
 import { useAppStore } from '@/store/useAppStore';
 import { ROLE_LABELS } from '@/types';
-import { Bell, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { NotificationBell } from '@/components/NotificationBell';
 
 interface TopbarProps {
   title: string;
@@ -13,7 +14,6 @@ interface TopbarProps {
 
 export function Topbar({ title, subtitle, actions }: TopbarProps) {
   const me = useAppStore(s => s.me);
-  const notifications = useAppStore(s => s.notifications);
   const logout = useAppStore(s => s.logout);
   const navigate = useNavigate();
 
@@ -25,14 +25,7 @@ export function Topbar({ title, subtitle, actions }: TopbarProps) {
       </div>
       <div className="flex items-center gap-4">
         {actions}
-        <div className="relative">
-          <Bell className="w-5 h-5 text-muted-foreground" />
-          {notifications.length > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] flex items-center justify-center font-bold">
-              {notifications.length}
-            </span>
-          )}
-        </div>
+        <NotificationBell />
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <span className="font-medium text-foreground">{me.name}</span>

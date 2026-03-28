@@ -126,7 +126,6 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-
   const canCreate = can(me.role, "inventory", "create");
   const canUpdate = can(me.role, "inventory", "update");
   const canDelete = can(me.role, "inventory", "delete");

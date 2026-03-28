@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
@@ -58,6 +58,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { apiUrl } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
 
 const PAGE_SIZE = 10;
 const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
@@ -84,17 +85,15 @@ type SortKey = "date" | "value" | "customer";
 const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = ["all", "draft", "sent", "approval_pending", "approved", "rejected", "deal_created"];
 
 export default function Proposals() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
-  const proposals = useAppStore((s) => s.proposals);
-  const setProposals = useAppStore((s) => s.setProposals);
   const users = useAppStore((s) => s.users);
   const updateProposal = useAppStore((s) => s.updateProposal);
 
   const scope = getScope(me.role, "proposals");
-  const visible = visibleWithScope(scope, me, proposals);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
@@ -122,19 +121,18 @@ export default function Proposals() {
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
 
   const proposalsQuery = useQuery({
-    queryKey: ["proposals-sync"],
+    queryKey: QK.proposals(),
     queryFn: async () => {
       const res = await fetch(apiUrl("/api/proposals"));
       if (!res.ok) throw new Error("Failed to load proposals");
       return (await res.json()) as Proposal[];
     },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 
-  useEffect(() => {
-    if (!proposalsQuery.data) return;
-    if (proposalsQuery.data.length === 0) return;
-    setProposals(proposalsQuery.data);
-  }, [proposalsQuery.data]);
+  const proposals = proposalsQuery.data ?? [];
+  const visible = visibleWithScope(scope, me, proposals);
 
   const handleDownloadPdf = async (proposalObj: Proposal) => {
     setPdfLoading(true);
@@ -245,6 +243,8 @@ export default function Proposals() {
 
   const handleDelete = (p: Proposal) => {
     useAppStore.getState().deleteProposal(p.id);
+    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    void queryClient.invalidateQueries({ queryKey: QK.dashboard() });
     toast({ title: "Proposal deleted", description: `${p.proposalNumber} has been removed.` });
     if (detailId === p.id) setDetailId(null);
     setDeleteProposal(null);

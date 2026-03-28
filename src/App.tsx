@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -16,14 +15,14 @@ import RegionsPage from "@/pages/RegionsPage";
 import EmailLogPage from "@/pages/EmailLogPage";
 import MastersPage from "@/pages/MastersPage";
 import Inventory from "@/pages/Inventory";
+import PaymentsPage from "@/pages/PaymentsPage";
 import Automation from "@/pages/Automation";
+import DataControlCenterPage from "@/pages/DataControlCenterPage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import NotFound from "./pages/NotFound.tsx";
 import { useAppStore } from "@/store/useAppStore";
 import { apiUrl } from "@/lib/api";
-
-const queryClient = new QueryClient();
 
 function DataBootstrapper() {
   const setRegions = useAppStore((s) => s.setRegions);
@@ -59,7 +58,7 @@ function DataBootstrapper() {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <>
     <DataBootstrapper />
     <TooltipProvider>
       <Toaster />
@@ -79,14 +78,16 @@ const App = () => (
             <Route path="/regions" element={<RegionsPage />} />
             <Route path="/email-log" element={<EmailLogPage />} />
             <Route path="/inventory" element={<Inventory />} />
+            <Route path="/payments" element={<PaymentsPage />} />
             <Route path="/masters" element={<MastersPage />} />
             <Route path="/automation" element={<Automation />} />
+            <Route path="/admin/data-control" element={<DataControlCenterPage />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
-  </QueryClientProvider>
+  </>
 );
 
 export default App;

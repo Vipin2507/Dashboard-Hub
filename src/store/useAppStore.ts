@@ -104,6 +104,8 @@ interface AppState {
   approveProposal: (id: string, approverId: string) => void;
   rejectProposal: (id: string, approverId: string, reason: string) => void;
   sendProposal: (id: string) => void;
+  /** Create deal from approved proposal (API assigns DEAL-… id). */
+  createDeal: (proposalId: string) => void;
   createDealFromProposal: (id: string, dealId: string) => void;
   saveNewVersion: (id: string) => void;
   updateProposalFinalValue: (id: string, value: number) => void;
@@ -136,7 +138,7 @@ function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:4000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
 const initialUser = seedUsers.find(u => u.id === 'u4')!;
@@ -437,27 +439,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addDeal: (payload) => {
-    const id = 'd' + makeId();
-    const deal: Deal = {
-      id,
-      locked: false,
+    const me = get().me;
+    const body = {
       ...payload,
+      locked: false,
+      changedByUserId: me.id,
+      changedByName: me.name,
+      createdByUserId: me.id,
+      createdByName: me.name,
+      actorRole: me.role,
     };
-    set(s => ({ deals: [...s.deals, deal] }));
     void fetch(apiUrl('/api/deals'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(deal),
-    }).catch(() => undefined);
+      body: JSON.stringify(body),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then((created: Deal | null) => {
+        if (created) set(s => ({ deals: [...s.deals, created] }));
+      })
+      .catch(() => undefined);
   },
 
   addDealWithId: (deal) => {
-    set(s => ({ deals: [...s.deals, deal] }));
+    const me = get().me;
+    const { id: _clientId, ...rest } = deal;
     void fetch(apiUrl('/api/deals'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(deal),
-    }).catch(() => undefined);
+      body: JSON.stringify({
+        ...rest,
+        changedByUserId: me.id,
+        changedByName: me.name,
+        createdByUserId: me.id,
+        createdByName: me.name,
+        actorRole: me.role,
+      }),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then((created: Deal | null) => {
+        if (created) set(s => ({ deals: [...s.deals, created] }));
+      })
+      .catch(() => undefined);
   },
 
   updateDeal: (id, updates) => {
@@ -465,18 +488,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       deals: s.deals.map(d => (d.id === id ? { ...d, ...updates } : d)),
     }));
     const deal = get().deals.find(d => d.id === id);
+    const me = get().me;
     if (deal) {
       void fetch(apiUrl(`/api/deals/${id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(deal),
+        body: JSON.stringify({
+          ...deal,
+          actorRole: me.role,
+          changedByUserId: me.id,
+          changedByName: me.name,
+        }),
       }).catch(() => undefined);
     }
   },
 
   deleteDeal: (id) => {
-    set(s => ({ deals: s.deals.filter(d => d.id !== id) }));
-    void fetch(apiUrl(`/api/deals/${id}`), { method: 'DELETE' }).catch(() => undefined);
+    const me = get().me;
+    void fetch(apiUrl(`/api/deals/${id}`), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actorRole: me.role,
+        deletedByUserId: me.id,
+        deletedByName: me.name,
+      }),
+    }).catch(() => undefined);
   },
 
   setInventoryItems: (items) => {
@@ -688,6 +725,48 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  createDeal: (proposalId) => {
+    const proposal = get().proposals.find(p => p.id === proposalId);
+    const me = get().me;
+    if (!proposal || proposal.dealId) return;
+    const value = proposal.finalQuoteValue ?? proposal.grandTotal ?? 0;
+    if (!Number.isFinite(value) || value <= 0) return;
+    const body = {
+      name: `Deal — ${proposal.title}`,
+      customerId: proposal.customerId,
+      ownerUserId: proposal.assignedTo,
+      teamId: proposal.teamId,
+      regionId: proposal.regionId,
+      stage: 'Qualified',
+      value,
+      locked: true,
+      proposalId,
+      dealStatus: 'Active',
+      dealSource: 'Direct',
+      expectedCloseDate: null,
+      priority: 'Medium',
+      nextFollowUpDate: null,
+      lossReason: null,
+      changedByUserId: me.id,
+      changedByName: me.name,
+      createdByUserId: me.id,
+      createdByName: me.name,
+      actorRole: me.role,
+    };
+    void fetch(apiUrl('/api/deals'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(r => (r.ok ? r.json() : null))
+      .then((created: Deal | null) => {
+        if (!created) return;
+        set(s => ({ deals: [...s.deals, created] }));
+        get().createDealFromProposal(proposalId, created.id);
+      })
+      .catch(() => undefined);
+  },
+
   createDealFromProposal: (id, dealId) => {
     const proposal = get().proposals.find(p => p.id === id);
     set(s => ({
@@ -741,7 +820,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
 
         const rep = get().users.find(u => u.id === proposal.assignedTo);
-        void triggerAutomation('deal_won', {
+        void triggerAutomation('deal_created', {
           dealId,
           dealTitle: deal?.name ?? proposal.title,
           dealValue: deal?.value ?? (proposal.finalQuoteValue ?? proposal.grandTotal),
