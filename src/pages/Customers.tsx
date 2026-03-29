@@ -41,6 +41,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSmUp } from "@/hooks/useSmUp";
 import type { Customer, CustomerStatus } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { RenewalSubscriptionTracker } from "@/components/RenewalSubscriptionTracker";
@@ -86,15 +87,15 @@ interface StatCardProps {
 
 function StatCard({ label, value, icon, valueColor = "text-gray-900 dark:text-gray-100" }: StatCardProps) {
   return (
-    <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+    <Card className="border border-gray-200 shadow-none dark:border-gray-800">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
             {label}
           </p>
-          <div className="text-gray-400 dark:text-gray-500">{icon}</div>
+          <div className="shrink-0 text-gray-400 dark:text-gray-500">{icon}</div>
         </div>
-        <p className={cn("text-2xl font-bold mt-3 leading-none tracking-tight", valueColor)}>
+        <p className={cn("mt-3 truncate text-xl font-bold leading-none tracking-tight sm:text-2xl", valueColor)}>
           {value}
         </p>
       </CardContent>
@@ -104,6 +105,7 @@ function StatCard({ label, value, icon, valueColor = "text-gray-900 dark:text-gr
 
 export default function Customers() {
   const navigate = useNavigate();
+  const smUp = useSmUp();
   const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
@@ -328,13 +330,14 @@ export default function Customers() {
     return list;
   }, [visible, search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, dateFrom, dateTo, industryFilter, tagsFilter]);
 
+  const effectiveViewMode = smUp ? viewMode : "table";
   const totalPages =
-    viewMode === "table"
+    effectiveViewMode === "table"
       ? Math.max(1, Math.ceil(filtered.length / TABLE_PAGE_SIZE))
       : Math.max(1, Math.ceil(filtered.length / CARD_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageItems =
-    viewMode === "table"
+    effectiveViewMode === "table"
       ? filtered.slice((currentPage - 1) * TABLE_PAGE_SIZE, currentPage * TABLE_PAGE_SIZE)
       : filtered.slice((currentPage - 1) * CARD_PAGE_SIZE, currentPage * CARD_PAGE_SIZE);
 
@@ -419,7 +422,7 @@ export default function Customers() {
             : `${visible.length} customers`
         }
       />
-      <div className="p-6 max-w-[1400px] mx-auto">
+      <div className="mx-auto w-full max-w-[1400px] space-y-4">
         {customersQuery.isLoading && (
           <div className="mb-4 text-sm text-muted-foreground">Loading customers...</div>
         )}
@@ -446,17 +449,17 @@ export default function Customers() {
         ) : (
           <>
         {/* Zone 1: Page title row */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Customers</h1>
-            <p className="text-sm text-gray-500 mt-0.5">{filtered.length} customers</p>
+            <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 sm:text-xl">Customers</h1>
+            <p className="mt-0.5 text-sm text-gray-500">{filtered.length} customers</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-lg p-0.5">
+            <div className="hidden items-center rounded-lg border border-gray-200 p-0.5 sm:flex dark:border-gray-700">
               <Button
                 variant="ghost"
                 size="sm"
-                className={cn("h-8 w-8 p-0 rounded-md", viewMode === "table" && "bg-white dark:bg-gray-800 shadow-sm")}
+                className={cn("h-8 w-8 rounded-md p-0", viewMode === "table" && "bg-white shadow-sm dark:bg-gray-800")}
                 onClick={() => persistView("table")}
                 title="Table view"
               >
@@ -465,7 +468,7 @@ export default function Customers() {
               <Button
                 variant="ghost"
                 size="sm"
-                className={cn("h-8 w-8 p-0 rounded-md", viewMode === "card" && "bg-white dark:bg-gray-800 shadow-sm")}
+                className={cn("h-8 w-8 rounded-md p-0", viewMode === "card" && "bg-white shadow-sm dark:bg-gray-800")}
                 onClick={() => persistView("card")}
                 title="Card view"
               >
@@ -474,26 +477,26 @@ export default function Customers() {
             </div>
             {canCreate && (
               <Button
-                className="bg-blue-600 hover:bg-blue-700 text-white h-9 px-4"
+                className="h-10 w-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:h-9 sm:w-auto"
                 onClick={() => {
                   setEditingCustomer(null);
                   setFormOpen(true);
                 }}
               >
-                <Plus className="h-4 w-4 mr-1.5" />
+                <Plus className="mr-1.5 h-4 w-4" />
                 Add Customer
               </Button>
             )}
           </div>
         </div>
 
-        {/* Zone 2: Search + filters in ONE row */}
-        <div className="flex items-center gap-3 mb-5 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-[320px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        {/* Zone 2: Search + filters */}
+        <div className="mb-4 space-y-3 sm:mb-5">
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
               placeholder="Search company, customer #, GSTIN..."
-              className="pl-9 h-9 text-sm"
+              className="h-9 pl-9 text-sm"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -501,7 +504,7 @@ export default function Customers() {
               }}
             />
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-1">
             {["All", "Active", "Inactive", "Lead", "Churned", "Blacklisted"].map((s) => (
               <button
                 key={s}
@@ -511,17 +514,17 @@ export default function Customers() {
                   setPage(1);
                 }}
                 className={cn(
-                  "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                  "flex-shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                   statusFilter === (s === "All" ? "all" : s.toLowerCase())
                     ? "bg-blue-600 text-white"
-                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
                 )}
               >
                 {s}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
             <Select
               value={regionFilter}
               onValueChange={(v) => {
@@ -529,7 +532,7 @@ export default function Customers() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 text-sm w-[130px]">
+              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-[130px]">
                 <SelectValue placeholder="All regions" />
               </SelectTrigger>
               <SelectContent>
@@ -548,7 +551,7 @@ export default function Customers() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 text-sm w-[140px]">
+              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-[140px]">
                 <SelectValue placeholder="All industries" />
               </SelectTrigger>
               <SelectContent>
@@ -561,15 +564,15 @@ export default function Customers() {
               </SelectContent>
             </Select>
             {canExport && (
-              <Button variant="outline" size="sm" className="h-9" onClick={handleExportCsv}>
-                <FileDown className="w-4 h-4 mr-1.5" /> Export
+              <Button variant="outline" size="sm" className="col-span-2 h-9 sm:col-span-1" onClick={handleExportCsv}>
+                <FileDown className="mr-1.5 h-4 w-4" /> Export
               </Button>
             )}
           </div>
         </div>
 
         {/* KPI Stat cards */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard label="Total Customers" value={String(filtered.length)} icon={<Users className="h-4 w-4" />} />
           <StatCard
             label="Active"
@@ -591,7 +594,7 @@ export default function Customers() {
         </div>
 
         {/* Table View */}
-        {viewMode === "table" && (
+        {effectiveViewMode === "table" && (
           <Card className="border border-gray-200 dark:border-gray-800 shadow-none overflow-hidden">
             <CardContent className="p-0">
               {filtered.length === 0 ? (
@@ -611,62 +614,79 @@ export default function Customers() {
                 </div>
               ) : (
                 <>
-                  <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow className="border-b border-border">
-                          <TableHead className="text-xs font-medium h-10 px-4">Customer #</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4">Company</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4">Primary Contact</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4">City</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4">Assigned To</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4">Status</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4 text-right">Total Revenue</TableHead>
-                          <TableHead className="text-xs font-medium h-10 px-4 w-[140px]">Actions</TableHead>
+                        <TableRow className="border-b border-border bg-muted/40 hover:bg-muted/40">
+                          <TableHead className="h-10 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                            Customer #
+                          </TableHead>
+                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                            Company
+                          </TableHead>
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
+                            Primary Contact
+                          </TableHead>
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                            City
+                          </TableHead>
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
+                            Assigned To
+                          </TableHead>
+                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                            Status
+                          </TableHead>
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                            Total Revenue
+                          </TableHead>
+                          <TableHead className="h-10 w-[140px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                            Actions
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
-                      <TableBody>
+                      <TableBody className="divide-y divide-border">
                         {pageItems.map((c) => {
                           const pc = primaryContact(c);
                           return (
-                            <TableRow key={c.id} className="hover:bg-muted/50 border-b border-border">
-                              <TableCell className="px-4 py-3">
+                            <TableRow key={c.id} className="border-b border-border transition-colors hover:bg-muted/50">
+                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                                 <button
                                   type="button"
-                                  className="text-left font-mono text-primary hover:underline text-sm"
+                                  className="text-left font-mono text-sm text-primary hover:underline"
                                   onClick={() => navigate(`/customers/${c.id}`)}
                                 >
                                   {c.customerNumber}
                                 </button>
                               </TableCell>
-                              <TableCell className="px-4 py-3 text-sm font-medium">
+                              <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
                                 {c.companyName}
                               </TableCell>
-                              <TableCell className="px-4 py-3 text-xs text-muted-foreground">
+                              <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:table-cell sm:px-4 sm:py-3.5">
                                 {pc ? `${pc.name}${pc.email ? ` · ${pc.email}` : ""}` : "—"}
                               </TableCell>
-                              <TableCell className="px-4 py-3 text-xs">{c.address?.city ?? "—"}</TableCell>
-                              <TableCell className="px-4 py-3">
+                              <TableCell className="hidden px-3 py-3 text-xs md:table-cell sm:px-4 sm:py-3.5">
+                                {c.address?.city ?? "—"}
+                              </TableCell>
+                              <TableCell className="hidden px-3 py-3 sm:table-cell sm:px-4 sm:py-3.5">
                                 <div>
                                   <span className="text-sm text-gray-800 dark:text-gray-200">
                                     {c.assignedToName.replace(/\s*\(.*?\)\s*/g, "").trim()}
                                   </span>
                                 </div>
                               </TableCell>
-                              <TableCell className="px-4 py-3">
+                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                                 <span
                                   className={cn(
-                                    "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize",
+                                    "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
                                     STATUS_PILL[c.status] ?? STATUS_PILL.inactive
                                   )}
                                 >
                                   {c.status}
                                 </span>
                               </TableCell>
-                              <TableCell className="px-4 py-3 text-right font-mono text-sm">
+                              <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">
                                 {formatINR(c.totalRevenue)}
                               </TableCell>
-                              <TableCell className="px-4 py-3">
+                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                                 <div className="flex items-center gap-1">
                                   <Button
                                     variant="ghost"
@@ -709,7 +729,6 @@ export default function Customers() {
                         })}
                       </TableBody>
                     </Table>
-                  </div>
                   {filtered.length > TABLE_PAGE_SIZE && (
                     <div className="flex items-center justify-between px-6 py-4 border-t border-border text-sm">
                       <span className="text-muted-foreground">
@@ -744,7 +763,7 @@ export default function Customers() {
         )}
 
         {/* Card View */}
-        {viewMode === "card" && (
+        {effectiveViewMode === "card" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.length === 0 ? (
               <Card className="col-span-full border border-border">
@@ -846,7 +865,7 @@ export default function Customers() {
           </div>
         )}
 
-        {viewMode === "card" && filtered.length > CARD_PAGE_SIZE && (
+        {effectiveViewMode === "card" && filtered.length > CARD_PAGE_SIZE && (
           <div className="flex items-center justify-between py-2 text-sm">
             <span className="text-muted-foreground">
               Page {currentPage} of {totalPages}

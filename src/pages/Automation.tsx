@@ -177,7 +177,7 @@ export default function Automation() {
   }, []);
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-[1400px] space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Automation</h1>
@@ -415,7 +415,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filteredTemplates.map((template) => (
           <Card key={template.id} className="border border-gray-200 dark:border-gray-800 shadow-none">
             <CardContent className="p-5">
@@ -888,7 +888,7 @@ function LogsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: "Total Sent", value: stats.sent, color: "text-emerald-600" },
           { label: "Failed", value: stats.failed, color: "text-red-600" },
@@ -909,10 +909,14 @@ function LogsTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Template</th>
+                <th className="hidden text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide md:table-cell">
+                  Template
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
                 <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Recipient</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Entity</th>
+                <th className="hidden text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide lg:table-cell">
+                  Entity
+                </th>
                 <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
                 <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Sent At</th>
               </tr>
@@ -920,7 +924,7 @@ function LogsTab() {
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {paginatedLogs.map((log) => (
                 <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
-                  <td className="px-4 py-3">
+                  <td className="hidden px-4 py-3 md:table-cell">
                     <span className="font-medium text-gray-800 dark:text-gray-200 text-xs">{log.templateName}</span>
                   </td>
                   <td className="px-4 py-3">
@@ -931,8 +935,9 @@ function LogsTab() {
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-xs text-gray-600 dark:text-gray-400">{log.recipientName}</span>
+                    <p className="text-[10px] text-gray-500 md:hidden">{log.templateName}</p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="hidden px-4 py-3 lg:table-cell">
                     <span className="text-xs text-gray-500">{log.entityName}</span>
                   </td>
                   <td className="px-4 py-3 text-center">

@@ -75,7 +75,7 @@ export default function MastersPage() {
   return (
     <>
       <Topbar title="Masters" subtitle="Manage master data for proposals and deals" />
-      <div className="p-6 space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <MasterSection
           title="Product Categories"
           description="Used to classify proposals and deals."

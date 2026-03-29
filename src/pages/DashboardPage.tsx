@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ElementType } from 'react';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
 import { formatINR } from '@/lib/rbac';
 import { runAutomationRules } from '@/lib/automationService';
 import { useDashboardData } from '@/hooks/useDashboardData';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -41,8 +41,89 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import type { ProposalStatus } from '@/types';
 import { normalizeDealStatus } from '@/lib/dealStatus';
+import { cn } from '@/lib/utils';
 
 const BUILDESK_BLUE = '#0072BC';
+
+type DashboardKpiCardProps = {
+  label: string;
+  value: string;
+  sub: string;
+  icon: ElementType;
+  iconColor: string;
+  iconBg?: string;
+  badge?: 'amber' | 'red' | 'orange';
+  onClick?: () => void;
+};
+
+function DashboardKpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor,
+  iconBg = 'bg-primary/10',
+  badge,
+  onClick,
+}: DashboardKpiCardProps) {
+  const inner = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10',
+            iconBg,
+          )}
+        >
+          <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', iconColor)} />
+        </div>
+        {badge && (
+          <Badge
+            variant="outline"
+            className={cn(
+              'shrink-0 text-[10px]',
+              badge === 'amber' && 'border-amber-500/50 text-amber-700',
+              badge === 'red' && 'border-red-500/50 text-red-700',
+              badge === 'orange' && 'border-orange-500/50 text-orange-700',
+            )}
+          >
+            {value}
+          </Badge>
+        )}
+      </div>
+      <div className="mt-3 sm:mt-4">
+        <p className="truncate text-xl font-bold leading-none tracking-tight text-foreground sm:text-2xl">{value}</p>
+        <p className="mt-1 text-xs leading-snug text-muted-foreground sm:text-sm">{label}</p>
+        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{sub}</p>
+      </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <Card
+        className="cursor-pointer border border-border bg-card transition-colors hover:bg-muted/30"
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        <CardContent className="p-4 sm:p-5">{inner}</CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="border border-border bg-card shadow-none">
+      <CardContent className="p-4 sm:p-5">{inner}</CardContent>
+    </Card>
+  );
+}
 
 export default function DashboardPage() {
   const me = useAppStore((s) => s.me);
@@ -329,40 +410,40 @@ export default function DashboardPage() {
         title="Buildesk License Management"
         subtitle="Welcome back! Here's what's happening with your license management workflows."
       />
-      <div className="p-6 space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <Card className="bg-card border border-border">
-          <CardContent className="p-4 flex flex-wrap items-end gap-2">
+          <CardContent className="grid grid-cols-2 gap-2 p-4 sm:flex sm:flex-wrap sm:items-end">
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">From</p>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 w-[150px]" />
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 min-w-0 w-full sm:w-[150px]" />
             </div>
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">To</p>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-[150px]" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 min-w-0 w-full sm:w-[150px]" />
             </div>
             <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-              <SelectTrigger className="h-9 w-[170px]"><SelectValue placeholder="Owner" /></SelectTrigger>
+              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[170px]"><SelectValue placeholder="Owner" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All owners</SelectItem>
                 {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={teamFilter} onValueChange={setTeamFilter}>
-              <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Team" /></SelectTrigger>
+              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]"><SelectValue placeholder="Team" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All teams</SelectItem>
                 {teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={regionFilter} onValueChange={setRegionFilter}>
-              <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="Region" /></SelectTrigger>
+              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]"><SelectValue placeholder="Region" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All regions</SelectItem>
                 {regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={proposalStatusFilter} onValueChange={(v) => setProposalStatusFilter(v as ProposalStatus | 'all')}>
-              <SelectTrigger className="h-9 w-[180px]"><SelectValue placeholder="Proposal status" /></SelectTrigger>
+              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[180px]"><SelectValue placeholder="Proposal status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All proposal statuses</SelectItem>
                 {pipelineStatuses.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
@@ -370,7 +451,7 @@ export default function DashboardPage() {
             </Select>
             <Button
               variant="outline"
-              className="h-9"
+              className="col-span-2 h-9 sm:col-span-1"
               onClick={() => {
                 setDateFrom('');
                 setDateTo('');
@@ -384,7 +465,7 @@ export default function DashboardPage() {
             </Button>
             <Button
               variant="secondary"
-              className="h-9 gap-2"
+              className="col-span-2 h-9 gap-2 sm:col-span-1"
               type="button"
               disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
               onClick={() => refetchAll()}
@@ -404,11 +485,16 @@ export default function DashboardPage() {
           </p>
         )}
         {/* KPI Row 1 — Top 4 large cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {kpiRow1.map((s) => (
-            <Card
+            <DashboardKpiCard
               key={s.label}
-              className="bg-card border border-border cursor-pointer"
+              label={s.label}
+              value={s.value}
+              sub={s.sub}
+              icon={s.icon}
+              iconColor={s.color}
+              iconBg="bg-muted"
               onClick={() =>
                 openDetail(
                   s.label,
@@ -416,64 +502,46 @@ export default function DashboardPage() {
                   applyQuery('/deals', {}),
                 )
               }
-            >
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-sm text-muted-foreground font-medium">{s.label}</p>
-                  <s.icon className={`w-5 h-5 ${s.color}`} />
-                </div>
-                <p className="text-2xl font-bold text-foreground">{s.value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{s.sub}</p>
-              </CardContent>
-            </Card>
+            />
           ))}
         </div>
 
-        {/* KPI Row 2 — Secondary 4 smaller cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {/* KPI Row 2 — Secondary 4 cards */}
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           {kpiRow2.map((s) => (
-            <Card key={s.label} className="bg-card border border-border">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs text-muted-foreground font-medium truncate">{s.label}</p>
-                  {s.badge && (
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] ${
-                        s.badge === 'amber'
-                          ? 'border-amber-500/50 text-amber-700'
-                          : s.badge === 'red'
-                            ? 'border-red-500/50 text-red-700'
-                            : 'border-orange-500/50 text-orange-700'
-                      }`}
-                    >
-                      {s.value}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xl font-bold text-foreground mt-1">{s.value}</p>
-                <p className="text-xs text-muted-foreground">{s.sub}</p>
-              </CardContent>
-            </Card>
+            <DashboardKpiCard
+              key={s.label}
+              label={s.label}
+              value={s.value}
+              sub={s.sub}
+              icon={s.icon}
+              iconColor={s.color}
+              iconBg="bg-muted"
+              badge={s.badge}
+            />
           ))}
         </div>
 
-        {/* Charts + Activity — 2/3 width charts, 1/3 activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
-            <Card className="bg-card border border-border">
-              <CardContent className="p-6">
-                <h3 className="font-semibold text-foreground mb-4">Revenue Overview</h3>
-                <div className="h-[240px]">
+        {/* Charts + Activity — stack to xl, then 2/3 + 1/3 */}
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-3">
+          <div className="space-y-4 sm:space-y-6 xl:col-span-2">
+            <Card className="border border-border bg-card shadow-none">
+              <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
+                <CardTitle className="text-sm font-semibold sm:text-base">Revenue Overview</CardTitle>
+              </CardHeader>
+              <CardContent className="px-2 pb-4 sm:px-4">
+                <div className="h-48 sm:h-64 lg:h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyRevenueData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <BarChart data={monthlyRevenueData} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                       <YAxis
                         tick={{ fontSize: 11 }}
+                        width={48}
                         tickFormatter={(v) => `₹${v}L`}
                       />
                       <Tooltip
+                        contentStyle={{ fontSize: 12 }}
                         formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}
                       />
@@ -481,7 +549,7 @@ export default function DashboardPage() {
                         dataKey="revenueLakhs"
                         fill={BUILDESK_BLUE}
                         name="Revenue"
-                        radius={[4, 4, 0, 0]}
+                        radius={[3, 3, 0, 0]}
                         cursor="pointer"
                         onClick={(data: { full: string; revenueLakhs: number }) =>
                           openDetail(
@@ -497,20 +565,22 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card border border-border">
-              <CardContent className="p-6">
-                <h3 className="font-semibold text-foreground mb-4">Proposal Pipeline</h3>
-                <div className="h-[220px]">
+            <Card className="border border-border bg-card shadow-none">
+              <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
+                <CardTitle className="text-sm font-semibold sm:text-base">Proposal Pipeline</CardTitle>
+              </CardHeader>
+              <CardContent className="px-2 pb-4 sm:px-4">
+                <div className="h-48 sm:h-56 lg:h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       layout="vertical"
                       data={pipelineData}
-                      margin={{ top: 4, right: 8, left: 60, bottom: 4 }}
+                      margin={{ top: 4, right: 8, left: 52, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                       <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="status" width={55} tick={{ fontSize: 10 }} />
-                      <Tooltip />
+                      <YAxis type="category" dataKey="status" width={50} tick={{ fontSize: 10 }} />
+                      <Tooltip contentStyle={{ fontSize: 12 }} />
                       <Bar
                         dataKey="count"
                         name="Count"
@@ -530,49 +600,9 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
-
-            <Card className="bg-card border border-border">
-              <CardContent className="p-6">
-                <h3 className="font-semibold text-foreground mb-4">Customer Status</h3>
-                <div className="relative h-[220px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={customerStatusData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={2}
-                        dataKey="value"
-                        nameKey="name"
-                        label={({ name, value }) => (value > 0 ? `${name}: ${value}` : '')}
-                        onClick={(slice) => {
-                          if (!slice?.name) return;
-                          const status = String(slice.name).toLowerCase();
-                          openDetail(
-                            `Customer Status - ${slice.name}`,
-                            [{ key: status, label: 'Count', value: String(slice.value ?? 0) }],
-                            applyQuery('/customers', { status }),
-                          );
-                        }}
-                      >
-                        {customerStatusData.map((_, index) => (
-                          <Cell key={index} fill={donutColors[index % donutColors.length]} />
-                        ))}
-                      </Pie>
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-xl font-bold text-foreground">{filteredCustomers.length}</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
-          <Card className="bg-card border border-border">
+          <Card className="flex h-full min-h-[280px] flex-col bg-card border border-border xl:col-span-1">
             <CardContent className="p-0 flex flex-col h-full">
               <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                 <h3 className="font-semibold text-foreground">Recent Activity</h3>
@@ -604,59 +634,114 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Recent Proposals Table */}
-        <Card className="bg-card border border-border">
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h3 className="font-semibold text-foreground">Recent Proposals</h3>
-              <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
-                View All
-              </Button>
-            </div>
-            {recentProposals.length > 0 ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Proposal #</TableHead>
-                    <TableHead className="text-xs">Customer</TableHead>
-                    <TableHead className="text-xs text-right">Value</TableHead>
-                    <TableHead className="text-xs">Status</TableHead>
-                    <TableHead className="text-xs">Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {recentProposals.map((p) => (
-                    <TableRow key={p.id}>
-                      <TableCell className="text-sm font-medium">
-                        <button
-                          type="button"
-                          className="text-primary hover:underline"
-                          onClick={() => navigate('/proposals', { state: { detailId: p.id } })}
-                        >
-                          {p.proposalNumber}
-                        </button>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{p.customerName}</TableCell>
-                      <TableCell className="text-sm text-right font-mono">
-                        {formatINR(p.finalQuoteValue ?? p.grandTotal)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-[10px]">
-                          {p.status.replace(/_/g, ' ')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(p.updatedAt).toLocaleDateString('en-IN')}
-                      </TableCell>
+        {/* Customer status + Recent proposals — stack to xl, 1/3 + 2/3 */}
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-3">
+          <Card className="border border-border bg-card shadow-none xl:col-span-1">
+            <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
+              <CardTitle className="text-sm font-semibold sm:text-base">Customer Status</CardTitle>
+            </CardHeader>
+            <CardContent className="px-2 pb-4 sm:px-4">
+              <div className="relative h-44 sm:h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={customerStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={48}
+                      outerRadius={68}
+                      paddingAngle={2}
+                      dataKey="value"
+                      nameKey="name"
+                      label={({ name, value }) => (value > 0 ? `${name}: ${value}` : '')}
+                      onClick={(slice) => {
+                        if (!slice?.name) return;
+                        const status = String(slice.name).toLowerCase();
+                        openDetail(
+                          `Customer Status - ${slice.name}`,
+                          [{ key: status, label: 'Count', value: String(slice.value ?? 0) }],
+                          applyQuery('/customers', { status }),
+                        );
+                      }}
+                    >
+                      {customerStatusData.map((_, index) => (
+                        <Cell key={index} fill={donutColors[index % donutColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={{ fontSize: 12 }} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <span className="text-xl font-bold text-foreground">{filteredCustomers.length}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border bg-card xl:col-span-2">
+            <CardContent className="p-0">
+              <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+                <h3 className="font-semibold text-foreground">Recent Proposals</h3>
+                <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
+                  View All
+                </Button>
+              </div>
+              {recentProposals.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
+                      <TableHead className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Proposal #
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Customer
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Value
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Status
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3 md:table-cell">
+                        Date
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="p-8 text-center text-sm text-muted-foreground">No proposals in scope</div>
-            )}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-border">
+                    {recentProposals.map((p) => (
+                      <TableRow key={p.id} className="transition-colors hover:bg-muted/50">
+                        <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
+                          <button
+                            type="button"
+                            className="text-primary hover:underline"
+                            onClick={() => navigate('/proposals', { state: { detailId: p.id } })}
+                          >
+                            {p.proposalNumber}
+                          </button>
+                        </TableCell>
+                        <TableCell className="px-3 py-3 text-sm text-muted-foreground sm:px-4 sm:py-3.5">{p.customerName}</TableCell>
+                        <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">
+                          {formatINR(p.finalQuoteValue ?? p.grandTotal)}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                          <Badge variant="outline" className="text-[10px]">
+                            {p.status.replace(/_/g, ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:px-4 sm:py-3.5 md:table-cell">
+                          {new Date(p.updatedAt).toLocaleDateString('en-IN')}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">No proposals in scope</div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent>
@@ -667,7 +752,7 @@ export default function DashboardPage() {
           {detailRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No records found for this selection.</p>
           ) : (
-            <Table>
+            <Table responsiveShell={false}>
               <TableHeader>
                 <TableRow>
                   <TableHead>Label</TableHead>

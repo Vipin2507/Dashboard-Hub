@@ -181,7 +181,7 @@ export default function CustomerProfile() {
     return (
       <>
         <Topbar title="Customer" subtitle="Not found" />
-        <div className="p-6 max-w-[1400px] mx-auto">
+        <div className="mx-auto w-full max-w-[1400px] space-y-4">
           <p className="text-muted-foreground">Customer not found or you don&apos;t have access.</p>
           <Button variant="outline" className="mt-4" onClick={() => navigate("/customers")}>
             Back to Customers
@@ -212,27 +212,29 @@ export default function CustomerProfile() {
         title={customer.companyName}
         subtitle={customer.customerNumber}
       />
-      <div className="flex flex-col lg:flex-row gap-6 p-6 max-w-[1400px] mx-auto">
-        {/* Left Sidebar */}
-        <aside className="w-full lg:w-[280px] flex-shrink-0 lg:sticky lg:top-4 lg:self-start space-y-5">
-          <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-            <CardContent className="p-5">
-              {/* Header block */}
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="text-base font-bold text-gray-900 dark:text-gray-100 leading-snug break-words flex-1">
-                    {customer.companyName}
-                  </h2>
+      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-col gap-4 sm:gap-6 lg:flex-row">
+        {/* Left Sidebar — stacks above tabs on mobile */}
+        <aside className="w-full shrink-0 space-y-5 lg:sticky lg:top-4 lg:w-[280px] lg:self-start">
+          <Card className="border border-gray-200 shadow-none dark:border-gray-800">
+            <CardContent className="p-4 sm:p-5">
+              {/* Header — compact row on mobile */}
+              <div className="lg:space-y-2">
+                <div className="flex items-start gap-3 lg:block">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <h2 className="break-words text-base font-bold leading-snug text-gray-900 dark:text-gray-100 sm:text-lg">
+                      {customer.companyName}
+                    </h2>
+                    <p className="font-mono text-xs text-gray-400">{customer.customerNumber}</p>
+                  </div>
                   <span
                     className={cn(
-                      "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize flex-shrink-0",
+                      "inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
                       STATUS_PILL[customer.status] ?? STATUS_PILL.inactive
                     )}
                   >
                     {customer.status}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 font-mono">{customer.customerNumber}</p>
                 {customer.industry && (
                   <p className="text-xs text-gray-500">{customer.industry}</p>
                 )}
@@ -314,8 +316,8 @@ export default function CustomerProfile() {
 
               <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
 
-              {/* Stats */}
-              <div className="border border-gray-100 dark:border-gray-800 rounded-lg p-4 space-y-3">
+              {/* Stats — 2-col grid on mobile, list on lg */}
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-gray-100 p-3 dark:border-gray-800 lg:grid-cols-1 lg:space-y-3 lg:p-4">
                 {[
                   {
                     label: "Total Revenue",
@@ -343,7 +345,7 @@ export default function CustomerProfile() {
                     valueClass: openTicketsCount > 0 ? "text-orange-600 font-medium" : "font-medium",
                   },
                 ].map(({ label, value, valueClass }) => (
-                  <div key={label} className="flex items-center justify-between">
+                  <div key={label} className="flex flex-col gap-0.5 rounded-md bg-muted/30 p-2 lg:flex-row lg:items-center lg:justify-between lg:bg-transparent lg:p-0">
                     <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
                     <span className={cn("text-sm text-gray-900 dark:text-gray-100", valueClass)}>
                       {value}
@@ -406,10 +408,10 @@ export default function CustomerProfile() {
         </aside>
 
         {/* Main content - Tabs */}
-        <div className="flex-1 min-w-0 flex flex-col">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex flex-col">
-            <div className="border-b border-gray-200 dark:border-gray-800 mb-6">
-              <div className="flex overflow-x-auto scrollbar-none -mb-px">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full flex-col">
+            <div className="mb-4 border-b border-gray-200 dark:border-gray-800 sm:mb-6">
+              <div className="scrollbar-none -mb-px flex gap-0 overflow-x-auto">
                 {[
                   { key: "overview", label: "Overview" },
                   { key: "transactions", label: "Transaction History" },
@@ -423,7 +425,7 @@ export default function CustomerProfile() {
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
                     className={cn(
-                      "flex-shrink-0 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                      "flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors sm:px-4 sm:py-3 sm:text-sm",
                       activeTab === tab.key
                         ? "border-blue-600 text-blue-600"
                         : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"

@@ -57,7 +57,7 @@ export default function UsersPage() {
     return (
       <>
         <Topbar title="Users" />
-        <div className="p-6">
+        <div className="space-y-4">
           <Card className="bg-card border border-border">
             <CardContent className="flex items-center gap-3 py-12 justify-center text-muted-foreground">
               <ShieldAlert className="w-5 h-5" />
@@ -94,7 +94,7 @@ export default function UsersPage() {
   return (
     <>
       <Topbar title="Users" subtitle="Manage platform users" />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         <Card className="bg-card border border-border">
           <CardContent className="p-0">
             <Table>

@@ -819,7 +819,7 @@ export function RenewalSubscriptionTracker() {
       </Dialog>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
+        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>Reminder settings</SheetTitle>
             <SheetDescription>

@@ -70,7 +70,7 @@ export default function TeamsPage() {
     return (
       <>
         <Topbar title="Teams" />
-        <div className="p-6">
+        <div className="space-y-4">
           <Card className="bg-card border border-border">
             <CardContent className="flex items-center gap-3 py-12 justify-center text-muted-foreground">
               <ShieldAlert className="w-5 h-5" />
@@ -85,7 +85,7 @@ export default function TeamsPage() {
   return (
     <>
       <Topbar title="Teams" subtitle="Manage team structure" />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         <Card className="bg-card border border-border">
           <CardContent className="p-4 flex items-end gap-2">
             <div className="flex-1">

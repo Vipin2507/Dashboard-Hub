@@ -40,6 +40,8 @@ import {
   PowerOff,
   FileDown,
   PackageOpen,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 const ITEM_TYPE_BADGE: Record<ItemType, string> = {
@@ -126,6 +128,7 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
   const [detailItem, setDetailItem] = useState<InventoryItem | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
   const canCreate = can(me.role, "inventory", "create");
   const canUpdate = can(me.role, "inventory", "update");
   const canDelete = can(me.role, "inventory", "delete");
@@ -244,7 +247,7 @@ export default function Inventory() {
         title="Inventory"
         subtitle="Manage products, services & pricing"
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -292,6 +295,28 @@ export default function Inventory() {
             </Select>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex gap-0.5 rounded-md border border-border p-0.5">
+              <Button
+                type="button"
+                variant={viewMode === "table" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 gap-1 px-2"
+                onClick={() => setViewMode("table")}
+                title="Table view"
+              >
+                <List className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                type="button"
+                variant={viewMode === "grid" ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 gap-1 px-2"
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             {canExport && (
               <Button variant="outline" size="sm" className="h-9 text-xs" onClick={exportCsv}>
                 <FileDown className="w-4 h-4 mr-1.5" />
@@ -327,19 +352,63 @@ export default function Inventory() {
                   </Button>
                 )}
               </div>
+            ) : viewMode === "grid" ? (
+              <>
+                <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {pageItems.map((item) => (
+                    <InventoryItemCard
+                      key={item.id}
+                      item={item}
+                      onOpen={() => openDetail(item)}
+                      onEdit={() => handleEdit(item)}
+                      onToggleActive={() => handleToggleActive(item)}
+                      onDelete={() => handleDelete(item)}
+                      canUpdate={canUpdate}
+                      canDelete={canDelete}
+                    />
+                  ))}
+                </div>
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs">
+                    <span className="text-muted-foreground">
+                      Page {currentPage} of {totalPages} ({filtered.length} items)
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={currentPage === 1}
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={currentPage === totalPages}
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <>
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-muted/40">
                       <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">SKU</TableHead>
-                      <TableHead className="text-xs">Type</TableHead>
-                      <TableHead className="text-xs">Category</TableHead>
-                      <TableHead className="text-xs text-right">Selling Price</TableHead>
-                      <TableHead className="text-xs">GST %</TableHead>
+                      <TableHead className="hidden text-xs sm:table-cell">SKU</TableHead>
+                      <TableHead className="hidden text-xs md:table-cell">Type</TableHead>
+                      <TableHead className="hidden text-xs lg:table-cell">Category</TableHead>
+                      <TableHead className="text-right text-xs">Selling Price</TableHead>
+                      <TableHead className="hidden text-xs sm:table-cell">GST %</TableHead>
                       <TableHead className="text-xs">Status</TableHead>
-                      <TableHead className="text-xs w-[100px]">Actions</TableHead>
+                      <TableHead className="w-[100px] text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -361,10 +430,10 @@ export default function Inventory() {
                             {item.name}
                           </button>
                         </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">
+                        <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
                           {item.sku}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <Badge
                             variant="secondary"
                             className={ITEM_TYPE_BADGE[item.itemType]}
@@ -372,13 +441,13 @@ export default function Inventory() {
                             {item.itemType}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                           {item.category}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           {formatINR(item.sellingPrice)}
                         </TableCell>
-                        <TableCell className="text-xs">{item.taxRate}%</TableCell>
+                        <TableCell className="hidden text-xs sm:table-cell">{item.taxRate}%</TableCell>
                         <TableCell>
                           <Badge
                             variant="secondary"
@@ -478,7 +547,7 @@ export default function Inventory() {
       />
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="sm:max-w-md overflow-y-auto">
+        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-md">
           <SheetHeader>
             <SheetTitle>Inventory item</SheetTitle>
           </SheetHeader>
@@ -507,6 +576,71 @@ export default function Inventory() {
         </SheetContent>
       </Sheet>
     </>
+  );
+}
+
+function InventoryItemCard({
+  item,
+  onOpen,
+  onEdit,
+  onToggleActive,
+  onDelete,
+  canUpdate,
+  canDelete,
+}: {
+  item: InventoryItem;
+  onOpen: () => void;
+  onEdit: () => void;
+  onToggleActive: () => void;
+  onDelete: () => void;
+  canUpdate: boolean;
+  canDelete: boolean;
+}) {
+  return (
+    <Card
+      role="button"
+      tabIndex={0}
+      className="cursor-pointer border border-border shadow-none transition-colors hover:bg-muted/30"
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <CardContent className="p-4">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-medium">{item.name}</h3>
+            <p className="font-mono text-xs text-muted-foreground">{item.sku}</p>
+          </div>
+          <Badge variant="secondary" className={ITEM_TYPE_BADGE[item.itemType]}>
+            {item.itemType}
+          </Badge>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-lg font-bold tabular-nums text-foreground">{formatINR(item.sellingPrice)}</span>
+          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+            {canUpdate && (
+              <>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onEdit}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onToggleActive}>
+                  {item.isActive ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                </Button>
+              </>
+            )}
+            {canDelete && (
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={onDelete}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

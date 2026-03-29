@@ -433,7 +433,7 @@ export default function DataControlCenterPage() {
         title="Data control center"
         subtitle="Super Admin — per-module bulk add, multi-field bulk update, row selection, and export"
       />
-      <div className="p-6 space-y-6 max-w-[1600px] mx-auto">
+      <div className="mx-auto w-full max-w-[1600px] space-y-4 sm:space-y-6">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant="default" className="gap-1">
             <Shield className="h-3 w-3" />
@@ -712,7 +712,7 @@ export default function DataControlCenterPage() {
       </div>
 
       <Sheet open={bulkOpen} onOpenChange={setBulkOpen}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
+        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>Bulk update</SheetTitle>
             <SheetDescription>
@@ -803,7 +803,7 @@ export default function DataControlCenterPage() {
       </Sheet>
 
       <Sheet open={importOpen} onOpenChange={setImportOpen}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
+        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
           <SheetHeader>
             <SheetTitle>Bulk add (import)</SheetTitle>
             <SheetDescription>

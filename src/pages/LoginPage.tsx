@@ -78,7 +78,7 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex bg-white dark:bg-black font-sans selection:bg-zinc-200 dark:selection:bg-zinc-800">
+    <div className="flex min-h-screen flex-col bg-gray-50 font-sans selection:bg-zinc-200 dark:bg-gray-950 dark:selection:bg-zinc-800 lg:flex-row lg:bg-white lg:dark:bg-black">
       <div id="recaptcha-container"></div>
       
       {/* Left Column: Brand Section */}
@@ -134,11 +134,12 @@ export default function Login() {
         </div>
       </div>
 
-      {/* Right Column: Login Section */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background relative">
+      {/* Right Column: Login Section — full-screen centered card on small viewports */}
+      <div className="relative flex w-full flex-1 items-center justify-center bg-gray-50 p-4 dark:bg-gray-950 lg:w-1/2 lg:bg-background lg:p-8">
         {/* Subtle grid pattern for the background */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none"></div>
-        
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] lg:opacity-100" />
+
+        <div className="relative z-10 w-full max-w-sm">
         <LoginCard
           phoneNumber={phoneNumber}
           setPhoneNumber={setPhoneNumber}
@@ -152,6 +153,7 @@ export default function Login() {
           onResendOtp={handleResendOtp}
           timer={timer}
         />
+        </div>
       </div>
     </div>
   );

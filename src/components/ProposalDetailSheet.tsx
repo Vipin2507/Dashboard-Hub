@@ -82,7 +82,7 @@ export function ProposalDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[720px] sm:max-w-[720px] overflow-y-auto">
+      <SheetContent className="overflow-y-auto p-6 pt-14">
         <SheetHeader>
           <SheetTitle className="flex items-center justify-between gap-2">
             <span>{proposal.proposalNumber}</span>

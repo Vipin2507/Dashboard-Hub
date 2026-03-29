@@ -174,7 +174,7 @@ export default function CustomersPage() {
   return (
     <>
       <Topbar title="Leads" subtitle="Manage your lead accounts" />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-card border border-border">

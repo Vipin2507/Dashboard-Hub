@@ -54,7 +54,7 @@ export function PhoneInput({ value, onChange, disabled }: PhoneInputProps) {
             variant="outline"
             role="combobox"
             aria-expanded={open}
-            className="w-[100px] justify-between bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white"
+            className="h-11 min-h-[44px] w-[100px] justify-between border-zinc-200 bg-white text-base text-zinc-900 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:hover:bg-zinc-700 dark:hover:text-white"
             disabled={disabled}
           >
             {selectedCountry.iso} ({selectedCountry.code})
@@ -94,10 +94,10 @@ export function PhoneInput({ value, onChange, disabled }: PhoneInputProps) {
       </Popover>
       <Input
         type="tel"
-        placeholder="Phone number"
+        placeholder="+91 Enter phone number"
         value={localNumber}
         onChange={handleLocalNumberChange}
-        className="flex-1 bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus-visible:ring-primary/20"
+        className="h-11 min-h-[44px] flex-1 border-zinc-200 bg-white text-base text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-primary/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-white dark:placeholder:text-zinc-500"
         disabled={disabled}
       />
     </div>

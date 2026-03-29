@@ -26,7 +26,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Lock, DollarSign, TrendingUp, CheckCircle, Plus, Pencil, Trash2, Search, Eye } from "lucide-react";
+import { Lock, DollarSign, TrendingUp, CheckCircle, Plus, Pencil, Trash2, Search, Eye, LayoutGrid, List } from "lucide-react";
+import { useMdUp } from "@/hooks/useSmUp";
 import type { Deal } from "@/types";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -99,6 +100,8 @@ export default function DealsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
   const [lossTarget, setLossTarget] = useState<Deal | null>(null);
   const [lossReasonDraft, setLossReasonDraft] = useState("");
+  const mdUp = useMdUp();
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
 
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -148,6 +151,10 @@ export default function DealsPage() {
   useEffect(() => {
     checkDealFollowUpReminders(deals);
   }, [deals]);
+
+  useEffect(() => {
+    if (!mdUp) setViewMode("list");
+  }, [mdUp]);
 
   useEffect(() => {
     const q = searchParams.get("q");
@@ -560,7 +567,7 @@ export default function DealsPage() {
   return (
     <>
       <Topbar title="Deals" subtitle="Track and manage all deals" />
-      <div className="p-6 space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -693,35 +700,77 @@ export default function DealsPage() {
 
         <Card className="bg-card border border-border">
           <CardContent className="p-0">
-            <div className="px-5 py-4 border-b border-border">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
               <h3 className="font-semibold text-foreground">All Deals</h3>
+              {mdUp && (
+                <div className="flex gap-1 rounded-md border border-border p-0.5">
+                  <Button
+                    type="button"
+                    variant={viewMode === "list" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5"
+                    onClick={() => setViewMode("list")}
+                  >
+                    <List className="h-3.5 w-3.5" />
+                    List
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={viewMode === "kanban" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-8 gap-1.5 px-2.5"
+                    onClick={() => setViewMode("kanban")}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    Kanban
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="overflow-x-auto">
+            {mdUp && viewMode === "kanban" ? (
+              <div className="overflow-x-auto pb-4 pt-2">
+                <div className="flex min-w-max gap-4 px-4">
+                  {stageSelectOptions.map((stage) => (
+                    <KanbanColumn
+                      key={stage}
+                      stage={stage}
+                      deals={visible.filter((d) => d.stage === stage)}
+                      customerName={(id) => customers.find((c) => c.id === id)?.companyName ?? "—"}
+                      onViewDeal={(d) => {
+                        setSheetDeal(d);
+                        setSheetMode("view");
+                        setSheetOpen(true);
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs whitespace-nowrap">Deal ID</TableHead>
-                    <TableHead className="text-xs">Name</TableHead>
-                    <TableHead className="text-xs">Customer</TableHead>
-                    <TableHead className="text-xs">Stage</TableHead>
-                    <TableHead className="text-xs">Deal status</TableHead>
-                    <TableHead className="text-xs">Source</TableHead>
-                    <TableHead className="text-xs">Priority</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap">Exp. close</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap">Last activity</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap">Next follow-up</TableHead>
-                    <TableHead className="text-xs">Owner</TableHead>
-                    <TableHead className="text-xs text-right">Value</TableHead>
-                    <TableHead className="text-xs">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visible.map((d) => {
+                  <TableHeader>
+                    <TableRow className="bg-muted/40">
+                      <TableHead className="hidden whitespace-nowrap text-xs md:table-cell">Deal ID</TableHead>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">Customer</TableHead>
+                      <TableHead className="text-xs">Stage</TableHead>
+                      <TableHead className="text-xs">Deal status</TableHead>
+                      <TableHead className="hidden text-xs sm:table-cell">Source</TableHead>
+                      <TableHead className="hidden text-xs lg:table-cell">Priority</TableHead>
+                      <TableHead className="hidden whitespace-nowrap text-xs lg:table-cell">Exp. close</TableHead>
+                      <TableHead className="hidden whitespace-nowrap text-xs xl:table-cell">Last activity</TableHead>
+                      <TableHead className="hidden whitespace-nowrap text-xs xl:table-cell">Next follow-up</TableHead>
+                      <TableHead className="hidden text-xs sm:table-cell">Owner</TableHead>
+                      <TableHead className="text-right text-xs">Value</TableHead>
+                      <TableHead className="text-xs">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visible.map((d) => {
                     const st = normalizeDealStatus(d.dealStatus);
                     const badgeClass = DEAL_STATUS_META[st].badgeClass;
                     return (
                       <TableRow key={d.id}>
-                        <TableCell className="font-mono text-xs">{d.id}</TableCell>
+                        <TableCell className="hidden font-mono text-xs md:table-cell">{d.id}</TableCell>
                         <TableCell className="text-sm font-medium">{d.name}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {customers.find((c) => c.id === d.customerId) ? (
@@ -786,12 +835,12 @@ export default function DealsPage() {
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">{d.dealSource ?? "—"}</TableCell>
-                        <TableCell className="text-xs">{d.priority ?? "—"}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{d.expectedCloseDate ?? "—"}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{formatShortDate(d.lastActivityAt)}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{d.nextFollowUpDate ?? "—"}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">{d.dealSource ?? "—"}</TableCell>
+                        <TableCell className="hidden text-xs lg:table-cell">{d.priority ?? "—"}</TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-xs lg:table-cell">{d.expectedCloseDate ?? "—"}</TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-xs xl:table-cell">{formatShortDate(d.lastActivityAt)}</TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-xs xl:table-cell">{d.nextFollowUpDate ?? "—"}</TableCell>
+                        <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                           {users.find((u) => u.id === d.ownerUserId)?.name}
                         </TableCell>
                         <TableCell className="text-sm text-right font-mono">{formatINR(d.value)}</TableCell>
@@ -850,21 +899,21 @@ export default function DealsPage() {
                       </TableRow>
                     );
                   })}
-                  {visible.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-12">
-                        No active deals in scope
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
+                    {visible.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-12">
+                          No active deals in scope
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
               </Table>
-            </div>
+            )}
           </CardContent>
         </Card>
 
         <Card className="bg-card border border-border">
-          <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
+          <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
             <p>
               <strong className="text-foreground">Pipeline status</strong> drives reminders and win/loss automation.
               Changing to <strong>Closed/Won</strong> notifies the team (deal_won templates).{" "}
@@ -889,7 +938,7 @@ export default function DealsPage() {
                 <h3 className="font-semibold text-foreground">Deleted records (soft-deleted)</h3>
                 <p className="text-xs text-muted-foreground mt-1">Visible to Super Admin only. Rows stay in the database for audit.</p>
               </div>
-              <div className="overflow-x-auto p-4">
+              <div className="p-4">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -905,7 +954,7 @@ export default function DealsPage() {
                       <TableRow key={d.id}>
                         <TableCell className="font-mono text-xs">{d.id}</TableCell>
                         <TableCell className="text-sm">{d.name}</TableCell>
-                        <TableCell className="text-xs whitespace-nowrap">{formatShortDate(d.deletedAt)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{formatShortDate(d.deletedAt)}</TableCell>
                         <TableCell className="text-xs">{d.deletedByName ?? "—"}</TableCell>
                         <TableCell>
                           <Button
@@ -938,7 +987,7 @@ export default function DealsPage() {
           setSheetOpen(o);
         }}
       >
-        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col max-h-[100vh] overflow-y-auto">
+        <SheetContent side="right" className="flex max-h-[100dvh] flex-col overflow-y-auto p-6 pt-14 sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>
               {sheetMode === "view" ? "Deal details" : sheetMode === "edit" ? "Edit deal" : "New deal"}
@@ -1260,5 +1309,41 @@ export default function DealsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
+  );
+}
+
+function KanbanColumn({
+  stage,
+  deals,
+  customerName,
+  onViewDeal,
+}: {
+  stage: string;
+  deals: Deal[];
+  customerName: (customerId: string) => string;
+  onViewDeal: (d: Deal) => void;
+}) {
+  return (
+    <div className="w-72 shrink-0">
+      <div className="rounded-lg bg-muted/60 p-3 dark:bg-muted/30">
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {stage} ({deals.length})
+        </h3>
+        <div className="space-y-2">
+          {deals.map((deal) => (
+            <button
+              key={deal.id}
+              type="button"
+              onClick={() => onViewDeal(deal)}
+              className="w-full rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:bg-muted/50"
+            >
+              <p className="line-clamp-2 text-sm font-medium">{deal.name}</p>
+              <p className="mt-1 truncate text-xs text-muted-foreground">{customerName(deal.customerId)}</p>
+              <p className="mt-2 text-xs font-mono font-semibold tabular-nums">{formatINR(deal.value)}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

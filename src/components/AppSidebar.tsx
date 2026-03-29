@@ -4,15 +4,31 @@ import { useSidebarBadges } from '@/hooks/useSidebarBadges';
 import { ROLE_LABELS } from '@/types';
 import type { Module, Role } from '@/types';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import {
-  LayoutDashboard, FileText, Handshake, Users, Building2, Map, Mail, UsersRound, RotateCcw, Package, Settings,
+  LayoutDashboard,
+  FileText,
+  Handshake,
+  Users,
+  Building2,
+  Map,
+  Mail,
+  UsersRound,
+  RotateCcw,
+  Package,
+  Settings,
   Zap,
   Banknote,
   Database,
+  X,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 
@@ -54,49 +70,69 @@ const NAV_GROUPS: NavGroup[] = [
 
 const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', 'support'];
 
-export function AppSidebar() {
-  const me = useAppStore(s => s.me);
-  const customers = useAppStore(s => s.customers);
-  const automationLogs = useAppStore(s => s.automationLogs);
-  const switchRole = useAppStore(s => s.switchRole);
-  const resetDemo = useAppStore(s => s.resetDemo);
+export interface AppSidebarProps {
+  onClose: () => void;
+}
+
+export function AppSidebar({ onClose }: AppSidebarProps) {
+  const me = useAppStore((s) => s.me);
+  const customers = useAppStore((s) => s.customers);
+  const automationLogs = useAppStore((s) => s.automationLogs);
+  const switchRole = useAppStore((s) => s.switchRole);
+  const resetDemo = useAppStore((s) => s.resetDemo);
   const navigate = useNavigate();
   const location = useLocation();
   const { proposalsBadge, dealsBadge, paymentsBadge } = useSidebarBadges();
+
   const customerScope = getScope(me.role, 'customers');
   const visibleCustomers = visibleWithScope(customerScope, me, customers);
-  const leadCount = visibleCustomers.filter(c => c.status === 'lead').length;
+  const leadCount = visibleCustomers.filter((c) => c.status === 'lead').length;
   const showProposalBadge =
     (me.role === 'super_admin' || me.role === 'sales_manager') && proposalsBadge > 0;
   const showDealsBadge = dealsBadge > 0;
   const showPaymentsBadge =
     (me.role === 'super_admin' || me.role === 'finance') && paymentsBadge > 0;
-  const showCustomerLeadBadge = (me.role === 'super_admin' || me.role === 'sales_manager') && leadCount > 0;
-  const failedLogsCount = automationLogs.filter(l => l.status === 'failed').length;
+  const showCustomerLeadBadge =
+    (me.role === 'super_admin' || me.role === 'sales_manager') && leadCount > 0;
+  const failedLogsCount = automationLogs.filter((l) => l.status === 'failed').length;
   const showAutomationBadge = failedLogsCount > 0;
 
+  const go = (path: string) => {
+    navigate(path);
+    onClose();
+  };
+
   return (
-    <aside className="w-[220px] min-w-[220px] h-screen bg-sidebar border-r border-sidebar-border flex flex-col overflow-y-auto">
-      {/* Logo */}
-      <div className="px-5 py-4 flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-          <LayoutDashboard className="w-4 h-4 text-primary-foreground" />
+    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar">
+      {/* Header — close on mobile drawer only */}
+      <div className="flex h-14 min-h-[3.5rem] shrink-0 items-center justify-between border-b border-sidebar-border px-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
+            <LayoutDashboard className="h-4 w-4 text-primary-foreground" />
+          </div>
+          <span className="truncate text-base font-bold tracking-tight text-primary">Buildesk</span>
         </div>
-        <span className="text-base font-bold text-foreground tracking-tight">Buildesk</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground lg:hidden"
+          aria-label="Close navigation"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
 
-      {/* Nav groups */}
-      <nav className="flex-1 px-3 pb-3 space-y-5 mt-2">
-        {NAV_GROUPS.map(group => {
-          const visibleItems = group.items.filter(item => hasModuleAccess(me.role, item.module));
+      <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-3">
+        {NAV_GROUPS.map((group) => {
+          const visibleItems = group.items.filter((item) => hasModuleAccess(me.role, item.module));
           if (visibleItems.length === 0) return null;
           return (
             <div key={group.label}>
-              <p className="px-3 mb-1.5 text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+              <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground sm:text-[11px]">
                 {group.label}
               </p>
               <div className="space-y-0.5">
-                {visibleItems.map(item => {
+                {visibleItems.map((item) => {
                   const active =
                     location.pathname === item.path ||
                     (item.path === '/customers' && location.pathname.startsWith('/customers/')) ||
@@ -109,19 +145,21 @@ export function AppSidebar() {
                   return (
                     <button
                       key={item.path}
-                      onClick={() => navigate(item.path)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
+                      type="button"
+                      onClick={() => go(item.path)}
+                      className={cn(
+                        'flex min-h-11 w-full items-center gap-2.5 rounded-md px-3 py-2.5 text-sm transition-colors sm:min-h-0 sm:py-2',
                         active
-                          ? 'bg-accent text-accent-foreground font-medium'
-                          : 'text-sidebar-foreground hover:bg-secondary'
-                      }`}
+                          ? 'bg-accent font-medium text-accent-foreground'
+                          : 'text-sidebar-foreground hover:bg-secondary',
+                      )}
                     >
-                      <item.icon className="w-4 h-4 flex-shrink-0" />
-                      <span>{item.label}</span>
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="text-left">{item.label}</span>
                       {isProposals && showProposalBadge && (
                         <Badge
                           variant="outline"
-                          className="ml-auto h-5 min-w-5 px-1.5 text-[10px] border-0 bg-amber-500 text-white hover:bg-amber-500"
+                          className="ml-auto h-5 min-w-5 border-0 bg-amber-500 px-1.5 text-[10px] text-white hover:bg-amber-500"
                         >
                           {proposalsBadge > 99 ? '99+' : proposalsBadge}
                         </Badge>
@@ -129,7 +167,7 @@ export function AppSidebar() {
                       {isDeals && showDealsBadge && (
                         <Badge
                           variant="outline"
-                          className="ml-auto h-5 min-w-5 px-1.5 text-[10px] border-0 bg-blue-600 text-white hover:bg-blue-600"
+                          className="ml-auto h-5 min-w-5 border-0 bg-blue-600 px-1.5 text-[10px] text-white hover:bg-blue-600"
                         >
                           {dealsBadge > 99 ? '99+' : dealsBadge}
                         </Badge>
@@ -158,23 +196,31 @@ export function AppSidebar() {
         })}
       </nav>
 
-      {/* Bottom: Role switcher */}
-      <div className="px-4 py-3 border-t border-sidebar-border space-y-2">
-        <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Switch Role</label>
+      <div className="shrink-0 space-y-2 border-t border-sidebar-border p-3">
+        <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Switch Role
+        </label>
         <Select value={me.role} onValueChange={(v) => switchRole(v as Role)}>
-          <SelectTrigger className="h-8 text-xs bg-secondary border-border">
+          <SelectTrigger className="h-10 min-h-11 border-border bg-secondary text-sm sm:h-9 sm:min-h-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {ROLES.map(r => (
-              <SelectItem key={r} value={r} className="text-xs">{ROLE_LABELS[r]}</SelectItem>
+            {ROLES.map((r) => (
+              <SelectItem key={r} value={r} className="text-sm">
+                {ROLE_LABELS[r]}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Button variant="ghost" size="sm" className="w-full text-muted-foreground text-[11px] h-7" onClick={resetDemo}>
-          <RotateCcw className="w-3 h-3 mr-1.5" /> Reset Demo
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-10 min-h-11 w-full text-sm text-muted-foreground sm:h-9 sm:min-h-0"
+          onClick={resetDemo}
+        >
+          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Demo
         </Button>
       </div>
-    </aside>
+    </div>
   );
 }

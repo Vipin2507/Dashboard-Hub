@@ -12,6 +12,23 @@ export default {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      screens: {
+        xs: "375px",
+        /** Align custom name with `SIDEBAR_RAIL_BREAKPOINT_PX` / Tailwind `lg` */
+        nav: "1024px",
+      },
+      spacing: {
+        topbar: "var(--app-topbar-height)",
+        sidebar: "var(--app-sidebar-width)",
+      },
+      maxWidth: {
+        "sidebar-drawer": "var(--app-sidebar-drawer-max)",
+        "screen-xl": "1400px",
+      },
+      zIndex: {
+        "app-backdrop": "var(--app-layout-z-backdrop)",
+        "app-mobile-nav": "var(--app-layout-z-mobile-nav)",
+      },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],

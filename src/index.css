@@ -52,6 +52,13 @@
     --sidebar-ring: 224 76% 48%;
     --sidebar-muted: 220 10% 56%;
     --sidebar-heading: 220 10% 40%;
+
+    /* App shell (responsive nav) — Parts 16–18 */
+    --app-topbar-height: 3.5rem;
+    --app-sidebar-width: 16rem;
+    --app-sidebar-drawer-max: min(18rem, 100vw);
+    --app-layout-z-backdrop: 40;
+    --app-layout-z-mobile-nav: 50;
   }
 }
 
@@ -68,10 +75,40 @@
   .font-mono-id {
     @apply font-mono text-sm font-medium tracking-tight;
   }
+
+  /* Hide scrollbar but keep scroll functionality */
   .scrollbar-none {
     scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  /* Safe area padding for notched phones */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* Prevent iOS input zoom (font-size >= 16px on inputs) */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="number"],
+  input[type="password"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Smooth sidebar transition (optional utility for custom drawers) */
+.sidebar-drawer {
+  transform: translateX(-100%);
+  transition: transform 0.2s ease-in-out;
+}
+.sidebar-drawer.open {
+  transform: translateX(0);
 }

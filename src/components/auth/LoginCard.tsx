@@ -3,6 +3,7 @@ import { OtpInput } from "./OtpInput";
 import { PhoneInput } from "./PhoneInput";
 import { PolicyModals } from "./PolicyModals";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
@@ -42,22 +43,24 @@ export function LoginCard({
   });
 
   return (
-    <div className="relative z-10 w-full max-w-md mx-auto p-8 bg-white dark:bg-zinc-900 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-zinc-100 dark:border-zinc-800 transition-all duration-300 hover:shadow-[0_8px_40px_rgb(0,0,0,0.16)]">
-      <PolicyModals
-        isOpen={policyModal.isOpen}
-        onClose={() => setPolicyModal((prev) => ({ ...prev, isOpen: false }))}
-        type={policyModal.type}
-      />
-      
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-primary mb-2 tracking-tight">Buildesk</h1>
-        <p className="text-muted-foreground">
-          {step === "phone" ? "Sign in with your phone number" : "Enter the 6-digit code sent to your phone"}
-        </p>
-      </div>
+    <Card className="relative z-10 w-full border border-border shadow-sm dark:border-border">
+      <CardContent className="p-6 sm:p-8">
+        <PolicyModals
+          isOpen={policyModal.isOpen}
+          onClose={() => setPolicyModal((prev) => ({ ...prev, isOpen: false }))}
+          type={policyModal.type}
+        />
+
+        <div className="mb-6 text-center sm:mb-8">
+          <div className="text-2xl font-bold text-blue-600 sm:text-3xl dark:text-blue-500">Buildesk</div>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Real Estate CRM</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {step === "phone" ? "Sign in with your phone number" : "Enter the 6-digit code sent to your phone"}
+          </p>
+        </div>
 
       {step === "phone" ? (
-        <form onSubmit={onSendOtp} className="space-y-6">
+        <form onSubmit={onSendOtp} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="phone" className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
               Phone Number
@@ -69,7 +72,7 @@ export function LoginCard({
             />
           </div>
 
-          <div className="flex items-start space-x-3 pt-2">
+          <div className="flex items-start space-x-3 pt-1">
             <Checkbox
               id="terms"
               checked={agreed}
@@ -103,10 +106,10 @@ export function LoginCard({
           <Button
             type="submit"
             className={cn(
-              "w-full h-12 text-base font-semibold transition-all duration-300 rounded-xl shadow-lg shadow-primary/20",
-              agreed 
-                ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98]" 
-                : "bg-muted text-muted-foreground cursor-not-allowed"
+              "h-11 w-full text-base font-semibold",
+              agreed
+                ? "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+                : "cursor-not-allowed bg-muted text-muted-foreground",
             )}
             disabled={loading || !agreed}
           >
@@ -114,7 +117,7 @@ export function LoginCard({
           </Button>
         </form>
       ) : (
-        <form onSubmit={onVerifyOtp} className="space-y-8">
+        <form onSubmit={onVerifyOtp} className="space-y-6">
           <div className="flex flex-col items-center space-y-6">
             <OtpInput value={otp} onChange={setOtp} disabled={loading} />
             
@@ -137,7 +140,7 @@ export function LoginCard({
           <div className="space-y-4">
             <Button
               type="submit"
-              className="w-full h-12 text-base font-semibold bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 shadow-lg shadow-primary/20"
+              className="h-11 w-full text-base font-semibold bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
               disabled={loading || otp.length !== 6}
             >
               {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : "Verify & Login"}
@@ -155,14 +158,13 @@ export function LoginCard({
         </form>
       )}
 
-      <div className="mt-12 text-center border-t border-zinc-100 dark:border-zinc-800 pt-8">
-        <p className="text-[10px] uppercase tracking-widest text-zinc-400 font-semibold mb-1">
+      <div className="mt-8 border-t border-border pt-6 text-center sm:mt-10 sm:pt-8">
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
           Security Notice
         </p>
-        <p className="text-xs text-zinc-400">
-          Secure login powered by Firebase authentication.
-        </p>
+        <p className="text-xs text-muted-foreground">Secure login powered by Firebase authentication.</p>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

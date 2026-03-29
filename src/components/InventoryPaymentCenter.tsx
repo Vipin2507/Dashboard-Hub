@@ -655,24 +655,36 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
               Payment dashboard
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Total paid</p>
-              <p className="font-semibold">{formatINR(totalPaid)}</p>
+          <CardContent className="space-y-3 text-sm">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Total plans</p>
+                <p className="font-semibold tabular-nums">{plan ? 1 : 0}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Collected</p>
+                <p className="font-semibold tabular-nums">{formatINR(totalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Remaining</p>
+                <p className="font-semibold tabular-nums">{formatINR(totalRemaining)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Overdue</p>
+                <p className="font-semibold tabular-nums text-destructive">
+                  {myRemaining.filter((r) => r.category === "overdue").length}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total remaining</p>
-              <p className="font-semibold">{formatINR(totalRemaining)}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                Next due: <span className="font-medium text-foreground">{plan?.nextDueDate ?? "—"}</span>
+              </span>
+              <span>
+                Plan ends: <span className="font-medium text-foreground">{plan?.planEndDate ?? "—"}</span>
+              </span>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Next due</p>
-              <p className="font-medium">{plan?.nextDueDate ?? "—"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Plan ends</p>
-              <p className="font-medium">{plan?.planEndDate ?? "—"}</p>
-            </div>
-            <div className="col-span-2 md:col-span-4 flex flex-wrap gap-2 items-center">
+            <div className="flex flex-wrap gap-2 items-center">
               <span className="text-xs text-muted-foreground">Installment status:</span>
               {myRemaining[0] ? categoryBadge(myRemaining[0].category) : <Badge variant="outline">—</Badge>}
               <span className="text-xs text-muted-foreground ml-2">Health:</span>
@@ -934,14 +946,14 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-xs">ID</TableHead>
+                    <TableHead className="hidden text-xs sm:table-cell">ID</TableHead>
                     <TableHead className="text-xs">Customer</TableHead>
-                    <TableHead className="text-xs">Plan</TableHead>
+                    <TableHead className="hidden text-xs md:table-cell">Plan</TableHead>
                     <TableHead className="text-xs">Amount</TableHead>
                     <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="text-xs">Mode</TableHead>
-                    <TableHead className="text-xs">Receipt</TableHead>
-                    <TableHead className="text-xs">Sent</TableHead>
+                    <TableHead className="hidden text-xs md:table-cell">Mode</TableHead>
+                    <TableHead className="hidden text-xs lg:table-cell">Receipt</TableHead>
+                    <TableHead className="hidden text-xs lg:table-cell">Sent</TableHead>
                     <TableHead className="text-xs">Status</TableHead>
                     {canDeletePayment && <TableHead className="text-xs w-[70px]">Actions</TableHead>}
                   </TableRow>
@@ -949,14 +961,17 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
                 <TableBody>
                   {(historyQ.data ?? []).map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-mono text-xs">{r.id.slice(0, 10)}…</TableCell>
-                      <TableCell className="text-xs">{r.customerName}</TableCell>
-                      <TableCell className="text-xs">{r.planName}</TableCell>
+                      <TableCell className="hidden font-mono text-xs sm:table-cell">{r.id.slice(0, 10)}…</TableCell>
+                      <TableCell className="text-xs">
+                        <span className="font-medium">{r.customerName}</span>
+                        <p className="text-[10px] text-muted-foreground md:hidden">{r.planName ?? "—"}</p>
+                      </TableCell>
+                      <TableCell className="hidden text-xs md:table-cell">{r.planName}</TableCell>
                       <TableCell className="text-xs">{formatINR(r.amountPaid)}</TableCell>
-                      <TableCell className="text-xs">{r.paymentDate}</TableCell>
-                      <TableCell className="text-xs">{paymentModeLabel(r.paymentMode)}</TableCell>
-                      <TableCell className="text-xs font-mono">{r.receiptNumber ?? "—"}</TableCell>
-                      <TableCell className="text-xs">{r.receiptSent ? "Yes" : "No"}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{r.paymentDate}</TableCell>
+                      <TableCell className="hidden text-xs md:table-cell">{paymentModeLabel(r.paymentMode)}</TableCell>
+                      <TableCell className="hidden font-mono text-xs lg:table-cell">{r.receiptNumber ?? "—"}</TableCell>
+                      <TableCell className="hidden text-xs lg:table-cell">{r.receiptSent ? "Yes" : "No"}</TableCell>
                       <TableCell className="text-xs capitalize">{r.paymentStatus}</TableCell>
                       {canDeletePayment && (
                         <TableCell className="text-xs">

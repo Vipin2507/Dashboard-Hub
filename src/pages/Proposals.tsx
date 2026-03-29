@@ -38,7 +38,9 @@ import {
   ChevronDown,
   FileQuestion,
   Loader2,
+  Filter,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { Proposal, ProposalStatus } from "@/types";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { ProposalFormDialog } from "@/components/ProposalFormDialog";
@@ -119,6 +121,7 @@ export default function Proposals() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -269,72 +272,98 @@ export default function Proposals() {
         title="Proposals"
         subtitle={`${visible.length} proposals`}
       />
-      <div className="p-6 space-y-4">
+      <div className="space-y-4">
         {proposalsQuery.isLoading && (
           <div className="text-sm text-muted-foreground">Loading proposals...</div>
         )}
         {/* Filters */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search proposal #, title, customer..."
+                placeholder="Search proposals..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                className="pl-8 h-9"
+                className="h-9 pl-9"
               />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v as ProposalStatus | "all"); setPage(1); }}>
-              <SelectTrigger className="h-9 w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="h-9 w-[140px]" />
-            <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="h-9 w-[140px]" />
-            {(me.role === "super_admin" || me.role === "sales_manager") && (
-              <Select value={assignedToFilter} onValueChange={(v) => { setAssignedToFilter(v); setPage(1); }}>
-                <SelectTrigger className="h-9 w-[160px]">
-                  <SelectValue placeholder="Assigned to" />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 px-3 sm:hidden"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((o) => !o)}
+            >
+              <Filter className="h-4 w-4" />
+            </Button>
+          </div>
+          <div
+            className={cn(
+              "flex flex-col gap-2 sm:flex sm:flex-wrap sm:items-center",
+              !filtersOpen && "hidden sm:flex",
+            )}
+          >
+            <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-1 sm:max-w-full sm:flex-wrap sm:overflow-visible sm:pb-0">
+              {STATUS_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => { setStatusFilter(o.value); setPage(1); }}
+                  className={cn(
+                    "flex-shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                    statusFilter === o.value
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  )}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+              <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
+              <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
+              {(me.role === "super_admin" || me.role === "sales_manager") && (
+                <Select value={assignedToFilter} onValueChange={(v) => { setAssignedToFilter(v); setPage(1); }}>
+                  <SelectTrigger className="h-9 w-full sm:w-[160px]">
+                    <SelectValue placeholder="Assigned to" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All users</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
+                <SelectTrigger className="h-9 w-full sm:w-[130px]">
+                  <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All users</SelectItem>
-                  {users.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                  ))}
+                  <SelectItem value="date">Date (newest)</SelectItem>
+                  <SelectItem value="value">Value</SelectItem>
+                  <SelectItem value="customer">Customer</SelectItem>
                 </SelectContent>
               </Select>
-            )}
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-              <SelectTrigger className="h-9 w-[130px]">
-                <SelectValue placeholder="Sort by" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="date">Date (newest)</SelectItem>
-                <SelectItem value="value">Value</SelectItem>
-                <SelectItem value="customer">Customer</SelectItem>
-              </SelectContent>
-            </Select>
-            {canExport && (
-              <Button variant="outline" size="sm" className="h-9" onClick={handleExportCsv}>
-                <FileDown className="w-4 h-4 mr-1.5" /> Export
-              </Button>
-            )}
-            {canCreate && (
-              <Button size="sm" className="h-9" onClick={() => { setEditingId(null); setFormOpen(true); }}>
-                <Plus className="w-4 h-4 mr-1.5" /> New Proposal
-              </Button>
-            )}
+              {canExport && (
+                <Button variant="outline" size="sm" className="col-span-2 h-9 sm:col-span-1" onClick={handleExportCsv}>
+                  <FileDown className="mr-1.5 h-4 w-4" /> Export
+                </Button>
+              )}
+              {canCreate && (
+                <Button className="col-span-2 h-10 w-full sm:col-span-1 sm:h-9 sm:w-auto" onClick={() => { setEditingId(null); setFormOpen(true); }}>
+                  <Plus className="mr-1.5 h-4 w-4" /> New Proposal
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="bg-card border border-border">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground font-medium">Total Proposals</p>
@@ -377,53 +406,68 @@ export default function Proposals() {
               </div>
             ) : (
               <>
-                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow>
-                        <TableHead className="text-xs">Proposal #</TableHead>
-                        <TableHead className="text-xs">Title</TableHead>
-                        <TableHead className="text-xs">Customer</TableHead>
-                        <TableHead className="text-xs">Assigned To</TableHead>
-                        <TableHead className="text-xs text-right">Grand Total</TableHead>
-                        <TableHead className="text-xs">Status</TableHead>
-                        <TableHead className="text-xs">Valid Until</TableHead>
-                        <TableHead className="text-xs w-[200px]">Actions</TableHead>
+                      <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
+                        <TableHead className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          Proposal #
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                          Title
+                        </TableHead>
+                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          Customer
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
+                          Assigned To
+                        </TableHead>
+                        <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          Grand Total
+                        </TableHead>
+                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          Status
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                          Valid Until
+                        </TableHead>
+                        <TableHead className="w-[200px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          Actions
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="divide-y divide-border">
                       {pageItems.map((p) => (
-                        <TableRow key={p.id} className="hover:bg-muted/50">
-                          <TableCell>
+                        <TableRow key={p.id} className="transition-colors hover:bg-muted/50">
+                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                             <button
                               type="button"
-                              className="text-left font-mono text-primary hover:underline text-sm"
+                              className="text-left font-mono text-sm text-primary hover:underline"
                               onClick={() => setDetailId(p.id)}
                             >
                               {p.proposalNumber}
                             </button>
                           </TableCell>
-                          <TableCell className="text-sm font-medium">{p.title}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell className="hidden px-3 py-3 text-sm font-medium md:table-cell sm:px-4 sm:py-3.5">{p.title}</TableCell>
+                          <TableCell className="px-3 py-3 text-sm text-muted-foreground sm:px-4 sm:py-3.5">
                               <button
                                 type="button"
-                                className="text-primary hover:underline text-left"
+                                className="text-left text-primary hover:underline"
                                 onClick={() => navigate(`/customers/${p.customerId}`)}
                               >
                                 {p.customerName}
                               </button>
                             </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">{p.assignedToName}</TableCell>
-                          <TableCell className="text-right font-mono text-sm">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
-                          <TableCell>
+                          <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:table-cell sm:px-4 sm:py-3.5">{p.assignedToName}</TableCell>
+                          <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
+                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                             <Badge variant="secondary" className={STATUS_BADGE[p.status]}>
                               {p.status.replace("_", " ")}
                             </Badge>
                           </TableCell>
-                          <TableCell className={`text-xs ${isExpired(p) ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                          <TableCell className={`hidden px-3 py-3 text-xs md:table-cell sm:px-4 sm:py-3.5 ${isExpired(p) ? "font-medium text-red-600" : "text-muted-foreground"}`}>
                             {p.validUntil}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
                             <div className="flex items-center gap-1 flex-wrap">
                               {canUpdate && (
                                 <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setDetailId(p.id)}>
@@ -469,7 +513,6 @@ export default function Proposals() {
                       ))}
                     </TableBody>
                   </Table>
-                </div>
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs">
                     <span className="text-muted-foreground">

@@ -32,7 +32,7 @@ export default function EmailLogPage() {
   return (
     <>
       <Topbar title="Email Log" subtitle="Track all email communications" />
-      <div className="p-6">
+      <div className="space-y-4">
         <Card className="bg-card border border-border">
           <CardContent className="p-0">
             <div className="px-5 py-4 border-b border-border">
@@ -40,18 +40,18 @@ export default function EmailLogPage() {
             </div>
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">When</TableHead>
+                <TableRow className="bg-muted/40">
+                  <TableHead className="whitespace-nowrap text-xs">When</TableHead>
                   <TableHead className="text-xs">Type</TableHead>
                   <TableHead className="text-xs">To</TableHead>
                   <TableHead className="text-xs">Subject</TableHead>
-                  <TableHead className="text-xs">Entity</TableHead>
+                  <TableHead className="hidden text-xs md:table-cell">Entity</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {visible.map(n => (
                   <TableRow key={n.id}>
-                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(n.at).toLocaleString()}</TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{new Date(n.at).toLocaleString()}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={`text-[10px] ${
                         n.type === 'CUSTOMER_EMAIL' ? 'border-primary/40 text-primary' :
@@ -61,7 +61,7 @@ export default function EmailLogPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs">{n.to}</TableCell>
                     <TableCell className="text-xs">{n.subject}</TableCell>
-                    <TableCell className="font-mono-id">{n.entityId}</TableCell>
+                    <TableCell className="hidden font-mono-id md:table-cell">{n.entityId}</TableCell>
                   </TableRow>
                 ))}
                 {visible.length === 0 && (
