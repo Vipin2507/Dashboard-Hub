@@ -387,7 +387,6 @@ Use **`.env`** / **`.env.local`** at the project root. Only `VITE_*` vars are ex
 
 ## Editing the code
 
-- **Lovable:** Edit in the Lovable UI; sync with this repo if connected.
 - **Local:** `npm install` → `npm run dev` / `npm run server`.
 - **GitHub:** Standard clone/commit workflow.
 
