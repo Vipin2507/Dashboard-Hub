@@ -381,7 +381,6 @@ Use **`.env`** / **`.env.local`** at the project root. Only `VITE_*` vars are ex
 - **Frontend:** `npm run build` → serve **`dist/`** (Nginx, Vercel, Netlify, etc.). Set **`VITE_API_BASE_URL`** to your production API URL at build time.
 - **API:** Run `node server/index.js` (or `npm run server`) with **`SQLITE_PATH`** pointing to a persistent volume; use a process manager (PM2, systemd) and HTTPS reverse proxy.
 - **Docker:** Use `docker-compose.yml` pattern: mount a host directory for `./data` so the database survives restarts.
-- **Lovable:** Projects can be opened on [Lovable](https://lovable.dev); use **Share → Publish** and configure domains under project settings.
 
 ---
 
