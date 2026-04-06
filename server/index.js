@@ -4,12 +4,14 @@ import { db, SQLITE_PATH } from "./db.js";
 import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
 import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
+import { registerIntegrationProxies } from "./integrationsProxy.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
+registerIntegrationProxies(app, { db });
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -738,121 +740,6 @@ app.put("/api/automation/settings", (req, res) => {
   ).run(JSON.stringify(merged), new Date().toISOString());
   res.json(merged);
 });
-
-function getAutomationSettingsFromDb() {
-  const row = db.prepare("SELECT data FROM automation_settings WHERE id = 1").get();
-  return row ? parseJsonSafe(row.data, {}) : {};
-}
-
-/** Server-side proxy to WAHA — avoids mixed content (HTTPS page → HTTP WAHA blocked by the browser). */
-async function proxyWahaSendText(req, res) {
-  try {
-    const settings = getAutomationSettingsFromDb();
-    const base = String(settings.wahaApiUrl || "").trim().replace(/\/$/, "");
-    if (!base) {
-      return res.status(400).json({ error: "WAHA API URL not configured (Automation settings)" });
-    }
-    const url = `${base}/api/sendText`;
-    const upstream = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "X-Api-Key": String(settings.wahaApiKey || ""),
-      },
-      body: JSON.stringify(req.body ?? {}),
-    });
-    const buf = await upstream.text();
-    const ct = upstream.headers.get("content-type") || "";
-    res.status(upstream.status);
-    if (ct.includes("application/json")) {
-      try {
-        return res.json(JSON.parse(buf || "{}"));
-      } catch {
-        return res.type("text/plain").send(buf);
-      }
-    }
-    return res.type(ct || "text/plain").send(buf);
-  } catch (e) {
-    res.status(502).json({ error: String(e?.message || e) });
-  }
-}
-
-async function proxyWahaSessions(_req, res) {
-  try {
-    const settings = getAutomationSettingsFromDb();
-    const base = String(settings.wahaApiUrl || "").trim().replace(/\/$/, "");
-    if (!base) {
-      return res.status(400).json({ error: "WAHA API URL not configured (Automation settings)" });
-    }
-    const url = `${base}/api/sessions`;
-    const upstream = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "X-Api-Key": String(settings.wahaApiKey || ""),
-      },
-    });
-    const buf = await upstream.text();
-    res.status(upstream.status);
-    try {
-      return res.json(JSON.parse(buf || "[]"));
-    } catch {
-      return res.type("text/plain").send(buf);
-    }
-  } catch (e) {
-    res.status(502).json({ error: String(e?.message || e) });
-  }
-}
-
-/** n8n webhook proxy — avoids mixed content when the app is HTTPS and n8n is HTTP-only. */
-async function proxyN8nWebhook(req, res) {
-  try {
-    const settings = getAutomationSettingsFromDb();
-    const base = String(settings.n8nWebhookBase || "").trim().replace(/\/$/, "");
-    if (!base) {
-      return res.status(400).json({ error: "n8n Webhook Base URL not configured (Automation settings)" });
-    }
-    const raw = String(req.params.segment || "");
-    const segment = raw.replace(/[^a-zA-Z0-9._-]/g, "");
-    if (!segment || segment !== raw) {
-      return res.status(400).json({ error: "Invalid webhook name" });
-    }
-    const url = `${base}/${segment}`;
-    const upstream = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json, text/plain",
-      },
-      body: JSON.stringify(req.body ?? {}),
-    });
-    const buf = await upstream.text();
-    const ct = upstream.headers.get("content-type") || "";
-    res.status(upstream.status);
-    if (ct.includes("application/json")) {
-      try {
-        return res.json(JSON.parse(buf || "{}"));
-      } catch {
-        return res.type("text/plain").send(buf);
-      }
-    }
-    return res.type(ct || "text/plain").send(buf);
-  } catch (e) {
-    res.status(502).json({ error: String(e?.message || e) });
-  }
-}
-
-const integrationsRouter = express.Router();
-integrationsRouter.post("/waha/sendText", proxyWahaSendText);
-integrationsRouter.get("/waha/sessions", proxyWahaSessions);
-integrationsRouter.post("/n8n/webhook/:segment", proxyN8nWebhook);
-integrationsRouter.get("/ping", (_req, res) => {
-  res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
-});
-
-app.use("/api/integrations", integrationsRouter);
-// nginx: `location /api/ { proxy_pass http://127.0.0.1:4000/; }` strips `/api` → mount same router on `/integrations`
-app.use("/integrations", integrationsRouter);
 
 app.put("/api/customers/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(req.params.id);
