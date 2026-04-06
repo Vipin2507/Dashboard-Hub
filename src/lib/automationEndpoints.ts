@@ -8,29 +8,35 @@ function isBrowserHttps(): boolean {
 /**
  * Calls the Node integration proxy (`/api/integrations/...`). Retries on **404 or 405**.
  *
- * Builds URLs from **several bases** so we don't dedupe away a second try when
- * `VITE_API_BASE_URL` equals the dashboard origin (then POST only hit nginx SPA → 405).
- *
- * Bases: `VITE_API_BASE_URL`, page origin, `VITE_API_INTEGRATIONS_ALT_HOST` (e.g. api subdomain),
- * `VITE_INTEGRATIONS_FALLBACK_ORIGIN`.
+ * **Order matters:** try the real API host before `window.location.origin` (dashboard). Otherwise
+ * the first request goes to dashboard nginx → POST `/api/...` often hits SPA `try_files` → **405**.
  */
 function shouldRetryIntegration(status: number): boolean {
   return status === 404 || status === 405;
 }
 
+function orderedIntegrationBases(): string[] {
+  const raw = [
+    import.meta.env.VITE_API_INTEGRATIONS_ALT_HOST as string | undefined,
+    API_BASE_URL,
+    import.meta.env.VITE_INTEGRATIONS_FALLBACK_ORIGIN as string | undefined,
+    typeof window !== "undefined" ? window.location.origin : undefined,
+  ];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of raw) {
+    const b = r?.replace(/\/$/, "").trim();
+    if (!b || seen.has(b)) continue;
+    seen.add(b);
+    out.push(b);
+  }
+  return out;
+}
+
 export async function fetchIntegrationProxy(path: string, init?: RequestInit): Promise<Response> {
   const normalized = path.startsWith("/") ? path : `/${path}`;
-  const bases = new Set<string>();
-  const main = API_BASE_URL.replace(/\/$/, "");
-  if (main) bases.add(main);
-  if (typeof window !== "undefined") bases.add(window.location.origin);
-  const alt = (import.meta.env.VITE_API_INTEGRATIONS_ALT_HOST as string | undefined)?.replace(/\/$/, "");
-  if (alt) bases.add(alt);
-  const fb = (import.meta.env.VITE_INTEGRATIONS_FALLBACK_ORIGIN as string | undefined)?.replace(/\/$/, "");
-  if (fb) bases.add(fb);
-
   const urls: string[] = [];
-  for (const b of bases) {
+  for (const b of orderedIntegrationBases()) {
     const u = apiUrlWithBase(b, normalized);
     if (!urls.includes(u)) urls.push(u);
   }
