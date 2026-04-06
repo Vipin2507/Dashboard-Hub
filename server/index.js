@@ -361,6 +361,22 @@ app.post("/api/proposals", (req, res) => {
   res.status(201).json(proposal);
 });
 
+app.post("/api/proposals/bulk", (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [];
+  const insert = db.prepare(`
+    INSERT INTO proposals (id, proposalNumber, title, customerId, assignedTo, status, grandTotal, finalQuoteValue, createdAt, updatedAt, data)
+    VALUES (@id, @proposalNumber, @title, @customerId, @assignedTo, @status, @grandTotal, @finalQuoteValue, @createdAt, @updatedAt, @data)
+  `);
+  const valid = items.filter(
+    (p) => p && p.id && p.proposalNumber && p.title && p.customerId,
+  );
+  const run = db.transaction((rows) => {
+    for (const p of rows) insert.run(toProposalRow(p));
+  });
+  run(valid);
+  res.status(201).json({ created: valid.length, skipped: items.length - valid.length });
+});
+
 app.put("/api/proposals/:id", (req, res) => {
   const existing = db
     .prepare("SELECT id FROM proposals WHERE id = ?")

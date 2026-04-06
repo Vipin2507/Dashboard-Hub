@@ -1,0 +1,215 @@
+import { useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Upload, FileSpreadsheet, Loader2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/use-toast";
+import { apiUrl } from "@/lib/api";
+import { QK } from "@/lib/queryKeys";
+import {
+  downloadProposalsTemplate,
+  parseProposalsWorkbook,
+  buildProposalsFromExcelRows,
+  type ProposalExcelRow,
+} from "@/lib/bulkProposalExcel";
+import { useAppStore } from "@/store/useAppStore";
+import type { Proposal, Region } from "@/types";
+
+type Props = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  regions: Region[];
+  existingProposals: Proposal[];
+  onImported: () => void | Promise<void>;
+};
+
+export function BulkImportProposalsDialog({
+  open,
+  onOpenChange,
+  regions,
+  existingProposals,
+  onImported,
+}: Props) {
+  const queryClient = useQueryClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const me = useAppStore((s) => s.me);
+  const users = useAppStore((s) => s.users);
+  const inventoryItems = useAppStore((s) => s.inventoryItems);
+
+  const [file, setFile] = useState<File | null>(null);
+  const [parsedRows, setParsedRows] = useState<{ rowIndex: number; data: ProposalExcelRow }[]>([]);
+  const [parseErrors, setParseErrors] = useState<{ row: number; message: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const reset = () => {
+    setFile(null);
+    setParsedRows([]);
+    setParseErrors([]);
+    if (inputRef.current) inputRef.current.value = "";
+  };
+
+  const handlePick = async (f: File | null) => {
+    setFile(f);
+    setParseErrors([]);
+    setParsedRows([]);
+    if (!f) return;
+    const { rows, errors } = await parseProposalsWorkbook(f);
+    setParseErrors(errors);
+    setParsedRows(rows);
+    if (errors.length && !rows.length) {
+      toast({
+        title: "Could not read rows",
+        description: errors.map((e) => `Row ${e.row}: ${e.message}`).join("; "),
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleImport = async () => {
+    if (!parsedRows.length) {
+      toast({
+        title: "Nothing to import",
+        description: "Choose a valid Excel file first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setLoading(true);
+    try {
+      const rows = parsedRows;
+
+      const defaultRegionId = regions[0]?.id ?? me.regionId;
+      const { proposals, errors } = await buildProposalsFromExcelRows(rows, {
+        me,
+        users,
+        regions,
+        inventoryItems,
+        existingProposals,
+        defaultRegionId,
+      });
+
+      if (errors.length && !proposals.length) {
+        toast({
+          title: "Import failed",
+          description: errors.slice(0, 5).map((e) => `Row ${e.row}: ${e.message}`).join("; "),
+          variant: "destructive",
+        });
+        setParseErrors(errors);
+        return;
+      }
+
+      const res = await fetch(apiUrl("/api/proposals/bulk"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(proposals),
+      });
+      if (!res.ok) throw new Error("Bulk save failed");
+
+      const listRes = await fetch(apiUrl("/api/proposals"));
+      if (listRes.ok) {
+        const list = (await listRes.json()) as Proposal[];
+        queryClient.setQueryData(QK.proposals(), list);
+        useAppStore.getState().setProposals(list);
+      } else {
+        await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+        await queryClient.refetchQueries({ queryKey: QK.proposals() });
+      }
+
+      const extra =
+        errors.length > 0
+          ? ` ${errors.length} row(s) skipped (see details).`
+          : "";
+      toast({
+        title: "Import complete",
+        description: `${proposals.length} proposal(s) created.${extra}`,
+        variant: errors.length ? "default" : "default",
+      });
+      if (errors.length) setParseErrors(errors);
+      reset();
+      onOpenChange(false);
+      await onImported();
+    } catch (e) {
+      toast({
+        title: "Import failed",
+        description: e instanceof Error ? e.message : "Request failed",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) reset();
+        onOpenChange(o);
+      }}
+    >
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Bulk import proposals</DialogTitle>
+          <DialogDescription>
+            Template columns match the proposal tracker: Lead Id, Company Name, Deal Value, Proposal Stage, etc. Unknown
+            companies are created as leads when Region ID (optional) is set or your default region is used.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => downloadProposalsTemplate(regions.map((r) => ({ id: r.id, name: r.name })))}
+          >
+            <FileSpreadsheet className="mr-2 h-4 w-4" />
+            Download template
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()}>
+            <Upload className="mr-2 h-4 w-4" />
+            Choose Excel file
+          </Button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => void handlePick(e.target.files?.[0] ?? null)}
+          />
+        </div>
+        {file && <p className="text-sm text-muted-foreground">Selected: {file.name}</p>}
+        {parsedRows.length > 0 && (
+          <p className="text-sm">
+            Ready to import <span className="font-medium">{parsedRows.length}</span> row(s).
+          </p>
+        )}
+        {parseErrors.length > 0 && (
+          <div className="max-h-32 overflow-auto rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+            {parseErrors.slice(0, 12).map((e) => (
+              <div key={`${e.row}-${e.message}`}>
+                Row {e.row}: {e.message}
+              </div>
+            ))}
+            {parseErrors.length > 12 && <div>…and {parseErrors.length - 12} more</div>}
+          </div>
+        )}
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="button" disabled={loading || parsedRows.length === 0} onClick={() => void handleImport()}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Import
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

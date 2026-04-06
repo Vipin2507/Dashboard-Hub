@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
 import { toast } from "@/hooks/use-toast";
+import { RootErrorBoundary } from "@/components/RootErrorBoundary";
 import App from "./App.tsx";
 import "./index.css";
 
@@ -25,8 +26,16 @@ const queryClient = new QueryClient({
   },
 });
 
-createRoot(document.getElementById("root")!).render(
-  <QueryClientProvider client={queryClient}>
-    <App />
-  </QueryClientProvider>,
-);
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  document.body.innerHTML =
+    "<p style=\"font-family:system-ui;padding:2rem\">Missing #root element. Check index.html.</p>";
+} else {
+  createRoot(rootEl).render(
+    <RootErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </RootErrorBoundary>,
+  );
+}

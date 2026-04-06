@@ -39,6 +39,7 @@ import {
   FileQuestion,
   Loader2,
   Filter,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DataTablePagination } from "@/components/DataTablePagination";
@@ -49,6 +50,7 @@ import { ApproveProposalDialog } from "@/components/ApproveProposalDialog";
 import { RejectProposalDialog } from "@/components/RejectProposalDialog";
 import { SendProposalDialog } from "@/components/SendProposalDialog";
 import { CreateDealDialog } from "@/components/CreateDealDialog";
+import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import {
   AlertDialog,
@@ -103,6 +105,7 @@ export default function Proposals() {
   const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
+  const regions = useAppStore((s) => s.regions);
   const updateProposal = useAppStore((s) => s.updateProposal);
 
   const scope = getScope(me.role, "proposals");
@@ -132,15 +135,19 @@ export default function Proposals() {
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
     queryFn: async () => {
       const res = await fetch(apiUrl("/api/proposals"));
       if (!res.ok) throw new Error("Failed to load proposals");
-      return (await res.json()) as Proposal[];
+      const data = (await res.json()) as Proposal[];
+      useAppStore.getState().setProposals(data);
+      return data;
     },
-    staleTime: 30_000,
+    staleTime: 0,
+    refetchOnMount: "always",
     refetchInterval: 60_000,
   });
 
@@ -282,19 +289,75 @@ export default function Proposals() {
         title="Proposals"
         subtitle={`${visible.length} proposals`}
       />
-      <div className="space-y-4">
+      <div className="mx-auto w-full max-w-[1400px] space-y-4">
         {proposalsQuery.isLoading && (
           <div className="text-sm text-muted-foreground">Loading proposals...</div>
         )}
-        {/* Filters */}
-        <div className="mb-4 space-y-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
-          <div className="flex gap-2 sm:contents">
-            <div className="relative min-w-0 w-full flex-1 sm:max-w-xs">
+
+        {/* Title + primary actions (matches Customers page pattern) */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-semibold text-foreground sm:text-xl">Proposals</h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {filtered.length} shown
+              {visible.length !== filtered.length ? ` · ${visible.length} in your access` : ""}
+            </p>
+          </div>
+          {(canExport || canCreate) && (
+            <div className="flex w-full flex-wrap items-stretch justify-end gap-2 sm:w-auto sm:items-center">
+              {canExport && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 min-h-9 min-w-0 flex-1 sm:min-w-[7.5rem] sm:flex-initial"
+                  onClick={handleExportCsv}
+                >
+                  <FileDown className="mr-1.5 h-4 w-4 shrink-0" />
+                  <span className="truncate">Export</span>
+                </Button>
+              )}
+              {canCreate && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 min-h-9 min-w-0 flex-1 sm:min-w-[9rem] sm:flex-initial"
+                    onClick={() => setBulkImportOpen(true)}
+                  >
+                    <Upload className="mr-1.5 h-4 w-4 shrink-0" />
+                    <span className="truncate">Bulk import</span>
+                  </Button>
+                  <Button
+                    className={cn(
+                      "h-9 min-h-9 min-w-0 bg-primary text-primary-foreground hover:bg-primary/90 sm:min-w-[9rem] sm:flex-initial",
+                      canExport ? "flex-[1_1_100%]" : "flex-1",
+                    )}
+                    onClick={() => {
+                      setEditingId(null);
+                      setFormOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-1.5 h-4 w-4 shrink-0" />
+                    <span className="truncate">New Proposal</span>
+                  </Button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Search + filters only */}
+        <div className="space-y-3">
+          <div className="flex gap-2 sm:items-center">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search proposals..."
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 w-full pl-9 text-sm"
               />
             </div>
@@ -311,7 +374,7 @@ export default function Proposals() {
           </div>
           <div
             className={cn(
-              "flex flex-col gap-2 sm:flex sm:flex-wrap sm:items-center",
+              "flex flex-col gap-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3",
               !filtersOpen && "hidden sm:flex",
             )}
           >
@@ -320,7 +383,10 @@ export default function Proposals() {
                 <button
                   key={o.value}
                   type="button"
-                  onClick={() => { setStatusFilter(o.value); setPage(1); }}
+                  onClick={() => {
+                    setStatusFilter(o.value);
+                    setPage(1);
+                  }}
                   className={cn(
                     "flex-shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                     statusFilter === o.value
@@ -332,24 +398,42 @@ export default function Proposals() {
                 </button>
               ))}
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
-              <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
-              <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 lg:max-w-4xl">
+              <Input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 min-w-0 w-full sm:w-[140px]"
+              />
+              <Input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 min-w-0 w-full sm:w-[140px]"
+              />
               {(me.role === "super_admin" || me.role === "sales_manager") && (
                 <Select value={assignedToFilter} onValueChange={(v) => { setAssignedToFilter(v); setPage(1); }}>
-                  <SelectTrigger className="h-9 w-full sm:w-40">
+                  <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-40">
                     <SelectValue placeholder="Assigned to" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All users</SelectItem>
                     {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
               <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-                <SelectTrigger className="h-9 w-full sm:w-36">
+                <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-36">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -358,18 +442,6 @@ export default function Proposals() {
                   <SelectItem value="customer">Customer</SelectItem>
                 </SelectContent>
               </Select>
-              {canExport && (
-                <div className="col-span-2 flex sm:col-span-1 sm:ml-auto">
-                  <Button variant="outline" size="sm" className="h-9 w-full sm:w-auto" onClick={handleExportCsv}>
-                    <FileDown className="mr-1.5 h-4 w-4" /> Export
-                  </Button>
-                </div>
-              )}
-              {canCreate && (
-                <Button className="col-span-2 h-9 w-full flex-1 sm:col-span-1 sm:flex-none" onClick={() => { setEditingId(null); setFormOpen(true); }}>
-                  <Plus className="mr-1.5 h-4 w-4" /> New Proposal
-                </Button>
-              )}
             </div>
           </div>
         </div>
@@ -565,6 +637,20 @@ export default function Proposals() {
         editingProposal={editingId ? proposals.find((p) => p.id === editingId) ?? null : null}
         initialCustomerId={initialCustomerIdForForm}
         onSaved={() => { setFormOpen(false); setEditingId(null); setInitialCustomerIdForForm(undefined); }}
+      />
+
+      <BulkImportProposalsDialog
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
+        regions={regions}
+        existingProposals={proposals}
+        onImported={async () => {
+          await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+          await queryClient.refetchQueries({ queryKey: QK.proposals() });
+          await queryClient.invalidateQueries({ queryKey: ["customers-old-ui-sync"] });
+          await queryClient.invalidateQueries({ queryKey: QK.customers() });
+          await queryClient.invalidateQueries({ queryKey: QK.dashboard() });
+        }}
       />
 
       {approveId && <ApproveProposalDialog proposalId={approveId} onClose={() => setApproveId(null)} />}

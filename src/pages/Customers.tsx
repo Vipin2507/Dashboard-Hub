@@ -39,11 +39,13 @@ import {
   UserCheck,
   IndianRupee,
   CalendarPlus,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSmUp } from "@/hooks/useSmUp";
 import type { Customer, CustomerStatus } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
+import { BulkImportCustomersDialog } from "@/components/BulkImportCustomersDialog";
 import { RenewalSubscriptionTracker } from "@/components/RenewalSubscriptionTracker";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import {
@@ -269,6 +271,7 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [customerModuleTab, setCustomerModuleTab] = useState<"directory" | "renewals">("directory");
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem(VIEW_STORAGE_KEY) as "table" | "card" | null;
@@ -450,13 +453,13 @@ export default function Customers() {
         ) : (
           <>
         {/* Zone 1: Page title row */}
-        <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+        <div className="mb-4 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold text-gray-900 dark:text-gray-100 sm:text-xl">Customers</h1>
             <p className="mt-0.5 text-sm text-gray-500">{filtered.length} customers</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="hidden items-center rounded-lg border border-gray-200 p-0.5 sm:flex dark:border-gray-700">
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:max-w-none sm:flex-row sm:items-center sm:justify-end sm:gap-2">
+            <div className="hidden items-center justify-end rounded-lg border border-gray-200 p-0.5 sm:flex dark:border-gray-700">
               <Button
                 variant="ghost"
                 size="sm"
@@ -477,16 +480,27 @@ export default function Customers() {
               </Button>
             </div>
             {canCreate && (
-              <Button
-                className="h-9 w-full flex-1 bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none"
-                onClick={() => {
-                  setEditingCustomer(null);
-                  setFormOpen(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-4 w-4" />
-                Add Customer
-              </Button>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-full min-w-0 sm:w-auto sm:min-w-[9.5rem]"
+                  onClick={() => setBulkImportOpen(true)}
+                >
+                  <Upload className="mr-1.5 h-4 w-4 shrink-0" />
+                  <span className="truncate">Bulk import</span>
+                </Button>
+                <Button
+                  className="h-9 w-full min-w-0 bg-blue-600 px-4 text-white hover:bg-blue-700 sm:w-auto sm:min-w-[9.5rem]"
+                  onClick={() => {
+                    setEditingCustomer(null);
+                    setFormOpen(true);
+                  }}
+                >
+                  <Plus className="mr-1.5 h-4 w-4 shrink-0" />
+                  <span className="truncate">Add Customer</span>
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -885,6 +899,13 @@ export default function Customers() {
           setFormOpen(false);
           setEditingCustomer(null);
         }}
+      />
+
+      <BulkImportCustomersDialog
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
+        regions={regions}
+        onImported={() => void customersQuery.refetch()}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
