@@ -122,6 +122,18 @@ export function registerIntegrationProxies(app, { db }) {
     res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
   }
 
+  /** Browsers open links with GET; n8n webhooks use POST. Avoid Express "Cannot GET" for manual checks. */
+  function n8nWebhookGet(req, res) {
+    const segment = String(req.params.segment || "");
+    res.json({
+      ok: true,
+      segment,
+      methodExpected: "POST",
+      hint:
+        "The app calls this URL with POST JSON. Use Automation → Settings → “Test connection” to hit n8n.",
+    });
+  }
+
   // Explicit app.* routes (avoid relying only on Router — works across Express 4/5 and odd proxies)
   app.post("/api/integrations/waha/sendText", proxyWahaSendText);
   app.post("/integrations/waha/sendText", proxyWahaSendText);
@@ -129,6 +141,8 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/integrations/waha/sessions", proxyWahaSessions);
   app.post("/api/integrations/n8n/webhook/:segment", proxyN8nWebhook);
   app.post("/integrations/n8n/webhook/:segment", proxyN8nWebhook);
+  app.get("/api/integrations/n8n/webhook/:segment", n8nWebhookGet);
+  app.get("/integrations/n8n/webhook/:segment", n8nWebhookGet);
   app.get("/api/integrations/ping", ping);
   app.get("/integrations/ping", ping);
 
