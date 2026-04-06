@@ -1,4 +1,4 @@
-import { n8nWebhookUrl, wahaSendTextUrl } from "@/lib/automationEndpoints";
+import { fetchN8nWebhook, fetchWahaSendText } from "@/lib/automationEndpoints";
 import { useAppStore } from "@/store/useAppStore";
 import type {
   AutomationChannel,
@@ -324,7 +324,7 @@ async function fireN8nWebhook(
     appendAutomationLog(logEntry);
 
     try {
-      const res = await fetch(n8nWebhookUrl(settings, webhookPath), {
+      const res = await fetchN8nWebhook(settings, webhookPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -397,7 +397,7 @@ async function fireWhatsAppDirect(
         });
         continue;
       }
-      const res = await fetch(wahaSendTextUrl(settings), {
+      const res = await fetchWahaSendText(settings, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

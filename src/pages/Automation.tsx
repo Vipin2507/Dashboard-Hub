@@ -3,12 +3,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
-import {
-  n8nBuildeskEmailWebhookUrl,
-  n8nBuildeskHealthWebhookUrl,
-  wahaSendTextUrl,
-  wahaSessionsUrl,
-} from "@/lib/automationEndpoints";
+import { fetchN8nWebhook, fetchWahaSendText, fetchWahaSessions } from "@/lib/automationEndpoints";
 import { runAutomationRules } from "@/lib/automationService";
 import { apiUrl } from "@/lib/api";
 import type { AutomationChannel, AutomationLog, AutomationRecipient, AutomationTemplate, AutomationTrigger } from "@/types";
@@ -324,7 +319,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
 
       const res =
         template.channel === "whatsapp"
-          ? await fetch(wahaSendTextUrl(settings), {
+          ? await fetchWahaSendText(settings, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -336,7 +331,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                 text: template.body,
               }),
             })
-          : await fetch(n8nBuildeskEmailWebhookUrl(settings), {
+          : await fetchN8nWebhook(settings, "buildesk-email", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1049,7 +1044,7 @@ function SettingsTab() {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const res = await fetch(n8nBuildeskHealthWebhookUrl(settings), {
+      const res = await fetchN8nWebhook(settings, "buildesk-health", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ping: true }),
@@ -1069,7 +1064,7 @@ function SettingsTab() {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const res = await fetch(wahaSessionsUrl(settings), {
+      const res = await fetchWahaSessions(settings, {
         headers: { "X-Api-Key": settings.wahaApiKey },
         signal: ctrl.signal,
       });
