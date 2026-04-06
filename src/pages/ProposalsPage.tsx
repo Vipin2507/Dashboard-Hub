@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/ui/numeric-input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { dialogSmMax2xl, dialogSmMaxMd } from '@/lib/dialogLayout';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Lock, DollarSign, FileText, CheckCircle, Clock, Plus, Trash2 } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
@@ -392,11 +394,12 @@ export default function ProposalsPage() {
 
       {/* New Proposal dialog */}
       <Dialog open={newOpen} onOpenChange={(open) => { setNewOpen(open); if (!open) setNewLineItems([]); }}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className={dialogSmMax2xl}>
           <DialogHeader>
             <DialogTitle>Create New Proposal</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <DialogBody>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Proposal Title *</Label>
               <Input
@@ -495,7 +498,7 @@ export default function ProposalsPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 md:col-span-2">
+            <div className="space-y-2 col-span-1 sm:col-span-2 lg:col-span-3">
               <Label>Line items</Label>
               <Button
                 type="button"
@@ -528,30 +531,31 @@ export default function ProposalsPage() {
                           <TableCell className="text-xs font-medium">{li.name}</TableCell>
                           <TableCell className="font-mono text-xs">{li.sku}</TableCell>
                           <TableCell>
-                            <Input
-                              type="number"
-                              min={1}
+                            <NumericInput
                               className="h-8 text-xs w-16"
+                              min={1}
+                              integer
+                              emptyOnBlur={1}
                               value={li.qty}
-                              onChange={e => updateLineItem(idx, { qty: Number(e.target.value) || 1 })}
+                              onValueChange={qty => updateLineItem(idx, { qty })}
                             />
                           </TableCell>
                           <TableCell>
-                            <Input
-                              type="number"
-                              min={0}
+                            <NumericInput
                               className="h-8 text-xs text-right w-24"
+                              min={0}
+                              emptyOnBlur={0}
                               value={li.unitPrice}
-                              onChange={e => updateLineItem(idx, { unitPrice: Number(e.target.value) || 0 })}
+                              onValueChange={unitPrice => updateLineItem(idx, { unitPrice })}
                             />
                           </TableCell>
                           <TableCell>
-                            <Input
-                              type="number"
-                              min={0}
+                            <NumericInput
                               className="h-8 text-xs w-14"
+                              min={0}
+                              emptyOnBlur={0}
                               value={li.taxRate}
-                              onChange={e => updateLineItem(idx, { taxRate: Number(e.target.value) || 0 })}
+                              onValueChange={taxRate => updateLineItem(idx, { taxRate })}
                             />
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatINR(li.lineTotal)}</TableCell>
@@ -582,7 +586,7 @@ export default function ProposalsPage() {
                 </div>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 col-span-1 sm:col-span-2 lg:col-span-3">
               <Label>Proposal value (₹) {newLineItems.length > 0 ? '(from line items or override)' : ''}</Label>
               <Input
                 type="number"
@@ -597,6 +601,7 @@ export default function ProposalsPage() {
               )}
             </div>
           </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewOpen(false)}>
               Cancel
@@ -610,61 +615,64 @@ export default function ProposalsPage() {
 
       {/* Share Dialog */}
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Share Proposal</DialogTitle></DialogHeader>
-          <div className="space-y-2"><Label>Customer Email</Label><Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="email@example.com" /></div>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Share Proposal</DialogTitle></DialogHeader>
+          <DialogBody className="space-y-2"><Label>Customer Email</Label><Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="email@example.com" /></DialogBody>
           <DialogFooter><Button variant="outline" onClick={() => setShareOpen(false)}>Cancel</Button><Button onClick={handleShare}>Share</Button></DialogFooter>
         </DialogContent>
       </Dialog>
       {/* Revise Dialog */}
       <Dialog open={reviseOpen} onOpenChange={setReviseOpen}>
-        <DialogContent><DialogHeader><DialogTitle>Revise Proposal</DialogTitle></DialogHeader>
-          <div className="space-y-2"><Label>New Calculated Total (₹)</Label><Input type="number" value={reviseValue} onChange={e => setReviseValue(e.target.value)} /></div>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Revise Proposal</DialogTitle></DialogHeader>
+          <DialogBody className="space-y-2"><Label>New Calculated Total (₹)</Label><Input type="number" value={reviseValue} onChange={e => setReviseValue(e.target.value)} /></DialogBody>
           <DialogFooter><Button variant="outline" onClick={() => setReviseOpen(false)}>Cancel</Button><Button onClick={handleRevise}>Revise</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Add Line Item from Inventory */}
       <Dialog open={inventoryPickerOpen} onOpenChange={setInventoryPickerOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className={dialogSmMaxMd}>
           <DialogHeader>
             <DialogTitle>Add line item from inventory</DialogTitle>
           </DialogHeader>
-          <Input
-            placeholder="Search by name or SKU..."
-            value={inventorySearch}
-            onChange={e => setInventorySearch(e.target.value)}
-            className="mb-2"
-          />
-          <div className="max-h-64 overflow-y-auto border rounded-md">
-            {inventoryFiltered.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground text-center">No active inventory items found.</p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Name</TableHead>
-                    <TableHead className="text-xs">SKU</TableHead>
-                    <TableHead className="text-xs text-right">Price</TableHead>
-                    <TableHead className="w-20" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {inventoryFiltered.map(it => (
-                    <TableRow key={it.id}>
-                      <TableCell className="text-sm">{it.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{it.sku}</TableCell>
-                      <TableCell className="text-right font-mono text-xs">{formatINR(it.sellingPrice)}</TableCell>
-                      <TableCell>
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addLineItemFromInventory(it)}>
-                          Add
-                        </Button>
-                      </TableCell>
+          <DialogBody className="space-y-2">
+            <Input
+              placeholder="Search by name or SKU..."
+              value={inventorySearch}
+              onChange={e => setInventorySearch(e.target.value)}
+            />
+            <div className="max-h-64 overflow-y-auto border rounded-md">
+              {inventoryFiltered.length === 0 ? (
+                <p className="p-4 text-sm text-muted-foreground text-center">No active inventory items found.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs">Name</TableHead>
+                      <TableHead className="text-xs">SKU</TableHead>
+                      <TableHead className="text-xs text-right">Price</TableHead>
+                      <TableHead className="w-20" />
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </div>
+                  </TableHeader>
+                  <TableBody>
+                    {inventoryFiltered.map(it => (
+                      <TableRow key={it.id}>
+                        <TableCell className="text-sm">{it.name}</TableCell>
+                        <TableCell className="font-mono text-xs">{it.sku}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">{formatINR(it.sellingPrice)}</TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addLineItemFromInventory(it)}>
+                            Add
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </>

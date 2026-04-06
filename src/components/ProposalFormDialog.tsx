@@ -1,23 +1,21 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { QK } from "@/lib/queryKeys";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { dialogSmMax4xl, dialogSmMaxMd } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Table,
   TableBody,
@@ -107,6 +105,12 @@ export function ProposalFormDialog({
     const grandTotal = subtotal + totalTax;
     return { subtotal, totalDiscount, totalTax, grandTotal };
   }, [lineItems]);
+
+  const customerOptions = useMemo(
+    () => customers.map((c) => ({ value: c.id, label: c.companyName })),
+    [customers],
+  );
+  const userOptions = useMemo(() => users.map((u) => ({ value: u.id, label: u.name })), [users]);
 
   const activeInventory = useMemo(() => inventoryItems.filter((it) => it.isActive), [inventoryItems]);
   const inventoryFiltered = useMemo(() => {
@@ -319,48 +323,46 @@ export function ProposalFormDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={dialogSmMax4xl}>
           <DialogHeader>
             <DialogTitle>{editingProposal ? "Edit proposal" : "New proposal"}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <DialogBody className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Title *</Label>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Proposal title" />
               </div>
               <div className="space-y-2">
                 <Label>Customer *</Label>
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={customerId}
+                  onValueChange={setCustomerId}
+                  options={customerOptions}
+                  placeholder="Select customer"
+                  triggerClassName="h-10 text-sm"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Assigned to *</Label>
-                <Select value={assignedTo || me.id} onValueChange={setAssignedTo}>
-                  <SelectTrigger><SelectValue placeholder="Select user" /></SelectTrigger>
-                  <SelectContent>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  value={assignedTo || me.id}
+                  onValueChange={setAssignedTo}
+                  options={userOptions}
+                  placeholder="Select user"
+                  triggerClassName="h-10 text-sm"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Valid until *</Label>
                 <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
               </div>
-              <div className="md:col-span-2 space-y-2">
+              <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
                 <Label>Customer notes (shown on proposal)</Label>
                 <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} rows={2} />
               </div>
-              <div className="md:col-span-2 space-y-2">
+              <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
                 <Label>Internal notes</Label>
                 <Textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} />
               </div>
@@ -404,16 +406,42 @@ export function ProposalFormDialog({
                             <span className="font-mono text-[10px] text-muted-foreground">{li.sku}</span>
                           </TableCell>
                           <TableCell>
-                            <Input type="number" min={1} className="h-8 w-20" value={li.qty} onChange={(e) => updateLineItem(li.id, { qty: Number(e.target.value) || 1 })} />
+                            <NumericInput
+                              className="h-8 w-20"
+                              min={1}
+                              integer
+                              emptyOnBlur={1}
+                              value={li.qty}
+                              onValueChange={(qty) => updateLineItem(li.id, { qty })}
+                            />
                           </TableCell>
                           <TableCell>
-                            <Input type="number" min={0} className="h-8 w-24" value={li.unitPrice} onChange={(e) => updateLineItem(li.id, { unitPrice: Number(e.target.value) || 0 })} />
+                            <NumericInput
+                              className="h-8 w-24"
+                              min={0}
+                              emptyOnBlur={0}
+                              value={li.unitPrice}
+                              onValueChange={(unitPrice) => updateLineItem(li.id, { unitPrice })}
+                            />
                           </TableCell>
                           <TableCell>
-                            <Input type="number" min={0} max={100} className="h-8 w-16" value={li.discount} onChange={(e) => updateLineItem(li.id, { discount: Number(e.target.value) || 0 })} />
+                            <NumericInput
+                              className="h-8 w-16"
+                              min={0}
+                              max={100}
+                              emptyOnBlur={0}
+                              value={li.discount}
+                              onValueChange={(discount) => updateLineItem(li.id, { discount })}
+                            />
                           </TableCell>
                           <TableCell>
-                            <Input type="number" min={0} className="h-8 w-14" value={li.taxRate} onChange={(e) => updateLineItem(li.id, { taxRate: Number(e.target.value) || 0 })} />
+                            <NumericInput
+                              className="h-8 w-14"
+                              min={0}
+                              emptyOnBlur={0}
+                              value={li.taxRate}
+                              onValueChange={(taxRate) => updateLineItem(li.id, { taxRate })}
+                            />
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatINR(li.lineTotal)}</TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatINR(li.taxAmount)}</TableCell>
@@ -453,9 +481,9 @@ export function ProposalFormDialog({
                 <p className="text-xs text-amber-600">This overrides the computed total on the proposal.</p>
               )}
             </div>
-          </div>
+          </DialogBody>
 
-          <DialogFooter className="sticky bottom-0 bg-background border-t pt-4">
+          <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button variant="outline" onClick={handleSaveDraft}>Save as draft</Button>
             {canRequestApproval && <Button variant="outline" onClick={handleSubmitForApproval}>Save & submit for approval</Button>}
@@ -466,9 +494,10 @@ export function ProposalFormDialog({
 
       {/* Inventory picker */}
       <Dialog open={inventoryPickerOpen} onOpenChange={setInventoryPickerOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className={dialogSmMaxMd}>
           <DialogHeader><DialogTitle>Add item from inventory</DialogTitle></DialogHeader>
-          <Input placeholder="Search name, SKU, category..." value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} className="mb-2" />
+          <DialogBody className="space-y-2">
+          <Input placeholder="Search name, SKU, category..." value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} />
           <div className="max-h-64 overflow-y-auto border rounded-md">
             {inventoryFiltered.map((it) => (
               <div key={it.id} className="flex items-center justify-between p-2 border-b hover:bg-muted/50">
@@ -480,6 +509,7 @@ export function ProposalFormDialog({
               </div>
             ))}
           </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
     </>

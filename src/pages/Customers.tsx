@@ -45,6 +45,7 @@ import { useSmUp } from "@/hooks/useSmUp";
 import type { Customer, CustomerStatus } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { RenewalSubscriptionTracker } from "@/components/RenewalSubscriptionTracker";
+import { DataTablePagination } from "@/components/DataTablePagination";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -477,7 +478,7 @@ export default function Customers() {
             </div>
             {canCreate && (
               <Button
-                className="h-10 w-full bg-blue-600 px-4 text-white hover:bg-blue-700 sm:h-9 sm:w-auto"
+                className="h-9 w-full flex-1 bg-blue-600 px-4 text-white hover:bg-blue-700 sm:flex-none"
                 onClick={() => {
                   setEditingCustomer(null);
                   setFormOpen(true);
@@ -491,12 +492,12 @@ export default function Customers() {
         </div>
 
         {/* Zone 2: Search + filters */}
-        <div className="mb-4 space-y-3 sm:mb-5">
-          <div className="relative w-full">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        <div className="mb-4 space-y-3 sm:mb-5 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
+          <div className="relative w-full sm:max-w-xs sm:flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
               placeholder="Search company, customer #, GSTIN..."
-              className="h-9 pl-9 text-sm"
+              className="h-9 w-full pl-9 text-sm"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -504,7 +505,7 @@ export default function Customers() {
               }}
             />
           </div>
-          <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-1">
+          <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:pb-0">
             {["All", "Active", "Inactive", "Lead", "Churned", "Blacklisted"].map((s) => (
               <button
                 key={s}
@@ -524,7 +525,7 @@ export default function Customers() {
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
             <Select
               value={regionFilter}
               onValueChange={(v) => {
@@ -532,7 +533,7 @@ export default function Customers() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-[130px]">
+              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-36">
                 <SelectValue placeholder="All regions" />
               </SelectTrigger>
               <SelectContent>
@@ -551,7 +552,7 @@ export default function Customers() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-[140px]">
+              <SelectTrigger className="h-9 min-w-0 w-full text-sm sm:w-40">
                 <SelectValue placeholder="All industries" />
               </SelectTrigger>
               <SelectContent>
@@ -564,15 +565,17 @@ export default function Customers() {
               </SelectContent>
             </Select>
             {canExport && (
-              <Button variant="outline" size="sm" className="col-span-2 h-9 sm:col-span-1" onClick={handleExportCsv}>
-                <FileDown className="mr-1.5 h-4 w-4" /> Export
-              </Button>
+              <div className="col-span-2 flex sm:col-span-1 sm:ml-auto">
+                <Button variant="outline" size="sm" className="h-9 w-full sm:w-auto" onClick={handleExportCsv}>
+                  <FileDown className="mr-1.5 h-4 w-4" /> Export
+                </Button>
+              </div>
             )}
           </div>
         </div>
 
         {/* KPI Stat cards */}
-        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <StatCard label="Total Customers" value={String(filtered.length)} icon={<Users className="h-4 w-4" />} />
           <StatCard
             label="Active"
@@ -617,28 +620,28 @@ export default function Customers() {
                     <Table>
                       <TableHeader>
                         <TableRow className="border-b border-border bg-muted/40 hover:bg-muted/40">
-                          <TableHead className="h-10 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          <TableHead className="h-10 whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                             Customer #
                           </TableHead>
-                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                             Company
                           </TableHead>
-                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
                             Primary Contact
                           </TableHead>
-                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
                             City
                           </TableHead>
-                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
-                            Assigned To
-                          </TableHead>
-                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          <TableHead className="h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                             Status
                           </TableHead>
-                          <TableHead className="hidden h-10 px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
+                            Assigned To
+                          </TableHead>
+                          <TableHead className="hidden h-10 px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
                             Total Revenue
                           </TableHead>
-                          <TableHead className="h-10 w-[140px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                          <TableHead className="h-10 w-[140px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                             Actions
                           </TableHead>
                         </TableRow>
@@ -648,7 +651,7 @@ export default function Customers() {
                           const pc = primaryContact(c);
                           return (
                             <TableRow key={c.id} className="border-b border-border transition-colors hover:bg-muted/50">
-                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                              <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                                 <button
                                   type="button"
                                   className="text-left font-mono text-sm text-primary hover:underline"
@@ -657,23 +660,16 @@ export default function Customers() {
                                   {c.customerNumber}
                                 </button>
                               </TableCell>
-                              <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
+                              <TableCell className="px-3 py-3 text-sm font-medium md:px-4 md:py-3.5">
                                 {c.companyName}
                               </TableCell>
-                              <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:table-cell sm:px-4 sm:py-3.5">
+                              <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground md:table-cell md:px-4 md:py-3.5">
                                 {pc ? `${pc.name}${pc.email ? ` · ${pc.email}` : ""}` : "—"}
                               </TableCell>
-                              <TableCell className="hidden px-3 py-3 text-xs md:table-cell sm:px-4 sm:py-3.5">
+                              <TableCell className="hidden px-3 py-3 text-xs md:table-cell md:px-4 md:py-3.5">
                                 {c.address?.city ?? "—"}
                               </TableCell>
-                              <TableCell className="hidden px-3 py-3 sm:table-cell sm:px-4 sm:py-3.5">
-                                <div>
-                                  <span className="text-sm text-gray-800 dark:text-gray-200">
-                                    {c.assignedToName.replace(/\s*\(.*?\)\s*/g, "").trim()}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                              <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                                 <span
                                   className={cn(
                                     "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
@@ -683,10 +679,17 @@ export default function Customers() {
                                   {c.status}
                                 </span>
                               </TableCell>
-                              <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">
+                              <TableCell className="hidden px-3 py-3 lg:table-cell md:px-4 md:py-3.5">
+                                <div>
+                                  <span className="text-sm text-gray-800 dark:text-gray-200">
+                                    {c.assignedToName.replace(/\s*\(.*?\)\s*/g, "").trim()}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="hidden px-3 py-3 text-right font-mono text-sm lg:table-cell md:px-4 md:py-3.5">
                                 {formatINR(c.totalRevenue)}
                               </TableCell>
-                              <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                              <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                                 <div className="flex items-center gap-1">
                                   <Button
                                     variant="ghost"
@@ -730,31 +733,13 @@ export default function Customers() {
                       </TableBody>
                     </Table>
                   {filtered.length > TABLE_PAGE_SIZE && (
-                    <div className="flex items-center justify-between px-6 py-4 border-t border-border text-sm">
-                      <span className="text-muted-foreground">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          disabled={currentPage === 1}
-                          onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        >
-                          Previous
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          disabled={currentPage === totalPages}
-                          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
+                    <DataTablePagination
+                      page={currentPage}
+                      totalPages={totalPages}
+                      total={filtered.length}
+                      perPage={TABLE_PAGE_SIZE}
+                      onPageChange={setPage}
+                    />
                   )}
                 </>
               )}
@@ -785,45 +770,50 @@ export default function Customers() {
                 const pc = primaryContact(c);
                 const assignedUser = users.find((u) => u.id === c.assignedTo);
                 return (
-                  <Card key={c.id} className="bg-card border border-border flex flex-col overflow-hidden">
-                    <CardContent className="p-5 flex flex-col flex-1 space-y-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="font-semibold text-foreground">{c.companyName}</p>
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {c.customerNumber}
-                          </p>
+                  <Card
+                    key={c.id}
+                    className="flex flex-col overflow-hidden border border-gray-200 bg-card shadow-none transition-shadow hover:shadow-sm dark:border-gray-800"
+                  >
+                    <CardContent className="flex flex-1 flex-col p-4 sm:p-5">
+                      <div className="mb-3 flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                            {c.companyName}
+                          </h3>
+                          <p className="mt-0.5 font-mono text-xs text-gray-400">{c.customerNumber}</p>
                         </div>
                         <span
                           className={cn(
-                            "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium capitalize",
+                            "inline-flex flex-shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
                             STATUS_PILL[c.status] ?? STATUS_PILL.inactive
                           )}
                         >
                           {c.status}
                         </span>
                       </div>
-                      {pc && (
-                        <p className="text-xs text-muted-foreground">
-                          {pc.name}
-                          {pc.email ? ` · ${pc.email}` : ""}
+                      <div className="space-y-1.5">
+                        {pc && (
+                          <p className="text-xs text-gray-600 dark:text-gray-400">
+                            {pc.name}
+                            {pc.email ? ` · ${pc.email}` : ""}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {c.address?.city ?? "—"} · {c.regionName}
                         </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        {c.address?.city ?? "—"} · {c.regionName}
-                      </p>
-                      <p className="text-lg font-semibold text-foreground">
-                        {formatINR(c.totalRevenue)}
-                      </p>
-                      <div className="flex gap-1.5 flex-wrap">
-                        <Badge variant="outline" className="text-[10px]">
-                          Proposals: {c.activeProposalsCount}
-                        </Badge>
-                        <Badge variant="outline" className="text-[10px]">
-                          Deals: {c.activeDealsCount}
-                        </Badge>
+                        <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                          {formatINR(c.totalRevenue)}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant="outline" className="text-[10px]">
+                            Proposals: {c.activeProposalsCount}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            Deals: {c.activeDealsCount}
+                          </Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between pt-3 mt-auto border-t border-border">
+                      <div className="mt-4 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
                         <Avatar className="h-8 w-8 shrink-0">
                           <AvatarFallback className="text-[10px]">
                             {assignedUser?.name
@@ -833,25 +823,27 @@ export default function Customers() {
                               .slice(0, 2) ?? "—"}
                           </AvatarFallback>
                         </Avatar>
-                        <div className="flex gap-1">
+                        <div className="flex min-w-0 flex-1 justify-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-8 text-xs"
+                            className="h-8 flex-1 text-xs sm:flex-none"
                             onClick={() => navigate(`/customers/${c.id}`)}
                           >
+                            <Eye className="mr-1.5 h-3.5 w-3.5" />
                             View
                           </Button>
                           {canUpdateCustomer(c) && (
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 text-xs"
+                              className="h-8 flex-1 text-xs sm:flex-none"
                               onClick={() => {
                                 setEditingCustomer(c);
                                 setFormOpen(true);
                               }}
                             >
+                              <Pencil className="mr-1.5 h-3.5 w-3.5" />
                               Edit
                             </Button>
                           )}
@@ -866,29 +858,13 @@ export default function Customers() {
         )}
 
         {effectiveViewMode === "card" && filtered.length > CARD_PAGE_SIZE && (
-          <div className="flex items-center justify-between py-2 text-sm">
-            <span className="text-muted-foreground">
-              Page {currentPage} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={currentPage === totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
+          <DataTablePagination
+            page={currentPage}
+            totalPages={totalPages}
+            total={filtered.length}
+            perPage={CARD_PAGE_SIZE}
+            onPageChange={setPage}
+          />
         )}
           </>
         )}

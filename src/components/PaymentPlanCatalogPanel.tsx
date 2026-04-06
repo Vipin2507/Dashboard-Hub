@@ -17,11 +17,13 @@ import {
 } from "@/components/ui/table";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { dialogSmMaxMd } from "@/lib/dialogLayout";
 import {
   Select,
   SelectContent,
@@ -236,53 +238,55 @@ export function PaymentPlanCatalogPanel() {
         )}
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className={dialogSmMaxMd}>
             <DialogHeader>
               <DialogTitle>{editing ? "Edit template" : "New plan template"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 py-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Name</Label>
-                <Input className="h-9" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <DialogBody>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Name</Label>
+                  <Input className="h-9" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Default billing cycle</Label>
+                  <Select
+                    value={form.defaultBillingCycle}
+                    onValueChange={(v) => setForm((f) => ({ ...f, defaultBillingCycle: v }))}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Default grace period (days after due)</Label>
+                  <Input
+                    className="h-9"
+                    type="number"
+                    min={0}
+                    value={form.defaultGraceDays}
+                    onChange={(e) => setForm((f) => ({ ...f, defaultGraceDays: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Suggested installments (optional)</Label>
+                  <Input
+                    className="h-9"
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 12"
+                    value={form.suggestedInstallments}
+                    onChange={(e) => setForm((f) => ({ ...f, suggestedInstallments: e.target.value }))}
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Default billing cycle</Label>
-                <Select
-                  value={form.defaultBillingCycle}
-                  onValueChange={(v) => setForm((f) => ({ ...f, defaultBillingCycle: v }))}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Default grace period (days after due)</Label>
-                <Input
-                  className="h-9"
-                  type="number"
-                  min={0}
-                  value={form.defaultGraceDays}
-                  onChange={(e) => setForm((f) => ({ ...f, defaultGraceDays: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Suggested installments (optional)</Label>
-                <Input
-                  className="h-9"
-                  type="number"
-                  min={1}
-                  placeholder="e.g. 12"
-                  value={form.suggestedInstallments}
-                  onChange={(e) => setForm((f) => ({ ...f, suggestedInstallments: e.target.value }))}
-                />
-              </div>
-            </div>
+            </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancel

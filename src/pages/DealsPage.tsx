@@ -41,6 +41,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
+import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
 
 type DealAuditRow = {
@@ -668,7 +669,7 @@ export default function DealsPage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           <Card className="bg-card border border-border">
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-1">
@@ -698,7 +699,7 @@ export default function DealsPage() {
           </Card>
         </div>
 
-        <Card className="bg-card border border-border">
+        <Card className="overflow-hidden border border-border bg-card">
           <CardContent className="p-0">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
               <h3 className="font-semibold text-foreground">All Deals</h3>
@@ -749,19 +750,30 @@ export default function DealsPage() {
               <Table>
                   <TableHeader>
                     <TableRow className="bg-muted/40">
-                      <TableHead className="hidden whitespace-nowrap text-xs md:table-cell">Deal ID</TableHead>
-                      <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">Customer</TableHead>
-                      <TableHead className="text-xs">Stage</TableHead>
-                      <TableHead className="text-xs">Deal status</TableHead>
-                      <TableHead className="hidden text-xs sm:table-cell">Source</TableHead>
-                      <TableHead className="hidden text-xs lg:table-cell">Priority</TableHead>
-                      <TableHead className="hidden whitespace-nowrap text-xs lg:table-cell">Exp. close</TableHead>
-                      <TableHead className="hidden whitespace-nowrap text-xs xl:table-cell">Last activity</TableHead>
-                      <TableHead className="hidden whitespace-nowrap text-xs xl:table-cell">Next follow-up</TableHead>
-                      <TableHead className="hidden text-xs sm:table-cell">Owner</TableHead>
-                      <TableHead className="text-right text-xs">Value</TableHead>
-                      <TableHead className="text-xs">Actions</TableHead>
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
+                        Title
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
+                        Value
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
+                        Customer
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
+                        Stage
+                      </TableHead>
+                      <TableHead className="hidden min-w-[140px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground xl:table-cell md:px-4 md:py-3">
+                        Deal status
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
+                        Assigned To
+                      </TableHead>
+                      <TableHead className="hidden whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
+                        Created
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
+                        Actions
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -770,13 +782,15 @@ export default function DealsPage() {
                     const badgeClass = DEAL_STATUS_META[st].badgeClass;
                     return (
                       <TableRow key={d.id}>
-                        <TableCell className="hidden font-mono text-xs md:table-cell">{d.id}</TableCell>
-                        <TableCell className="text-sm font-medium">{d.name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="px-3 py-3 text-sm font-medium md:px-4 md:py-3.5">{d.name}</TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell md:px-4 md:py-3.5">
+                          {formatINR(d.value)}
+                        </TableCell>
+                        <TableCell className="hidden px-3 py-3 text-sm text-muted-foreground md:table-cell md:px-4 md:py-3.5">
                           {customers.find((c) => c.id === d.customerId) ? (
                             <button
                               type="button"
-                              className="text-primary hover:underline text-left"
+                              className="text-left text-primary hover:underline"
                               onClick={() => navigate(`/customers/${d.customerId}`)}
                             >
                               {customers.find((c) => c.id === d.customerId)?.companyName}
@@ -785,7 +799,7 @@ export default function DealsPage() {
                             "—"
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                           {canUpdateDeal && !d.locked ? (
                             <Select
                               value={d.stage}
@@ -798,7 +812,7 @@ export default function DealsPage() {
                                 })
                               }
                             >
-                              <SelectTrigger className="h-8 w-[150px] text-[10px] px-2">
+                              <SelectTrigger className="h-8 w-[min(150px,100%)] max-w-[150px] px-2 text-[10px]">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -815,10 +829,10 @@ export default function DealsPage() {
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="min-w-[140px]">
+                        <TableCell className="hidden min-w-[140px] px-3 py-3 xl:table-cell md:px-4 md:py-3.5">
                           {canUpdateDeal && !d.locked ? (
                             <Select value={st} onValueChange={(v) => onInlineStatusChange(d, v)}>
-                              <SelectTrigger className={cn("h-8 text-xs border", badgeClass)}>
+                              <SelectTrigger className={cn("h-8 border text-xs", badgeClass)}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
@@ -830,21 +844,18 @@ export default function DealsPage() {
                               </SelectContent>
                             </Select>
                           ) : (
-                            <Badge variant="outline" className={cn("text-[10px] border", badgeClass)}>
+                            <Badge variant="outline" className={cn("border text-[10px]", badgeClass)}>
                               {st}
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">{d.dealSource ?? "—"}</TableCell>
-                        <TableCell className="hidden text-xs lg:table-cell">{d.priority ?? "—"}</TableCell>
-                        <TableCell className="hidden whitespace-nowrap text-xs lg:table-cell">{d.expectedCloseDate ?? "—"}</TableCell>
-                        <TableCell className="hidden whitespace-nowrap text-xs xl:table-cell">{formatShortDate(d.lastActivityAt)}</TableCell>
-                        <TableCell className="hidden whitespace-nowrap text-xs xl:table-cell">{d.nextFollowUpDate ?? "—"}</TableCell>
-                        <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
+                        <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">
                           {users.find((u) => u.id === d.ownerUserId)?.name}
                         </TableCell>
-                        <TableCell className="text-sm text-right font-mono">{formatINR(d.value)}</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden whitespace-nowrap px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">
+                          {formatShortDate(d.createdAt)}
+                        </TableCell>
+                        <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                           <div className="flex flex-wrap items-center gap-1">
                             {d.locked ? (
                               <span className="flex items-center gap-1 text-xs text-success">
@@ -901,7 +912,7 @@ export default function DealsPage() {
                   })}
                     {visible.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={13} className="text-center text-sm text-muted-foreground py-12">
+                        <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
                           No active deals in scope
                         </TableCell>
                       </TableRow>
@@ -987,7 +998,7 @@ export default function DealsPage() {
           setSheetOpen(o);
         }}
       >
-        <SheetContent side="right" className="flex max-h-[100dvh] flex-col overflow-y-auto p-6 pt-14 sm:max-w-xl">
+        <SheetContent side="right" className={cn(sheetContentDetail, "max-h-[100dvh]")}>
           <SheetHeader>
             <SheetTitle>
               {sheetMode === "view" ? "Deal details" : sheetMode === "edit" ? "Edit deal" : "New deal"}

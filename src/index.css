@@ -91,8 +91,8 @@
   }
 }
 
-/* Prevent iOS input zoom (font-size >= 16px on inputs) */
-@media (max-width: 640px) {
+/* ── FIX 13 — iOS input zoom: only on mobile (< sm); desktop keeps readable 14px ── */
+@media (max-width: 639px) {
   input[type="text"],
   input[type="tel"],
   input[type="email"],
@@ -101,6 +101,30 @@
   select,
   textarea {
     font-size: 16px !important;
+  }
+}
+
+@media (min-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 14px;
+  }
+}
+
+/* ── FIX 13 — safe area helper (notched phones); prefer when env() is available ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-pb {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ── FIX 13 — desktop dialogs: no accidental full viewport height (mobile full-screen stays sm-only in components) ── */
+@media (min-width: 640px) {
+  [role="dialog"] {
+    height: auto !important;
+    max-height: 90vh !important;
+    border-radius: 0.5rem !important;
   }
 }
 

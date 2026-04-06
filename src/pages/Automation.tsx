@@ -1,28 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
+import {
+  n8nBuildeskEmailWebhookUrl,
+  n8nBuildeskHealthWebhookUrl,
+  wahaSendTextUrl,
+} from "@/lib/automationEndpoints";
 import { runAutomationRules } from "@/lib/automationService";
 import { apiUrl } from "@/lib/api";
 import type { AutomationChannel, AutomationLog, AutomationRecipient, AutomationTemplate, AutomationTrigger } from "@/types";
 import { TEMPLATE_VARIABLES } from "@/types";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
+import { DataTablePagination } from "@/components/DataTablePagination";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { dialogSmMax2xl, dialogSmMaxMd } from "@/lib/dialogLayout";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -312,7 +323,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
 
       const res =
         template.channel === "whatsapp"
-          ? await fetch(`/waha/api/sendText`, {
+          ? await fetch(wahaSendTextUrl(settings), {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -324,7 +335,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                 text: template.body,
               }),
             })
-          : await fetch(`/n8n/webhook/buildesk-email`, {
+          : await fetch(n8nBuildeskEmailWebhookUrl(settings), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -345,7 +356,8 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
             });
 
       const ok = res.ok;
-      const errorBody = ok ? "" : (await res.text().catch(() => ""))?.slice(0, 500);
+      const rawErr = ok ? "" : (await res.text().catch(() => ""))?.slice(0, 500);
+      const errorBody = rawErr.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 220);
       const nextLogs = useAppStore
         .getState()
         .automationLogs.map((l) =>
@@ -417,60 +429,73 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {filteredTemplates.map((template) => (
-          <Card key={template.id} className="border border-gray-200 dark:border-gray-800 shadow-none">
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="flex items-center gap-2">
-                  {CHANNEL_ICON[template.channel]}
-                  <span className="text-sm font-medium text-gray-900 dark:text-gray-100 leading-snug">
-                    {template.name}
-                  </span>
+          <Card
+            key={template.id}
+            className="border border-gray-200 shadow-none transition-shadow hover:shadow-sm dark:border-gray-800"
+          >
+            <CardContent className="p-4 sm:p-5">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0 text-gray-500">{CHANNEL_ICON[template.channel]}</span>
+                    <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {template.name}
+                    </h3>
+                  </div>
+                  <p className="mt-0.5 text-xs capitalize text-gray-400">{template.channel.replace("_", " ")}</p>
                 </div>
-                <Switch checked={template.isActive} onCheckedChange={() => toggleAutomationTemplate(template.id)} />
+                <Switch
+                  className="flex-shrink-0"
+                  checked={template.isActive}
+                  onCheckedChange={() => toggleAutomationTemplate(template.id)}
+                />
               </div>
 
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs font-medium">
-                  {TRIGGER_LABELS[template.trigger]}
-                </span>
-                {template.recipients.map((r) => (
-                  <span
-                    key={r}
-                    className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-xs capitalize"
-                  >
-                    {r.replace("_", " ")}
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                    {TRIGGER_LABELS[template.trigger]}
                   </span>
-                ))}
+                  {template.recipients.map((r) => (
+                    <span
+                      key={r}
+                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                    >
+                      {r.replace("_", " ")}
+                    </span>
+                  ))}
+                </div>
+
+                {(template.delayHours ?? 0) > 0 && (
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                    <span>
+                      Send after {template.delayHours}h
+                      {template.repeatEveryHours ? `, repeat every ${template.repeatEveryHours}h` : ""}
+                      {template.maxRepeats ? ` (max ${template.maxRepeats}x)` : ""}
+                    </span>
+                  </div>
+                )}
+
+                <p className="line-clamp-2 rounded bg-gray-50 p-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                  {template.body}
+                </p>
               </div>
 
-              {(template.delayHours ?? 0) > 0 && (
-                <div className="flex items-center gap-1.5 mb-3">
-                  <Clock className="h-3.5 w-3.5 text-gray-400" />
-                  <span className="text-xs text-gray-500">
-                    Send after {template.delayHours}h
-                    {template.repeatEveryHours ? `, repeat every ${template.repeatEveryHours}h` : ""}
-                    {template.maxRepeats ? ` (max ${template.maxRepeats}x)` : ""}
-                  </span>
-                </div>
-              )}
-
-              <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mb-4 bg-gray-50 dark:bg-gray-900 rounded p-2">
-                {template.body}
-              </p>
-
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="flex-1 h-8 text-xs" onClick={() => onEdit(template)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1.5" />
+              <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+                <Button variant="outline" size="sm" className="h-8 flex-1 text-xs" onClick={() => onEdit(template)}>
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
                   Edit
                 </Button>
-                <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => openTestTemplate(template)}>
+                <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0" onClick={() => openTestTemplate(template)} title="Test send">
                   <Play className="h-3.5 w-3.5" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                  className="h-8 w-8 shrink-0 p-0 text-red-500 hover:text-red-700"
                   onClick={() => confirmDelete(template.id)}
+                  title="Delete"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -521,7 +546,7 @@ function TestTemplateDialog({
   const isWhatsApp = template.channel === "whatsapp";
 
   return (
-    <DialogContent className="max-w-md">
+    <DialogContent className={dialogSmMaxMd}>
       <DialogHeader>
         <DialogTitle>Test template</DialogTitle>
         <DialogDescription className="text-sm text-gray-500">
@@ -529,13 +554,13 @@ function TestTemplateDialog({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="space-y-3">
+      <DialogBody className="space-y-3">
         <div>
           <p className="text-xs text-gray-500 uppercase tracking-wide">Template</p>
           <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{template.name}</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recipient name</p>
             <Input className="h-9 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
@@ -556,34 +581,34 @@ function TestTemplateDialog({
             <p className="text-sm text-gray-500">In-app templates can’t be tested via n8n. Trigger the event to generate logs.</p>
           )}
         </div>
+      </DialogBody>
 
-        <div className="flex justify-end gap-2 pt-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={async () => {
-              if (isWhatsApp && !phone.trim()) {
-                toast({ title: "Phone is required", variant: "destructive" });
-                return;
-              }
-              if (isEmail && !email.trim()) {
-                toast({ title: "Email is required", variant: "destructive" });
-                return;
-              }
-              if (!isEmail && !isWhatsApp) {
-                toast({ title: "In-app test not supported here", variant: "destructive" });
-                return;
-              }
-              await onSend(template, { name, phone: phone.trim() || undefined, email: email.trim() || undefined });
-              onClose();
-            }}
-          >
-            Send test
-          </Button>
-        </div>
-      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+          onClick={async () => {
+            if (isWhatsApp && !phone.trim()) {
+              toast({ title: "Phone is required", variant: "destructive" });
+              return;
+            }
+            if (isEmail && !email.trim()) {
+              toast({ title: "Email is required", variant: "destructive" });
+              return;
+            }
+            if (!isEmail && !isWhatsApp) {
+              toast({ title: "In-app test not supported here", variant: "destructive" });
+              return;
+            }
+            await onSend(template, { name, phone: phone.trim() || undefined, email: email.trim() || undefined });
+            onClose();
+          }}
+        >
+          Send test
+        </Button>
+      </DialogFooter>
     </DialogContent>
   );
 }
@@ -685,58 +710,55 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
   };
 
   return (
-    <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
-      <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+    <DialogContent className={dialogSmMax2xl}>
+      <DialogHeader>
         <DialogTitle>{template ? "Edit Template" : "New Automation Template"}</DialogTitle>
         <DialogDescription className="text-sm text-gray-500">
           Configure trigger, channel, recipients, and message variables.
         </DialogDescription>
       </DialogHeader>
 
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex-1 overflow-hidden flex flex-col">
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          <div className="flex items-center gap-4">
-            <div className="flex-1">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <DialogBody className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+            <div className="min-w-0">
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template Name</p>
               <Input className="h-9 text-sm" {...form.register("name")} />
               {form.formState.errors.name && (
                 <p className="text-xs text-destructive mt-1">{form.formState.errors.name.message}</p>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-5">
+            <div className="flex items-center gap-2 pb-1 sm:justify-end">
               <Switch checked={form.watch("isActive")} onCheckedChange={(v) => form.setValue("isActive", v)} />
               <span className="text-sm text-gray-500">Active</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trigger Event</p>
-              <Select value={watchedTrigger} onValueChange={(v) => form.setValue("trigger", v as AutomationTrigger)}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_TRIGGERS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {TRIGGER_LABELS[t]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={watchedTrigger}
+                onValueChange={(v) => form.setValue("trigger", v as AutomationTrigger)}
+                options={ALL_TRIGGERS.map((t) => ({ value: t, label: TRIGGER_LABELS[t] }))}
+                placeholder="Select trigger"
+                searchPlaceholder="Search triggers…"
+                triggerClassName="h-9 text-sm"
+              />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Channel</p>
-              <Select value={watchedChannel} onValueChange={(v) => form.setValue("channel", v as AutomationChannel)}>
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="whatsapp">💬 WhatsApp</SelectItem>
-                  <SelectItem value="email">📧 Email</SelectItem>
-                  <SelectItem value="in_app">🔔 In-App</SelectItem>
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={watchedChannel}
+                onValueChange={(v) => form.setValue("channel", v as AutomationChannel)}
+                options={[
+                  { value: "whatsapp", label: "💬 WhatsApp" },
+                  { value: "email", label: "📧 Email" },
+                  { value: "in_app", label: "🔔 In-App" },
+                ]}
+                placeholder="Select channel"
+                triggerClassName="h-9 text-sm"
+              />
             </div>
           </div>
 
@@ -779,34 +801,67 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">Delay (hours)</label>
-              <Input
-                type="number"
-                min="0"
-                className="h-9 text-sm"
-                {...form.register("delayHours", { valueAsNumber: true })}
+              <Controller
+                name="delayHours"
+                control={form.control}
+                render={({ field }) => (
+                  <NumericInput
+                    className="h-9 text-sm"
+                    min={0}
+                    integer
+                    emptyOnBlur={0}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    ref={field.ref}
+                  />
+                )}
               />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">
                 Repeat every (hours)
               </label>
-              <Input
-                type="number"
-                min="0"
-                className="h-9 text-sm"
-                {...form.register("repeatEveryHours", { valueAsNumber: true })}
+              <Controller
+                name="repeatEveryHours"
+                control={form.control}
+                render={({ field }) => (
+                  <NumericInput
+                    className="h-9 text-sm"
+                    min={0}
+                    integer
+                    emptyOnBlur={0}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    ref={field.ref}
+                  />
+                )}
               />
             </div>
             <div>
               <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">Max repeats</label>
-              <Input
-                type="number"
-                min="0"
-                className="h-9 text-sm"
-                {...form.register("maxRepeats", { valueAsNumber: true })}
+              <Controller
+                name="maxRepeats"
+                control={form.control}
+                render={({ field }) => (
+                  <NumericInput
+                    className="h-9 text-sm"
+                    min={0}
+                    integer
+                    emptyOnBlur={0}
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    onBlur={field.onBlur}
+                    name={field.name}
+                    ref={field.ref}
+                  />
+                )}
               />
             </div>
           </div>
@@ -846,16 +901,16 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
                 : "Email: plain text. HTML not supported."}
             </p>
           </div>
-        </div>
+        </DialogBody>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t flex-shrink-0">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
             {template ? "Save Changes" : "Create Template"}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
     </DialogContent>
   );
@@ -904,50 +959,58 @@ function LogsTab() {
         ))}
       </div>
 
-      <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
+      <Card className="overflow-hidden border border-gray-200 shadow-none dark:border-gray-800">
         <CardContent className="p-0">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
             <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
-                <th className="hidden text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide md:table-cell">
+              <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
+                <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
                   Template
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Channel</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Recipient</th>
-                <th className="hidden text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide lg:table-cell">
+                <th className="px-3 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
+                  Status
+                </th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
+                  Date
+                </th>
+                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell md:px-4 md:py-3">
+                  Channel
+                </th>
+                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell md:px-4 md:py-3">
+                  Recipient
+                </th>
+                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 lg:table-cell md:px-4 md:py-3">
                   Entity
                 </th>
-                <th className="text-center px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Sent At</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {paginatedLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
-                  <td className="hidden px-4 py-3 md:table-cell">
-                    <span className="font-medium text-gray-800 dark:text-gray-200 text-xs">{log.templateName}</span>
+                <tr key={log.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900">
+                  <td className="px-3 py-3 md:px-4 md:py-3.5">
+                    <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{log.templateName}</span>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1.5">
-                      {CHANNEL_ICON[log.channel]}
-                      <span className="text-xs text-gray-500 capitalize">{log.channel}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-xs text-gray-600 dark:text-gray-400">{log.recipientName}</span>
-                    <p className="text-[10px] text-gray-500 md:hidden">{log.templateName}</p>
-                  </td>
-                  <td className="hidden px-4 py-3 lg:table-cell">
-                    <span className="text-xs text-gray-500">{log.entityName}</span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={cn("px-2 py-0.5 rounded-full text-xs font-medium", STATUS_STYLE[log.status])}>
+                  <td className="px-3 py-3 text-center md:px-4 md:py-3.5">
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[log.status])}>
                       {log.status}
                     </span>
-                    {log.errorMessage && <p className="text-xs text-red-500 mt-0.5">{log.errorMessage}</p>}
+                    {log.errorMessage && <p className="mt-0.5 text-xs text-red-500">{log.errorMessage}</p>}
                   </td>
-                  <td className="px-4 py-3 text-right text-xs text-gray-400">
+                  <td className="px-3 py-3 text-right text-xs text-gray-400 md:px-4 md:py-3.5">
                     {new Date(log.sentAt).toLocaleString("en-IN")}
+                  </td>
+                  <td className="hidden px-3 py-3 md:table-cell md:px-4 md:py-3.5">
+                    <div className="flex items-center gap-1.5">
+                      {CHANNEL_ICON[log.channel]}
+                      <span className="text-xs capitalize text-gray-500">{log.channel}</span>
+                    </div>
+                  </td>
+                  <td className="hidden px-3 py-3 md:table-cell md:px-4 md:py-3.5">
+                    <span className="text-xs text-gray-600 dark:text-gray-400">{log.recipientName}</span>
+                  </td>
+                  <td className="hidden px-3 py-3 lg:table-cell md:px-4 md:py-3.5">
+                    <span className="text-xs text-gray-500">{log.entityName}</span>
                   </td>
                 </tr>
               ))}
@@ -960,21 +1023,16 @@ function LogsTab() {
               )}
             </tbody>
           </table>
+          </div>
 
           {logs.length > PAGE_SIZE && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-800">
-              <p className="text-xs text-gray-500">
-                Page {currentPage} of {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="h-8" disabled={currentPage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-                  Previous
-                </Button>
-                <Button variant="outline" size="sm" className="h-8" disabled={currentPage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
-                  Next
-                </Button>
-              </div>
-            </div>
+            <DataTablePagination
+              page={currentPage}
+              totalPages={totalPages}
+              total={logs.length}
+              perPage={PAGE_SIZE}
+              onPageChange={setPage}
+            />
           )}
         </CardContent>
       </Card>
@@ -990,7 +1048,7 @@ function SettingsTab() {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const res = await fetch(`/n8n/webhook/buildesk-health`, {
+      const res = await fetch(n8nBuildeskHealthWebhookUrl(settings), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ping: true }),

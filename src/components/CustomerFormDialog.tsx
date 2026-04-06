@@ -4,20 +4,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { dialogSmMax2xl } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useAppStore } from "@/store/useAppStore";
 import { toast } from "@/components/ui/use-toast";
 import type { Customer, CustomerContact, CustomerStatus } from "@/types";
@@ -31,7 +27,7 @@ import {
 } from "@/components/ui/form";
 function FormSection({ title }: { title: string }) {
   return (
-    <div className="col-span-2 flex items-center gap-3 pt-2">
+    <div className="col-span-1 sm:col-span-2 flex items-center gap-3 pt-1">
       <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest whitespace-nowrap">
         {title}
       </span>
@@ -129,6 +125,14 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
+
+const STATUS_OPTIONS: { value: CustomerStatus; label: string }[] = [
+  { value: "lead", label: "Lead" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "churned", label: "Churned" },
+  { value: "blacklisted", label: "Blacklisted" },
+];
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -393,17 +397,17 @@ export function CustomerFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+      <DialogContent className={dialogSmMax2xl}>
+        <DialogHeader>
           <DialogTitle className="text-lg font-semibold">
             {editingCustomer ? "Edit Customer" : "Add Customer"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <DialogBody>
           <Form {...form}>
             <form id="customer-form" onSubmit={form.handleSubmit(onSubmit)}>
-              <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormSection title="Company Info" />
                 <FormField
                   control={form.control}
@@ -424,20 +428,15 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Industry</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue placeholder="Select industry" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {INDUSTRIES.map((ind) => (
-                            <SelectItem key={ind} value={ind}>
-                              {ind}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value || ""}
+                          onValueChange={field.onChange}
+                          options={INDUSTRIES.map((ind) => ({ value: ind, label: ind }))}
+                          placeholder="Select industry"
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -461,25 +460,20 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="lead">Lead</SelectItem>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="inactive">Inactive</SelectItem>
-                          <SelectItem value="churned">Churned</SelectItem>
-                          <SelectItem value="blacklisted">Blacklisted</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          options={STATUS_OPTIONS}
+                          placeholder="Select status"
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="tags"
@@ -501,7 +495,7 @@ export function CustomerFormDialog({
                 </div>
 
                 <FormSection title="Address" />
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="line1"
@@ -516,7 +510,7 @@ export function CustomerFormDialog({
                     )}
                   />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="line2"
@@ -550,20 +544,15 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">State</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue placeholder="Select state" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {INDIAN_STATES.map((st) => (
-                            <SelectItem key={st} value={st}>
-                              {st}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value || ""}
+                          onValueChange={field.onChange}
+                          options={INDIAN_STATES.map((st) => ({ value: st, label: st }))}
+                          placeholder="Select state"
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -581,7 +570,7 @@ export function CustomerFormDialog({
                     </FormItem>
                   )}
                 />
-                <div className="col-span-2">
+                <div className="col-span-1 sm:col-span-2">
                   <FormField
                     control={form.control}
                     name="country"
@@ -686,26 +675,19 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Region *</FormLabel>
-                      <Select
-                        onValueChange={(v) => {
-                          field.onChange(v);
-                          form.setValue("teamId", "");
-                        }}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue placeholder="Select region" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {regions.map((r) => (
-                            <SelectItem key={r.id} value={r.id}>
-                              {r.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            form.setValue("teamId", "");
+                            form.setValue("assignedTo", "");
+                          }}
+                          options={regions.map((r) => ({ value: r.id, label: r.name }))}
+                          placeholder="Select region"
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -716,26 +698,19 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Team *</FormLabel>
-                      <Select
-                        onValueChange={(v) => {
-                          field.onChange(v);
-                          form.setValue("assignedTo", "");
-                        }}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue placeholder="Select team" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {teamsInRegion.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>
-                              {t.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            form.setValue("assignedTo", "");
+                          }}
+                          options={teamsInRegion.map((t) => ({ value: t.id, label: t.name }))}
+                          placeholder="Select team"
+                          emptyText="No teams in this region."
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -746,26 +721,17 @@ export function CustomerFormDialog({
                   render={({ field }) => (
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Assigned To *</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                        disabled={me.role === "sales_rep"}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-10 text-sm">
-                            <SelectValue placeholder="Select user" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {users
-                            .filter((u) => u.teamId === form.watch("teamId"))
-                            .map((u) => (
-                              <SelectItem key={u.id} value={u.id}>
-                                {u.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          options={usersInTeam.map((u) => ({ value: u.id, label: u.name }))}
+                          placeholder="Select user"
+                          emptyText="No users in this team."
+                          disabled={me.role === "sales_rep"}
+                          triggerClassName="h-10 text-sm"
+                        />
+                      </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
@@ -773,16 +739,16 @@ export function CustomerFormDialog({
               </div>
             </form>
           </Form>
-        </div>
+        </DialogBody>
 
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex-shrink-0 bg-white dark:bg-gray-950">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button type="submit" form="customer-form" className="bg-blue-600 hover:bg-blue-700 text-white">
             {editingCustomer ? "Save Changes" : "Save"}
           </Button>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

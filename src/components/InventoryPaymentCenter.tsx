@@ -942,37 +942,35 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
                 </>
               )}
             </div>
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <Table responsiveShell={false} className="min-w-[600px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="hidden text-xs sm:table-cell">ID</TableHead>
                     <TableHead className="text-xs">Customer</TableHead>
-                    <TableHead className="hidden text-xs md:table-cell">Plan</TableHead>
-                    <TableHead className="text-xs">Amount</TableHead>
-                    <TableHead className="text-xs">Date</TableHead>
-                    <TableHead className="hidden text-xs md:table-cell">Mode</TableHead>
-                    <TableHead className="hidden text-xs lg:table-cell">Receipt</TableHead>
-                    <TableHead className="hidden text-xs lg:table-cell">Sent</TableHead>
+                    <TableHead className="text-right text-xs">Amount</TableHead>
                     <TableHead className="text-xs">Status</TableHead>
-                    {canDeletePayment && <TableHead className="text-xs w-[70px]">Actions</TableHead>}
+                    <TableHead className="hidden text-xs md:table-cell">Plan</TableHead>
+                    <TableHead className="hidden text-xs md:table-cell">Paid on</TableHead>
+                    <TableHead className="hidden text-xs lg:table-cell">Mode</TableHead>
+                    <TableHead className="hidden text-xs lg:table-cell">Reference</TableHead>
+                    <TableHead className="hidden text-xs xl:table-cell">ID</TableHead>
+                    {canDeletePayment && <TableHead className="w-[70px] text-xs">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(historyQ.data ?? []).map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="hidden font-mono text-xs sm:table-cell">{r.id.slice(0, 10)}…</TableCell>
                       <TableCell className="text-xs">
                         <span className="font-medium">{r.customerName}</span>
                         <p className="text-[10px] text-muted-foreground md:hidden">{r.planName ?? "—"}</p>
                       </TableCell>
-                      <TableCell className="hidden text-xs md:table-cell">{r.planName}</TableCell>
-                      <TableCell className="text-xs">{formatINR(r.amountPaid)}</TableCell>
-                      <TableCell className="whitespace-nowrap text-xs">{r.paymentDate}</TableCell>
-                      <TableCell className="hidden text-xs md:table-cell">{paymentModeLabel(r.paymentMode)}</TableCell>
-                      <TableCell className="hidden font-mono text-xs lg:table-cell">{r.receiptNumber ?? "—"}</TableCell>
-                      <TableCell className="hidden text-xs lg:table-cell">{r.receiptSent ? "Yes" : "No"}</TableCell>
+                      <TableCell className="text-right text-xs">{formatINR(r.amountPaid)}</TableCell>
                       <TableCell className="text-xs capitalize">{r.paymentStatus}</TableCell>
+                      <TableCell className="hidden text-xs md:table-cell">{r.planName}</TableCell>
+                      <TableCell className="hidden whitespace-nowrap text-xs md:table-cell">{r.paymentDate}</TableCell>
+                      <TableCell className="hidden text-xs lg:table-cell">{paymentModeLabel(r.paymentMode)}</TableCell>
+                      <TableCell className="hidden font-mono text-xs lg:table-cell">{r.receiptNumber ?? "—"}</TableCell>
+                      <TableCell className="hidden font-mono text-xs xl:table-cell">{r.id.slice(0, 10)}…</TableCell>
                       {canDeletePayment && (
                         <TableCell className="text-xs">
                           {r.paymentStatus === "pending" || r.paymentStatus === "failed" ? (

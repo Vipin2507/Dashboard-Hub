@@ -1,3 +1,4 @@
+import { wahaSendTextUrl } from "@/lib/automationEndpoints";
 import { useAppStore } from "@/store/useAppStore";
 import type {
   AutomationChannel,
@@ -387,7 +388,14 @@ async function fireWhatsAppDirect(
     }
 
     try {
-      const res = await fetch("/waha/api/sendText", {
+      if (!import.meta.env.DEV && !settings.wahaApiUrl?.trim()) {
+        updateAutomationLog(logEntry.id, {
+          status: "failed",
+          errorMessage: "WAHA API URL is not set — open Automation → Settings and save your WAHA base URL.",
+        });
+        continue;
+      }
+      const res = await fetch(wahaSendTextUrl(settings), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -400,9 +408,12 @@ async function fireWhatsAppDirect(
         }),
       });
       const errBody = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 400);
+      const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
       updateAutomationLog(logEntry.id, {
         status: res.ok ? "sent" : "failed",
-        errorMessage: res.ok ? undefined : `${res.status} ${res.statusText}${errBody ? ` — ${errBody}` : ""}`,
+        errorMessage: res.ok
+          ? undefined
+          : `${res.status} ${res.statusText}${errShort ? ` — ${errShort}` : ""}`,
       });
     } catch (err) {
       updateAutomationLog(logEntry.id, {

@@ -6,12 +6,14 @@ import { getScope } from '@/lib/rbac';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { dialogSmMax2xl } from '@/lib/dialogLayout';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
 import { apiUrl } from '@/lib/api';
+import { DataTablePagination } from '@/components/DataTablePagination';
 
 export default function CustomersPage() {
   const me = useAppStore(s => s.me);
@@ -378,31 +380,13 @@ export default function CustomersPage() {
                 </TableBody>
               </Table>
               {visible.length > pageSize && (
-                <div className="flex items-center justify-between px-5 py-3 border-t border-border text-[11px]">
-                  <span className="text-muted-foreground">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-[11px]"
-                      disabled={currentPage === 1}
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-[11px]"
-                      disabled={currentPage === totalPages}
-                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
+                <DataTablePagination
+                  page={currentPage}
+                  totalPages={totalPages}
+                  total={visible.length}
+                  perPage={pageSize}
+                  onPageChange={setPage}
+                />
               )}
             </CardContent>
           </Card>
@@ -455,11 +439,12 @@ export default function CustomersPage() {
       </div>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className={dialogSmMax2xl}>
           <DialogHeader>
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <DialogBody>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Company Name *</Label>
               <Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Acme Corporation" />
@@ -526,6 +511,7 @@ export default function CustomersPage() {
               </Select>
             </div>
           </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
             <Button
@@ -568,6 +554,7 @@ export default function CustomersPage() {
           <DialogHeader>
             <DialogTitle>Bulk Upload Customers</DialogTitle>
           </DialogHeader>
+          <DialogBody className="space-y-4">
           <p className="text-xs text-muted-foreground">
             Paste CSV data with columns: <strong>Company Name, State, GSTIN, Region Name</strong>. One customer per line.
           </p>
@@ -581,6 +568,7 @@ export default function CustomersPage() {
             />
           </div>
           {bulkError && <p className="text-xs text-destructive">{bulkError}</p>}
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
             <Button

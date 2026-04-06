@@ -5,6 +5,7 @@ import { ROLE_LABELS } from '@/types';
 import type { Module, Role } from '@/types';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import { SIDEBAR_RAIL_BREAKPOINT_PX } from '@/config/layout';
 import {
   LayoutDashboard,
   FileText,
@@ -70,6 +71,46 @@ const NAV_GROUPS: NavGroup[] = [
 
 const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', 'support'];
 
+function RoleSwitcher() {
+  const me = useAppStore((s) => s.me);
+  const switchRole = useAppStore((s) => s.switchRole);
+
+  return (
+    <>
+      <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        Switch Role
+      </label>
+      <Select value={me.role} onValueChange={(v) => switchRole(v as Role)}>
+        <SelectTrigger className="h-10 min-h-11 border-border bg-secondary text-sm sm:h-9 sm:min-h-0">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {ROLES.map((r) => (
+            <SelectItem key={r} value={r} className="text-sm">
+              {ROLE_LABELS[r]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  );
+}
+
+function ResetDemoButton() {
+  const resetDemo = useAppStore((s) => s.resetDemo);
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="h-10 min-h-11 w-full text-sm text-muted-foreground sm:h-9 sm:min-h-0"
+      onClick={resetDemo}
+    >
+      <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Demo
+    </Button>
+  );
+}
+
 export interface AppSidebarProps {
   onClose: () => void;
 }
@@ -78,8 +119,6 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
   const automationLogs = useAppStore((s) => s.automationLogs);
-  const switchRole = useAppStore((s) => s.switchRole);
-  const resetDemo = useAppStore((s) => s.resetDemo);
   const navigate = useNavigate();
   const location = useLocation();
   const { proposalsBadge, dealsBadge, paymentsBadge } = useSidebarBadges();
@@ -99,30 +138,26 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
 
   const go = (path: string) => {
     navigate(path);
-    onClose();
+    if (typeof window !== 'undefined' && window.innerWidth < SIDEBAR_RAIL_BREAKPOINT_PX) {
+      onClose();
+    }
   };
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col overflow-hidden bg-sidebar">
-      {/* Header — close on mobile drawer only */}
-      <div className="flex h-14 min-h-[3.5rem] shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <LayoutDashboard className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="truncate text-base font-bold tracking-tight text-primary">Buildesk</span>
-        </div>
+    <div className="flex h-full w-full flex-col bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800">
+      <div className="flex h-14 flex-shrink-0 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-800">
+        <span className="text-lg font-bold text-blue-600">Buildesk</span>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground lg:hidden"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
           aria-label="Close navigation"
         >
-          <X className="h-5 w-5" />
+          <X className="h-4 w-4" />
         </button>
       </div>
 
-      <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-3">
+      <nav className="flex-1 space-y-5 overflow-y-auto px-2 py-3">
         {NAV_GROUPS.map((group) => {
           const visibleItems = group.items.filter((item) => hasModuleAccess(me.role, item.module));
           if (visibleItems.length === 0) return null;
@@ -196,30 +231,9 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
         })}
       </nav>
 
-      <div className="shrink-0 space-y-2 border-t border-sidebar-border p-3">
-        <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-          Switch Role
-        </label>
-        <Select value={me.role} onValueChange={(v) => switchRole(v as Role)}>
-          <SelectTrigger className="h-10 min-h-11 border-border bg-secondary text-sm sm:h-9 sm:min-h-0">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ROLES.map((r) => (
-              <SelectItem key={r} value={r} className="text-sm">
-                {ROLE_LABELS[r]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-10 min-h-11 w-full text-sm text-muted-foreground sm:h-9 sm:min-h-0"
-          onClick={resetDemo}
-        >
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset Demo
-        </Button>
+      <div className="flex-shrink-0 space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
+        <RoleSwitcher />
+        <ResetDemoButton />
       </div>
     </div>
   );

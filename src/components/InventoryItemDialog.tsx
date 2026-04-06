@@ -4,13 +4,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { dialogSmMax2xl } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumericInput } from "@/components/ui/numeric-input";
 import {
   Form,
   FormField,
@@ -20,13 +23,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -258,14 +255,15 @@ export function InventoryItemDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className={dialogSmMax2xl}>
         <DialogHeader>
           <DialogTitle>{editingItem ? "Edit inventory item" : "Add inventory item"}</DialogTitle>
         </DialogHeader>
         <TooltipProvider>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onFormSubmit)} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <form id="inventory-item-form" onSubmit={form.handleSubmit(onFormSubmit)} className="contents">
+        <DialogBody className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <FormField
                   control={form.control}
                   name="name"
@@ -285,20 +283,14 @@ export function InventoryItemDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Item type *</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {ITEM_TYPES.map((t) => (
-                            <SelectItem key={t.value} value={t.value}>
-                              {t.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          options={ITEM_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+                          placeholder="Select type"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -346,20 +338,14 @@ export function InventoryItemDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Category *</FormLabel>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {PRODUCT_CATEGORIES.map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          options={PRODUCT_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                          placeholder="Select category"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -387,7 +373,16 @@ export function InventoryItemDialog({
                     <FormItem>
                       <FormLabel>Cost price (₹) *</FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} step={0.01} placeholder="0" {...field} />
+                        <NumericInput
+                          placeholder="0"
+                          min={0}
+                          emptyOnBlur={0}
+                          value={typeof field.value === "number" ? field.value : 0}
+                          onValueChange={field.onChange}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -400,7 +395,16 @@ export function InventoryItemDialog({
                     <FormItem>
                       <FormLabel>Selling price (₹) *</FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} step={0.01} placeholder="0" {...field} />
+                        <NumericInput
+                          placeholder="0"
+                          min={0}
+                          emptyOnBlur={0}
+                          value={typeof field.value === "number" ? field.value : 0}
+                          onValueChange={field.onChange}
+                          onBlur={field.onBlur}
+                          name={field.name}
+                          ref={field.ref}
+                        />
                       </FormControl>
                       {typeof costPrice === "number" &&
                         typeof sellingPrice === "number" &&
@@ -418,28 +422,19 @@ export function InventoryItemDialog({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>GST rate % *</FormLabel>
-                      <Select
-                        value={String(field.value)}
-                        onValueChange={(v) => field.onChange(Number(v))}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select GST %" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {GST_RATES.map((r) => (
-                            <SelectItem key={r} value={String(r)}>
-                              {r}%
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <SearchableSelect
+                          value={String(field.value)}
+                          onValueChange={(v) => field.onChange(Number(v))}
+                          options={GST_RATES.map((r) => ({ value: String(r), label: `${r}%` }))}
+                          placeholder="Select GST %"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                <div className="md:col-span-2 flex items-center gap-2">
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Margin %</span>
                   <span className="text-sm font-medium">
                     {Number.isFinite(marginPct) ? `${marginPct.toFixed(1)}%` : "—"}
@@ -457,42 +452,49 @@ export function InventoryItemDialog({
                     </FormItem>
                   )}
                 />
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Optional product/service description" {...field} rows={2} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3">
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Notes (internal only)</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="Internal notes" {...field} rows={2} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Optional product/service description" {...field} rows={2} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes (internal only)</FormLabel>
-                    <FormControl>
-                      <Textarea placeholder="Internal notes" {...field} rows={2} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">{editingItem ? "Update" : "Add item"}</Button>
-              </DialogFooter>
+        </DialogBody>
             </form>
           </Form>
         </TooltipProvider>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" form="inventory-item-form">
+            {editingItem ? "Update" : "Add item"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

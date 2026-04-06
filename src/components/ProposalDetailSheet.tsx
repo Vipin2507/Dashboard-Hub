@@ -4,6 +4,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { sheetContentDetail } from "@/lib/dialogLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,7 +83,7 @@ export function ProposalDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="overflow-y-auto p-6 pt-14">
+      <SheetContent className={sheetContentDetail}>
         <SheetHeader>
           <SheetTitle className="flex items-center justify-between gap-2">
             <span>{proposal.proposalNumber}</span>

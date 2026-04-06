@@ -18,6 +18,7 @@ import { formatINR } from "@/lib/rbac";
 import { sendSubscriptionReminderChannels, triggerAutomation } from "@/lib/automationService";
 import type { AutomationContext } from "@/lib/automationService";
 import type { Proposal, ProposalLineItem, ProposalVersion } from "@/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,12 +36,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+import { dialogSmMaxMd, sheetContentDetail } from "@/lib/dialogLayout";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,7 +65,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
-import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
 export type TrackerRow = {
@@ -682,7 +685,7 @@ export function RenewalSubscriptionTracker() {
               {remindRow?.customerName} — {remindRow?.planName}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <DialogBody className="space-y-3">
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
@@ -715,7 +718,7 @@ export function RenewalSubscriptionTracker() {
                 rows={4}
               />
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRemindRow(null)}>
               Cancel
@@ -729,28 +732,24 @@ export function RenewalSubscriptionTracker() {
       </Dialog>
 
       <Dialog open={!!proposeRow} onOpenChange={(o) => !o && setProposeRow(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className={dialogSmMaxMd}>
           <DialogHeader>
             <DialogTitle>Renewal proposal</DialogTitle>
             <DialogDescription>
               {proposeRow?.customerName} — current plan {proposeRow?.planName}, expires {proposeRow?.expiryDate}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <DialogBody className="space-y-3">
             <div>
               <Label>Renewal plan (catalog)</Label>
-              <Select value={proposeCatalogId} onValueChange={setProposeCatalogId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select plan" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(catalogQuery.data ?? []).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                value={proposeCatalogId}
+                onValueChange={setProposeCatalogId}
+                options={(catalogQuery.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
+                placeholder="Select plan"
+                emptyText="No plans in catalog."
+                triggerClassName="h-10"
+              />
             </div>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 text-sm">
@@ -775,7 +774,7 @@ export function RenewalSubscriptionTracker() {
                 SMS
               </label>
             </div>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setProposeRow(null)}>
               Cancel
@@ -793,20 +792,22 @@ export function RenewalSubscriptionTracker() {
             <DialogTitle>Mark renewed</DialogTitle>
             <DialogDescription>{renewRow?.planName}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label>New plan start</Label>
-              <Input type="date" value={renewStart} onChange={(e) => setRenewStart(e.target.value)} />
-            </div>
-            <div>
-              <Label>New expiry</Label>
-              <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
+          <DialogBody className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>New plan start</Label>
+                <Input type="date" value={renewStart} onChange={(e) => setRenewStart(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>New expiry</Label>
+                <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={recordPayment} onCheckedChange={(c) => setRecordPayment(!!c)} />
               Payment recorded (log only)
             </label>
-          </div>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenewRow(null)}>
               Cancel
@@ -819,7 +820,7 @@ export function RenewalSubscriptionTracker() {
       </Dialog>
 
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
+        <SheetContent className={cn(sheetContentDetail)}>
           <SheetHeader>
             <SheetTitle>Reminder settings</SheetTitle>
             <SheetDescription>

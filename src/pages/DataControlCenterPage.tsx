@@ -40,10 +40,11 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/use-toast";
+import { sheetContentDetail } from "@/lib/dialogLayout";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
 import { useAppStore } from "@/store/useAppStore";
-import { cn } from "@/lib/utils";
 
 type DccField = { key: string; label: string; editable: boolean };
 type DccModule = { id: string; label: string; fields: DccField[] };
@@ -712,7 +713,7 @@ export default function DataControlCenterPage() {
       </div>
 
       <Sheet open={bulkOpen} onOpenChange={setBulkOpen}>
-        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
+        <SheetContent className={cn(sheetContentDetail)}>
           <SheetHeader>
             <SheetTitle>Bulk update</SheetTitle>
             <SheetDescription>
@@ -803,7 +804,7 @@ export default function DataControlCenterPage() {
       </Sheet>
 
       <Sheet open={importOpen} onOpenChange={setImportOpen}>
-        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-lg">
+        <SheetContent className={cn(sheetContentDetail)}>
           <SheetHeader>
             <SheetTitle>Bulk add (import)</SheetTitle>
             <SheetDescription>

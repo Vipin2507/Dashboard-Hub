@@ -69,7 +69,7 @@ export default function PaymentsPage() {
         subtitle="Proposal decisions, plans, collections, history & plan templates"
       />
       <div className="space-y-4">
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
           <Card className="border border-border shadow-none">
             <CardContent className="p-4">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total plans</p>

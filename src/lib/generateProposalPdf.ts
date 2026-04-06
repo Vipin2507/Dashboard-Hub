@@ -136,7 +136,7 @@ function renderParagraph(
   y: number,
   maxWidth: number,
   lineHeight = 5.5,
-  fontSize = FONT.body,
+  fontSize: number = FONT.body,
 ): number {
   doc.setFontSize(fontSize);
   const lines = doc.splitTextToSize(text, maxWidth);
@@ -152,7 +152,7 @@ function renderBulletList(
   maxWidth: number,
   lineHeight = 5.2,
   itemGap = 2.5,
-  fontSize = FONT.bullet,
+  fontSize: number = FONT.bullet,
 ): number {
   doc.setFontSize(fontSize);
   let currentY = y;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -49,6 +50,7 @@ export function RejectProposalDialog({ proposalId, onClose }: RejectProposalDial
         <DialogHeader>
           <DialogTitle>Reject proposal</DialogTitle>
         </DialogHeader>
+        <DialogBody className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Reject proposal <strong>{proposal.proposalNumber}</strong>? You must provide a reason (min 10 characters).
         </p>
@@ -62,6 +64,7 @@ export function RejectProposalDialog({ proposalId, onClose }: RejectProposalDial
             minLength={10}
           />
         </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button variant="destructive" onClick={handleReject} disabled={reason.trim().length < 10 || reject.isPending}>

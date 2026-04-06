@@ -41,6 +41,7 @@ import {
   Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DataTablePagination } from "@/components/DataTablePagination";
 import type { Proposal, ProposalStatus } from "@/types";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { ProposalFormDialog } from "@/components/ProposalFormDialog";
@@ -85,6 +86,15 @@ const STATUS_BADGE: Record<ProposalStatus, string> = {
 type SortKey = "date" | "value" | "customer";
 
 const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = ["all", "draft", "sent", "approval_pending", "approved", "rejected", "deal_created"];
+
+function formatProposalDate(iso: string | undefined) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return "—";
+  }
+}
 
 export default function Proposals() {
   const queryClient = useQueryClient();
@@ -277,15 +287,15 @@ export default function Proposals() {
           <div className="text-sm text-muted-foreground">Loading proposals...</div>
         )}
         {/* Filters */}
-        <div className="mb-4 space-y-3">
-          <div className="flex gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div className="mb-4 space-y-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
+          <div className="flex gap-2 sm:contents">
+            <div className="relative min-w-0 w-full flex-1 sm:max-w-xs">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search proposals..."
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                className="h-9 pl-9"
+                className="h-9 w-full pl-9 text-sm"
               />
             </div>
             <Button
@@ -305,7 +315,7 @@ export default function Proposals() {
               !filtersOpen && "hidden sm:flex",
             )}
           >
-            <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-1 sm:max-w-full sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-0.5 sm:max-w-full sm:flex-wrap sm:overflow-visible sm:pb-0">
               {STATUS_OPTIONS.map((o) => (
                 <button
                   key={o.value}
@@ -322,12 +332,12 @@ export default function Proposals() {
                 </button>
               ))}
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
               <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
               <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }} className="h-9 min-w-0 w-full sm:w-[140px]" />
               {(me.role === "super_admin" || me.role === "sales_manager") && (
                 <Select value={assignedToFilter} onValueChange={(v) => { setAssignedToFilter(v); setPage(1); }}>
-                  <SelectTrigger className="h-9 w-full sm:w-[160px]">
+                  <SelectTrigger className="h-9 w-full sm:w-40">
                     <SelectValue placeholder="Assigned to" />
                   </SelectTrigger>
                   <SelectContent>
@@ -339,7 +349,7 @@ export default function Proposals() {
                 </Select>
               )}
               <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-                <SelectTrigger className="h-9 w-full sm:w-[130px]">
+                <SelectTrigger className="h-9 w-full sm:w-36">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -349,12 +359,14 @@ export default function Proposals() {
                 </SelectContent>
               </Select>
               {canExport && (
-                <Button variant="outline" size="sm" className="col-span-2 h-9 sm:col-span-1" onClick={handleExportCsv}>
-                  <FileDown className="mr-1.5 h-4 w-4" /> Export
-                </Button>
+                <div className="col-span-2 flex sm:col-span-1 sm:ml-auto">
+                  <Button variant="outline" size="sm" className="h-9 w-full sm:w-auto" onClick={handleExportCsv}>
+                    <FileDown className="mr-1.5 h-4 w-4" /> Export
+                  </Button>
+                </div>
               )}
               {canCreate && (
-                <Button className="col-span-2 h-10 w-full sm:col-span-1 sm:h-9 sm:w-auto" onClick={() => { setEditingId(null); setFormOpen(true); }}>
+                <Button className="col-span-2 h-9 w-full flex-1 sm:col-span-1 sm:flex-none" onClick={() => { setEditingId(null); setFormOpen(true); }}>
                   <Plus className="mr-1.5 h-4 w-4" /> New Proposal
                 </Button>
               )}
@@ -391,7 +403,7 @@ export default function Proposals() {
         </div>
 
         {/* Table */}
-        <Card className="bg-card border border-border">
+        <Card className="overflow-hidden border border-border bg-card">
           <CardContent className="p-0">
             {filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
@@ -409,28 +421,31 @@ export default function Proposals() {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
-                        <TableHead className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        <TableHead className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                           Proposal #
                         </TableHead>
-                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
-                          Title
-                        </TableHead>
-                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                           Customer
                         </TableHead>
-                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:table-cell sm:px-4 sm:py-3">
-                          Assigned To
-                        </TableHead>
-                        <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
                           Grand Total
                         </TableHead>
-                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                          Status
-                        </TableHead>
-                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
                           Valid Until
                         </TableHead>
-                        <TableHead className="w-[200px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
+                          Status
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
+                          Assigned To
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
+                          Created
+                        </TableHead>
+                        <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground xl:table-cell md:px-4 md:py-3">
+                          Title
+                        </TableHead>
+                        <TableHead className="w-[200px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
                           Actions
                         </TableHead>
                       </TableRow>
@@ -438,7 +453,7 @@ export default function Proposals() {
                     <TableBody className="divide-y divide-border">
                       {pageItems.map((p) => (
                         <TableRow key={p.id} className="transition-colors hover:bg-muted/50">
-                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                          <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                             <button
                               type="button"
                               className="text-left font-mono text-sm text-primary hover:underline"
@@ -447,8 +462,7 @@ export default function Proposals() {
                               {p.proposalNumber}
                             </button>
                           </TableCell>
-                          <TableCell className="hidden px-3 py-3 text-sm font-medium md:table-cell sm:px-4 sm:py-3.5">{p.title}</TableCell>
-                          <TableCell className="px-3 py-3 text-sm text-muted-foreground sm:px-4 sm:py-3.5">
+                          <TableCell className="px-3 py-3 text-sm text-muted-foreground md:px-4 md:py-3.5">
                               <button
                                 type="button"
                                 className="text-left text-primary hover:underline"
@@ -457,17 +471,21 @@ export default function Proposals() {
                                 {p.customerName}
                               </button>
                             </TableCell>
-                          <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:table-cell sm:px-4 sm:py-3.5">{p.assignedToName}</TableCell>
-                          <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
-                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                          <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell md:px-4 md:py-3.5">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
+                          <TableCell className={`hidden px-3 py-3 text-xs md:table-cell md:px-4 md:py-3.5 ${isExpired(p) ? "font-medium text-red-600" : "text-muted-foreground"}`}>
+                            {p.validUntil}
+                          </TableCell>
+                          <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                             <Badge variant="secondary" className={STATUS_BADGE[p.status]}>
                               {p.status.replace("_", " ")}
                             </Badge>
                           </TableCell>
-                          <TableCell className={`hidden px-3 py-3 text-xs md:table-cell sm:px-4 sm:py-3.5 ${isExpired(p) ? "font-medium text-red-600" : "text-muted-foreground"}`}>
-                            {p.validUntil}
+                          <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">{p.assignedToName}</TableCell>
+                          <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">
+                            {formatProposalDate(p.createdAt)}
                           </TableCell>
-                          <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                          <TableCell className="hidden px-3 py-3 text-sm font-medium xl:table-cell md:px-4 md:py-3.5">{p.title}</TableCell>
+                          <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                             <div className="flex items-center gap-1 flex-wrap">
                               {canUpdate && (
                                 <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setDetailId(p.id)}>
@@ -514,15 +532,13 @@ export default function Proposals() {
                     </TableBody>
                   </Table>
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs">
-                    <span className="text-muted-foreground">
-                      Page {currentPage} of {totalPages} ({filtered.length} proposals)
-                    </span>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" disabled={currentPage === 1} onClick={() => setPage((x) => Math.max(1, x - 1))}>Previous</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" disabled={currentPage === totalPages} onClick={() => setPage((x) => Math.min(totalPages, x + 1))}>Next</Button>
-                    </div>
-                  </div>
+                  <DataTablePagination
+                    page={currentPage}
+                    totalPages={totalPages}
+                    total={filtered.length}
+                    perPage={PAGE_SIZE}
+                    onPageChange={setPage}
+                  />
                 )}
               </>
             )}

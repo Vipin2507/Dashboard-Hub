@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -212,11 +213,11 @@ export default function CustomerProfile() {
         title={customer.companyName}
         subtitle={customer.customerNumber}
       />
-      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-col gap-4 sm:gap-6 lg:flex-row">
-        {/* Left Sidebar — stacks above tabs on mobile */}
-        <aside className="w-full shrink-0 space-y-5 lg:sticky lg:top-4 lg:w-[280px] lg:self-start">
-          <Card className="border border-gray-200 shadow-none dark:border-gray-800">
-            <CardContent className="p-4 sm:p-5">
+      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-col gap-4 lg:flex-row lg:gap-6">
+        {/* Sidebar: full width mobile, fixed 280px desktop */}
+        <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:shrink-0 lg:self-start">
+          <Card className="border border-gray-200 p-4 shadow-none dark:border-gray-800 sm:p-5">
+            <CardContent className="space-y-0 p-0">
               {/* Header — compact row on mobile */}
               <div className="lg:space-y-2">
                 <div className="flex items-start gap-3 lg:block">
@@ -316,8 +317,8 @@ export default function CustomerProfile() {
 
               <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
 
-              {/* Stats — 2-col grid on mobile, list on lg */}
-              <div className="grid grid-cols-2 gap-2 rounded-lg border border-gray-100 p-3 dark:border-gray-800 lg:grid-cols-1 lg:space-y-3 lg:p-4">
+              {/* Stats — 2 col grid mobile, block list desktop */}
+              <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1 lg:gap-0 lg:space-y-3">
                 {[
                   {
                     label: "Total Revenue",
@@ -345,9 +346,12 @@ export default function CustomerProfile() {
                     valueClass: openTicketsCount > 0 ? "text-orange-600 font-medium" : "font-medium",
                   },
                 ].map(({ label, value, valueClass }) => (
-                  <div key={label} className="flex flex-col gap-0.5 rounded-md bg-muted/30 p-2 lg:flex-row lg:items-center lg:justify-between lg:bg-transparent lg:p-0">
+                  <div
+                    key={label}
+                    className="flex items-center justify-between rounded-lg border border-gray-100 p-2.5 dark:border-gray-800 lg:rounded-none lg:border-0 lg:p-0 lg:py-0"
+                  >
                     <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
-                    <span className={cn("text-sm text-gray-900 dark:text-gray-100", valueClass)}>
+                    <span className={cn("text-sm font-medium text-gray-900 dark:text-gray-100", valueClass)}>
                       {value}
                     </span>
                   </div>
@@ -407,11 +411,11 @@ export default function CustomerProfile() {
           </Card>
         </aside>
 
-        {/* Main content - Tabs */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* Main: full width, tabs + content */}
+        <div className="min-w-0 flex-1">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full flex-col">
-            <div className="mb-4 border-b border-gray-200 dark:border-gray-800 sm:mb-6">
-              <div className="scrollbar-none -mb-px flex gap-0 overflow-x-auto">
+            <div className="mb-4 border-b border-gray-200 dark:border-gray-800">
+              <div className="scrollbar-none -mb-px flex overflow-x-auto">
                 {[
                   { key: "overview", label: "Overview" },
                   { key: "transactions", label: "Transaction History" },
@@ -425,7 +429,7 @@ export default function CustomerProfile() {
                     type="button"
                     onClick={() => setActiveTab(tab.key)}
                     className={cn(
-                      "flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors sm:px-4 sm:py-3 sm:text-sm",
+                      "flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors sm:px-4",
                       activeTab === tab.key
                         ? "border-blue-600 text-blue-600"
                         : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
@@ -1138,7 +1142,9 @@ export default function CustomerProfile() {
       <Dialog open={addContactOpen} onOpenChange={setAddContactOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Contact</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Add contact form (Name, Email, Phone, Set as Primary).</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddContactOpen(false)}>Cancel</Button>
             <Button onClick={() => setAddContactOpen(false)}>Save</Button>
@@ -1148,7 +1154,9 @@ export default function CustomerProfile() {
       <Dialog open={addTicketOpen} onOpenChange={setAddTicketOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>New Ticket</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Subject, Description, Priority, Assigned To.</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddTicketOpen(false)}>Cancel</Button>
             <Button onClick={() => setAddTicketOpen(false)}>Create</Button>
@@ -1158,7 +1166,9 @@ export default function CustomerProfile() {
       <Dialog open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Deal, Amount, Paid On, Mode, Reference, Notes.</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRecordPaymentOpen(false)}>Cancel</Button>
             <Button onClick={() => setRecordPaymentOpen(false)}>Save</Button>
@@ -1168,7 +1178,9 @@ export default function CustomerProfile() {
       <Dialog open={createInvoiceOpen} onOpenChange={setCreateInvoiceOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Create Invoice</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Deal, Amount, Tax, Due Date.</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateInvoiceOpen(false)}>Cancel</Button>
             <Button onClick={() => setCreateInvoiceOpen(false)}>Create</Button>
@@ -1178,7 +1190,9 @@ export default function CustomerProfile() {
       <Dialog open={addProductLineOpen} onOpenChange={setAddProductLineOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Product Line</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Select from Inventory, Qty, Unit Price, Dates, Usage, Status.</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddProductLineOpen(false)}>Cancel</Button>
             <Button onClick={() => setAddProductLineOpen(false)}>Add</Button>
@@ -1188,7 +1202,9 @@ export default function CustomerProfile() {
       <Dialog open={logActivityOpen} onOpenChange={setLogActivityOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Log Activity</DialogTitle></DialogHeader>
+          <DialogBody>
           <p className="text-sm text-muted-foreground">Action, Description, Entity Type.</p>
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLogActivityOpen(false)}>Cancel</Button>
             <Button

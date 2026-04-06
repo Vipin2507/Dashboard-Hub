@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 
 export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
   /**
-   * Mobile horizontal scroll + edge bleed (`-mx-4` in padded layouts) and `min-w-[640px]` on `<table>`.
+   * Outer rounded border + inner horizontal scroll + `min-w-[600px]` on `<table>`.
+   * Edge bleed (`-mx-4`) on small screens in padded layouts.
    * Set `false` inside dialogs and compact nested tables.
    */
   responsiveShell?: boolean;
@@ -15,16 +16,21 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
     <div
       className={cn(
         "relative w-full",
-        responsiveShell
-          ? "overflow-x-auto -mx-4 border border-border border-x-0 sm:mx-0 sm:rounded-md sm:border-x"
-          : "overflow-x-auto",
+        responsiveShell &&
+          "overflow-hidden rounded-lg border border-border -mx-4 border-x-0 sm:mx-0 sm:border-x",
       )}
     >
-      <table
-        ref={ref}
-        className={cn("w-full caption-bottom text-sm", responsiveShell && "min-w-[640px]", className)}
-        {...props}
-      />
+      <div className="overflow-x-auto">
+        <table
+          ref={ref}
+          className={cn(
+            "w-full caption-bottom text-sm",
+            responsiveShell && "min-w-[600px]",
+            className,
+          )}
+          {...props}
+        />
+      </div>
     </div>
   ),
 );

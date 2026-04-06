@@ -21,6 +21,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { sheetContentDetail } from "@/lib/dialogLayout";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectTrigger,
@@ -30,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { InventoryItemDialog } from "@/components/InventoryItemDialog";
+import { DataTablePagination } from "@/components/DataTablePagination";
 import type { InventoryItem, ItemType } from "@/types";
 import { apiUrl } from "@/lib/api";
 import {
@@ -42,6 +45,8 @@ import {
   PackageOpen,
   LayoutGrid,
   List,
+  Search,
+  Eye,
 } from "lucide-react";
 
 const ITEM_TYPE_BADGE: Record<ItemType, string> = {
@@ -248,10 +253,11 @@ export default function Inventory() {
         subtitle="Manage products, services & pricing"
       />
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="mb-4 space-y-3 sm:mb-5 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
+          <div className="relative w-full sm:max-w-xs sm:flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="h-9 w-48 text-sm"
+              className="h-9 w-full pl-9 text-sm"
               placeholder="Search name, SKU, category..."
               value={search}
               onChange={(e) => {
@@ -259,6 +265,8 @@ export default function Inventory() {
                 setPage(1);
               }}
             />
+          </div>
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2">
             <Select
               value={itemTypeFilter}
               onValueChange={(v) => {
@@ -266,7 +274,7 @@ export default function Inventory() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 w-[140px] text-xs">
+              <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-36">
                 <SelectValue placeholder="Type" />
               </SelectTrigger>
               <SelectContent>
@@ -284,7 +292,7 @@ export default function Inventory() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="h-9 w-[120px] text-xs">
+              <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-32">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -294,7 +302,7 @@ export default function Inventory() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
             <div className="flex gap-0.5 rounded-md border border-border p-0.5">
               <Button
                 type="button"
@@ -318,20 +326,20 @@ export default function Inventory() {
               </Button>
             </div>
             {canExport && (
-              <Button variant="outline" size="sm" className="h-9 text-xs" onClick={exportCsv}>
-                <FileDown className="w-4 h-4 mr-1.5" />
+              <Button variant="outline" size="sm" className="h-9 flex-1 text-xs sm:flex-none" onClick={exportCsv}>
+                <FileDown className="mr-1.5 h-4 w-4" />
                 Export
               </Button>
             )}
             {canCreate && (
-              <Button size="sm" className="h-9 text-xs" onClick={() => { setEditingItem(null); setAddOpen(true); }}>
+              <Button size="sm" className="h-9 flex-1 text-xs sm:flex-none" onClick={() => { setEditingItem(null); setAddOpen(true); }}>
                 + Add Item
               </Button>
             )}
           </div>
         </div>
 
-        <Card className="bg-card border border-border">
+        <Card className="overflow-hidden border border-border bg-card">
           <CardContent className="p-0">
             {inventoryQuery.isLoading ? (
               <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -369,45 +377,28 @@ export default function Inventory() {
                   ))}
                 </div>
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs">
-                    <span className="text-muted-foreground">
-                      Page {currentPage} of {totalPages} ({filtered.length} items)
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={currentPage === 1}
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={currentPage === totalPages}
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  </div>
+                  <DataTablePagination
+                    page={currentPage}
+                    totalPages={totalPages}
+                    total={filtered.length}
+                    perPage={PAGE_SIZE}
+                    onPageChange={setPage}
+                  />
                 )}
               </>
             ) : (
               <>
-                <Table>
+                <Table responsiveShell={false} className="min-w-[600px]">
                   <TableHeader>
                     <TableRow className="bg-muted/40">
                       <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="hidden text-xs sm:table-cell">SKU</TableHead>
+                      <TableHead className="hidden text-xs md:table-cell">SKU</TableHead>
                       <TableHead className="hidden text-xs md:table-cell">Type</TableHead>
+                      <TableHead className="hidden text-xs md:table-cell">GST %</TableHead>
+                      <TableHead className="text-right text-xs">Price</TableHead>
                       <TableHead className="hidden text-xs lg:table-cell">Category</TableHead>
-                      <TableHead className="text-right text-xs">Selling Price</TableHead>
-                      <TableHead className="hidden text-xs sm:table-cell">GST %</TableHead>
-                      <TableHead className="text-xs">Status</TableHead>
+                      <TableHead className="hidden text-right text-xs lg:table-cell">Cost Price</TableHead>
+                      <TableHead className="hidden text-xs md:table-cell">Status</TableHead>
                       <TableHead className="w-[100px] text-xs">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -430,7 +421,7 @@ export default function Inventory() {
                             {item.name}
                           </button>
                         </TableCell>
-                        <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
+                        <TableCell className="hidden font-mono text-xs text-muted-foreground md:table-cell">
                           {item.sku}
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
@@ -441,14 +432,17 @@ export default function Inventory() {
                             {item.itemType}
                           </Badge>
                         </TableCell>
-                        <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
-                          {item.category}
-                        </TableCell>
+                        <TableCell className="hidden text-xs md:table-cell">{item.taxRate}%</TableCell>
                         <TableCell className="text-right font-mono text-sm">
                           {formatINR(item.sellingPrice)}
                         </TableCell>
-                        <TableCell className="hidden text-xs sm:table-cell">{item.taxRate}%</TableCell>
-                        <TableCell>
+                        <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
+                          {item.category}
+                        </TableCell>
+                        <TableCell className="hidden text-right font-mono text-sm lg:table-cell">
+                          {formatINR(item.costPrice)}
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <Badge
                             variant="secondary"
                             className={item.isActive ? "bg-green-500/15 text-green-700" : "bg-muted text-muted-foreground"}
@@ -499,31 +493,13 @@ export default function Inventory() {
                   </TableBody>
                 </Table>
                 {totalPages > 1 && (
-                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs">
-                    <span className="text-muted-foreground">
-                      Page {currentPage} of {totalPages} ({filtered.length} items)
-                    </span>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={currentPage === 1}
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={currentPage === totalPages}
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  </div>
+                  <DataTablePagination
+                    page={currentPage}
+                    totalPages={totalPages}
+                    total={filtered.length}
+                    perPage={PAGE_SIZE}
+                    onPageChange={setPage}
+                  />
                 )}
               </>
             )}
@@ -547,7 +523,7 @@ export default function Inventory() {
       />
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="overflow-y-auto p-6 pt-14 sm:max-w-md">
+        <SheetContent className={cn(sheetContentDetail)}>
           <SheetHeader>
             <SheetTitle>Inventory item</SheetTitle>
           </SheetHeader>
@@ -600,7 +576,7 @@ function InventoryItemCard({
     <Card
       role="button"
       tabIndex={0}
-      className="cursor-pointer border border-border shadow-none transition-colors hover:bg-muted/30"
+      className="cursor-pointer border border-gray-200 shadow-none transition-shadow hover:bg-muted/30 hover:shadow-sm dark:border-gray-800"
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
@@ -609,35 +585,50 @@ function InventoryItemCard({
         }
       }}
     >
-      <CardContent className="p-4">
+      <CardContent className="p-4 sm:p-5">
         <div className="mb-3 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-medium">{item.name}</h3>
-            <p className="font-mono text-xs text-muted-foreground">{item.sku}</p>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</h3>
+            <p className="mt-0.5 font-mono text-xs text-gray-400">{item.sku}</p>
           </div>
-          <Badge variant="secondary" className={ITEM_TYPE_BADGE[item.itemType]}>
+          <Badge variant="secondary" className={cn("flex-shrink-0", ITEM_TYPE_BADGE[item.itemType])}>
             {item.itemType}
           </Badge>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-lg font-bold tabular-nums text-foreground">{formatINR(item.sellingPrice)}</span>
-          <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
-            {canUpdate && (
-              <>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onEdit}>
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={onToggleActive}>
-                  {item.isActive ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                </Button>
-              </>
-            )}
-            {canDelete && (
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-destructive" onClick={onDelete}>
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-xs text-gray-500 dark:text-gray-400">Selling price</span>
+            <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">
+              {formatINR(item.sellingPrice)}
+            </span>
           </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {item.category} · GST {item.taxRate}%
+          </p>
+        </div>
+        <div
+          className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-gray-800"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {canUpdate && (
+            <Button variant="outline" size="sm" className="h-8 flex-1 text-xs" onClick={onEdit}>
+              <Pencil className="mr-1.5 h-3.5 w-3.5" />
+              Edit
+            </Button>
+          )}
+          <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0" onClick={onOpen} title="View">
+            <Eye className="h-3.5 w-3.5" />
+          </Button>
+          {canUpdate && (
+            <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0" onClick={onToggleActive} title="Toggle active">
+              {item.isActive ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+            </Button>
+          )}
+          {canDelete && (
+            <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0 text-destructive" onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

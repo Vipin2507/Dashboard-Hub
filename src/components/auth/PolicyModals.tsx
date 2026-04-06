@@ -1,10 +1,12 @@
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface PolicyModalProps {
@@ -73,15 +75,20 @@ export function PolicyModals({ isOpen, onClose, type }: PolicyModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[600px] bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 p-0 overflow-hidden rounded-2xl">
-        <DialogHeader className="p-8 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/50">
+      <DialogContent
+        className={cn(
+          "overflow-hidden border-zinc-100 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 sm:max-w-[600px] sm:rounded-2xl",
+        )}
+      >
+        <DialogHeader className="border-zinc-100 bg-zinc-50/50 px-6 py-6 dark:border-zinc-800 dark:bg-zinc-950/50 sm:px-8 sm:py-8">
           <DialogTitle className="text-2xl font-bold tracking-tight">{activeContent.title}</DialogTitle>
           <DialogDescription className="text-zinc-500 dark:text-zinc-400">
             {activeContent.description}
           </DialogDescription>
         </DialogHeader>
-        
-        <ScrollArea className="max-h-[60vh] p-8">
+
+        <DialogBody className="p-0">
+        <ScrollArea className="max-h-[60vh] p-6 sm:p-8">
           <div className="space-y-8">
             {activeContent.sections.map((section, index) => (
               <div key={index} className="space-y-3">
@@ -101,6 +108,7 @@ export function PolicyModals({ isOpen, onClose, type }: PolicyModalProps) {
             </p>
           </div>
         </ScrollArea>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   );

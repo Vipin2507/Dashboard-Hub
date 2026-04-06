@@ -10,7 +10,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   DollarSign,
   Users,
@@ -42,6 +50,7 @@ import { formatDistanceToNow } from 'date-fns';
 import type { ProposalStatus } from '@/types';
 import { normalizeDealStatus } from '@/lib/dealStatus';
 import { cn } from '@/lib/utils';
+import { useSmUp } from '@/hooks/useSmUp';
 
 const BUILDESK_BLUE = '#0072BC';
 
@@ -144,6 +153,10 @@ export default function DashboardPage() {
     customersQuery,
   } = useDashboardData();
   const navigate = useNavigate();
+  const smUp = useSmUp();
+  const revenueBarSize = smUp ? 32 : 20;
+  const axisTickX = smUp ? 12 : 10;
+  const yAxisWidth = smUp ? 56 : 40;
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [ownerFilter, setOwnerFilter] = useState('all');
@@ -484,8 +497,8 @@ export default function DashboardPage() {
             <Loader2 className="h-3 w-3 animate-spin" /> Loading live metrics from API…
           </p>
         )}
-        {/* KPI Row 1 — Top 4 large cards */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {/* KPI Row 1 — 2 col mobile → 4 col desktop */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
           {kpiRow1.map((s) => (
             <DashboardKpiCard
               key={s.label}
@@ -506,8 +519,8 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* KPI Row 2 — Secondary 4 cards */}
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {/* KPI Row 2 — same */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
           {kpiRow2.map((s) => (
             <DashboardKpiCard
               key={s.label}
@@ -522,9 +535,9 @@ export default function DashboardPage() {
           ))}
         </div>
 
-        {/* Charts + Activity — stack to xl, then 2/3 + 1/3 */}
-        <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-3">
-          <div className="space-y-4 sm:space-y-6 xl:col-span-2">
+        {/* Charts row — stack → side by side (2/3 + 1/3 at xl) */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
+          <div className="xl:col-span-2 space-y-4 lg:space-y-6">
             <Card className="border border-border bg-card shadow-none">
               <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
                 <CardTitle className="text-sm font-semibold sm:text-base">Revenue Overview</CardTitle>
@@ -532,16 +545,23 @@ export default function DashboardPage() {
               <CardContent className="px-2 pb-4 sm:px-4">
                 <div className="h-48 sm:h-64 lg:h-72">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyRevenueData} margin={{ top: 4, right: 8, bottom: 0, left: -16 }}>
+                    <BarChart data={monthlyRevenueData} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: axisTickX }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
                       <YAxis
                         tick={{ fontSize: 11 }}
-                        width={48}
+                        axisLine={false}
+                        tickLine={false}
+                        width={yAxisWidth}
                         tickFormatter={(v) => `₹${v}L`}
                       />
                       <Tooltip
-                        contentStyle={{ fontSize: 12 }}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
                         formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}
                       />
@@ -549,7 +569,8 @@ export default function DashboardPage() {
                         dataKey="revenueLakhs"
                         fill={BUILDESK_BLUE}
                         name="Revenue"
-                        radius={[3, 3, 0, 0]}
+                        barSize={revenueBarSize}
+                        radius={[4, 4, 0, 0]}
                         cursor="pointer"
                         onClick={(data: { full: string; revenueLakhs: number }) =>
                           openDetail(
@@ -570,20 +591,28 @@ export default function DashboardPage() {
                 <CardTitle className="text-sm font-semibold sm:text-base">Proposal Pipeline</CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-4 sm:px-4">
-                <div className="h-48 sm:h-56 lg:h-64">
+                <div className="h-48 sm:h-64 lg:h-72">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       layout="vertical"
                       data={pipelineData}
-                      margin={{ top: 4, right: 8, left: 52, bottom: 4 }}
+                      margin={{ top: 4, right: 8, left: smUp ? 56 : 48, bottom: 4 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis type="number" tick={{ fontSize: 10 }} />
-                      <YAxis type="category" dataKey="status" width={50} tick={{ fontSize: 10 }} />
-                      <Tooltip contentStyle={{ fontSize: 12 }} />
+                      <XAxis type="number" tick={{ fontSize: smUp ? 11 : 10 }} axisLine={false} tickLine={false} />
+                      <YAxis
+                        type="category"
+                        dataKey="status"
+                        width={smUp ? 54 : 46}
+                        tick={{ fontSize: smUp ? 11 : 10 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                       <Bar
                         dataKey="count"
                         name="Count"
+                        barSize={smUp ? 28 : 20}
                         radius={[0, 4, 4, 0]}
                         onClick={(data: { statusKey: string; count: number }) => data && handlePipelineBarClick(data.statusKey, data.count)}
                         cursor="pointer"
@@ -602,7 +631,7 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          <Card className="flex h-full min-h-[280px] flex-col bg-card border border-border xl:col-span-1">
+          <Card className="xl:col-span-1 flex h-full min-h-[280px] flex-col border border-border bg-card">
             <CardContent className="p-0 flex flex-col h-full">
               <div className="px-5 py-4 border-b border-border flex items-center justify-between">
                 <h3 className="font-semibold text-foreground">Recent Activity</h3>
@@ -634,23 +663,23 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Customer status + Recent proposals — stack to xl, 1/3 + 2/3 */}
-        <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-3">
+        {/* Bottom row — Customer status + Recent proposals */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
           <Card className="border border-border bg-card shadow-none xl:col-span-1">
             <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
               <CardTitle className="text-sm font-semibold sm:text-base">Customer Status</CardTitle>
             </CardHeader>
             <CardContent className="px-2 pb-4 sm:px-4">
-              <div className="relative h-44 sm:h-56">
+              <div className="relative h-44 sm:h-52 lg:h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={customerStatusData}
                       cx="50%"
-                      cy="50%"
-                      innerRadius={48}
-                      outerRadius={68}
-                      paddingAngle={2}
+                      cy="45%"
+                      innerRadius="45%"
+                      outerRadius="65%"
+                      paddingAngle={3}
                       dataKey="value"
                       nameKey="name"
                       label={({ name, value }) => (value > 0 ? `${name}: ${value}` : '')}
@@ -668,18 +697,19 @@ export default function DashboardPage() {
                         <Cell key={index} fill={donutColors[index % donutColors.length]} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ fontSize: 12 }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="pointer-events-none absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2">
                   <span className="text-xl font-bold text-foreground">{filteredCustomers.length}</span>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border border-border bg-card xl:col-span-2">
+          <div className="xl:col-span-2">
+          <Card className="border border-border bg-card">
             <CardContent className="p-0">
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
                 <h3 className="font-semibold text-foreground">Recent Proposals</h3>
@@ -741,6 +771,7 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+          </div>
         </div>
       </div>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
@@ -749,6 +780,7 @@ export default function DashboardPage() {
             <DialogTitle>{detailTitle}</DialogTitle>
             <DialogDescription>Filtered analytics preview based on current dashboard filters.</DialogDescription>
           </DialogHeader>
+          <DialogBody>
           {detailRows.length === 0 ? (
             <p className="text-sm text-muted-foreground">No records found for this selection.</p>
           ) : (
@@ -769,6 +801,7 @@ export default function DashboardPage() {
               </TableBody>
             </Table>
           )}
+          </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDetailOpen(false)}>Close</Button>
             <Button onClick={() => { setDetailOpen(false); if (detailLink) navigate(detailLink); }}>Open Full Page</Button>

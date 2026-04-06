@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -63,20 +64,22 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
         <DialogHeader>
           <DialogTitle>Create deal from proposal</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Proposal <strong>{proposal.proposalNumber}</strong> — {proposal.customerName}
           </p>
-          <div className="space-y-2">
-            <Label>Deal title</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Deal - Customer Name" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Deal title</Label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Deal - Customer Name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Value (₹)</Label>
+              <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Proposal total: {formatINR(proposal.finalQuoteValue ?? proposal.grandTotal)}</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Value (₹)</Label>
-            <Input type="number" value={value} onChange={(e) => setValue(e.target.value)} />
-            <p className="text-xs text-muted-foreground">Proposal total: {formatINR(proposal.finalQuoteValue ?? proposal.grandTotal)}</p>
-          </div>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={createDeal.isPending}>
             Cancel
