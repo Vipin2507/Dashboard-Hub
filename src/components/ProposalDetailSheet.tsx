@@ -17,7 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useNavigate } from "react-router-dom";
-import { Pencil, Send, Check, X, FileText, FileDown, Loader2 } from "lucide-react";
+import { Pencil, Send, Check, X, FileText, FileDown, Loader2, Handshake, Trophy, Snowflake, ExternalLink } from "lucide-react";
 import type { Proposal, ProposalStatus } from "@/types";
 import { formatINR } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
@@ -28,6 +28,9 @@ const STATUS_BADGE: Record<ProposalStatus, string> = {
   sent: "bg-blue-500/15 text-blue-700",
   approval_pending: "bg-amber-500/15 text-amber-700",
   approved: "bg-green-500/15 text-green-700",
+  negotiation: "bg-indigo-500/15 text-indigo-700",
+  won: "bg-emerald-500/15 text-emerald-700",
+  cold: "bg-slate-500/15 text-slate-700",
   rejected: "bg-red-500/15 text-red-700",
   deal_created: "bg-purple-500/15 text-purple-700",
 };
@@ -41,6 +44,9 @@ interface ProposalDetailSheetProps {
   onReject: () => void;
   onSend: () => void;
   onCreateDeal: () => void;
+  onMarkNegotiation: () => void;
+  onMarkWon: () => void;
+  onMarkCold: () => void;
   onDownloadPdf: () => void;
   isPdfLoading?: boolean;
 }
@@ -54,6 +60,9 @@ export function ProposalDetailSheet({
   onReject,
   onSend,
   onCreateDeal,
+  onMarkNegotiation,
+  onMarkWon,
+  onMarkCold,
   onDownloadPdf,
   isPdfLoading = false,
 }: ProposalDetailSheetProps) {
@@ -72,7 +81,10 @@ export function ProposalDetailSheet({
   const canApprove = can(me.role, "proposals", "approve");
   const canReject = can(me.role, "proposals", "reject");
   const canSend = can(me.role, "proposals", "send");
-  const canEdit = (proposal.status === "draft" || proposal.status === "rejected") && (me.role === "super_admin" || proposal.assignedTo === me.id);
+  const canEdit =
+    (proposal.status === "draft" || proposal.status === "rejected" || proposal.status === "negotiation") &&
+    (me.role === "super_admin" || proposal.assignedTo === me.id);
+  const canOutcome = canUpdate && (me.role === "super_admin" || proposal.assignedTo === me.id) && !proposal.dealId;
 
   const activityLog: { at: string; text: string }[] = [];
   if (proposal.createdAt) activityLog.push({ at: proposal.createdAt, text: `Created by ${proposal.assignedToName}` });
@@ -80,6 +92,8 @@ export function ProposalDetailSheet({
   if (proposal.sentAt) activityLog.push({ at: proposal.sentAt, text: "Sent to customer" });
   if (proposal.dealId) activityLog.push({ at: proposal.updatedAt, text: `Deal created (${proposal.dealId})` });
   activityLog.sort((a, b) => b.at.localeCompare(a.at));
+
+  const dealValueInclGst = proposal.finalQuoteValue ?? proposal.grandTotal;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -96,7 +110,7 @@ export function ProposalDetailSheet({
                   <Pencil className="w-4 h-4" />
                 </Button>
               )}
-              {canSend && (proposal.status === "approved" || proposal.status === "draft") && (
+              {canSend && (proposal.status === "approved" || proposal.status === "draft" || proposal.status === "negotiation") && (
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onSend} title="Send">
                   <Send className="w-4 h-4" />
                 </Button>
@@ -116,6 +130,35 @@ export function ProposalDetailSheet({
                   <FileText className="w-4 h-4" />
                 </Button>
               )}
+              {proposal.dealId && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    onOpenChange(false);
+                    navigate(`/deals?proposalId=${proposal.id}`);
+                  }}
+                  title="View Deal"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </Button>
+              )}
+              {canOutcome && proposal.status !== "negotiation" && (
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onMarkNegotiation} title="Mark Negotiation">
+                  <Handshake className="w-4 h-4" />
+                </Button>
+              )}
+              {canOutcome && proposal.status !== "won" && (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" onClick={onMarkWon} title="Mark Won">
+                  <Trophy className="w-4 h-4" />
+                </Button>
+              )}
+              {canOutcome && proposal.status !== "cold" && (
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600" onClick={onMarkCold} title="Mark Cold">
+                  <Snowflake className="w-4 h-4" />
+                </Button>
+              )}
             </div>
           </SheetTitle>
         </SheetHeader>
@@ -130,14 +173,16 @@ export function ProposalDetailSheet({
 
           <TabsContent value="overview" className="space-y-4 mt-4">
             <div className="flex flex-wrap gap-2">
-              <Badge className={STATUS_BADGE[proposal.status]}>{proposal.status.replace("_", " ")}</Badge>
+              <Badge className={STATUS_BADGE[proposal.status]}>
+                <span className="whitespace-nowrap">{proposal.status.replace(/_/g, " ")}</span>
+              </Badge>
               <span className="text-xs text-muted-foreground">Created {new Date(proposal.createdAt).toLocaleDateString()}</span>
               <span className="text-xs text-muted-foreground">Valid until {proposal.validUntil}</span>
             </div>
             <div className="space-y-2 text-sm">
-              <Row label="Title" value={proposal.title} />
+              <Row label="Lead Name / Proposal Title" value={proposal.title} />
               <div className="flex justify-between py-1 border-b border-border/50">
-                <span className="text-muted-foreground">{ "Customer" }</span>
+                <span className="text-muted-foreground">Company Name</span>
                 <button
                   type="button"
                   className="text-primary hover:underline text-right"
@@ -146,11 +191,14 @@ export function ProposalDetailSheet({
                   {proposal.customerName}
                 </button>
               </div>
-              <Row label="Assigned to" value={proposal.assignedToName} />
+              <Row label="Deal Owner" value={proposal.assignedToName} />
               <Row label="Region" value={region?.name} />
               <Row label="Team" value={team?.name} />
+              <Row label="Deal Value (Excl. GST)" value={formatINR(proposal.subtotal)} />
+              <Row label="GST Amount" value={formatINR(proposal.totalTax)} />
+              <Row label="Deal Value (Incl. GST)" value={formatINR(dealValueInclGst)} />
               {proposal.notes && <Row label="Internal notes" value={proposal.notes} />}
-              {proposal.customerNotes && <Row label="Customer notes" value={proposal.customerNotes} />}
+              {proposal.customerNotes && <Row label="Remark" value={proposal.customerNotes} />}
               {proposal.rejectionReason && <Row label="Rejection reason" value={proposal.rejectionReason} />}
             </div>
           </TabsContent>

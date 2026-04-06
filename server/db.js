@@ -206,18 +206,59 @@ const seedRegions = [
 ];
 
 const seedTeams = [
-  { id: "t1", name: "Enterprise North", regionId: "r1" },
-  { id: "t2", name: "SMB West", regionId: "r2" },
-  { id: "t3", name: "Support South", regionId: "r3" },
+  { id: "t1", name: "Sales Team", regionId: "r2" },
 ];
 
 const seedUsers = [
-  { id: "u1", name: "Raj Bansal", email: "raj@buildesk.in", password: "admin123", role: "super_admin", teamId: "t1", regionId: "r1", status: "active" },
-  { id: "u2", name: "Ravi Sharma", email: "ravi@buildesk.in", password: "manager123", role: "sales_manager", teamId: "t1", regionId: "r1", status: "active" },
-  { id: "u4", name: "Amit Verma", email: "amit@buildesk.in", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
-  { id: "u5", name: "Sana Khan", email: "sana@buildesk.in", password: "sales123", role: "sales_rep", teamId: "t2", regionId: "r2", status: "active" },
-  { id: "u6", name: "Nidhi Gupta", email: "nidhi@buildesk.in", password: "finance123", role: "finance", teamId: "t2", regionId: "r2", status: "active" },
+  { id: "u1", name: "Mohit Singht (admin)", email: "mohit.singht@buildesk.com", password: "admin123", role: "super_admin", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u2", name: "Vaibhav Agrawal (Sales Executive)", email: "vaibhav.agrawal@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u3", name: "Shubham Behera (Sale Executive)", email: "shubham.behera@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u4", name: "Sharad VS (Sale Executive)", email: "sharad.vs@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u5", name: "Wasim Mondel (Sale Executive)", email: "wasim.mondel@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u6", name: "Dylan David (Sale Executive)", email: "dylan.david@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u7", name: "Bhumit Fluria (Sale Executive)", email: "bhumit.fluria@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
+  { id: "u8", name: "Preeti Rai (Pre-sales agent)", email: "preeti.rai@buildesk.com", password: "sales123", role: "sales_rep", teamId: "t1", regionId: "r2", status: "active" },
 ];
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updatedAt TEXT NOT NULL
+  );
+`);
+
+function getMeta(key) {
+  const row = db.prepare("SELECT value FROM app_meta WHERE key = ?").get(key);
+  return row?.value ?? null;
+}
+
+function setMeta(key, value) {
+  db.prepare(
+    `INSERT INTO app_meta (key, value, updatedAt) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updatedAt=excluded.updatedAt`,
+  ).run(key, value, new Date().toISOString());
+}
+
+function reseedUsersAndTeamsIfNeeded() {
+  const SEED_KEY = "seed_users_teams_v2";
+  if (getMeta(SEED_KEY) === "1") return;
+
+  db.transaction(() => {
+    db.prepare("DELETE FROM users").run();
+    db.prepare("DELETE FROM teams").run();
+
+    const insertTeam = db.prepare("INSERT INTO teams (id, name, regionId) VALUES (@id, @name, @regionId)");
+    seedTeams.forEach((t) => insertTeam.run(t));
+
+    const insertUser = db.prepare(
+      "INSERT INTO users (id, name, email, password, role, teamId, regionId, status) VALUES (@id, @name, @email, @password, @role, @teamId, @regionId, @status)",
+    );
+    seedUsers.forEach((u) => insertUser.run(u));
+  })();
+
+  setMeta(SEED_KEY, "1");
+}
 
 const seedNotifications = [
   { id: "n1", type: "CUSTOMER_EMAIL", to: "accounts@sunrise.dev", subject: "Buildesk Proposal PROP-2026-0007 shared", entityId: "p1", at: "2026-03-10T15:00:00Z" },
@@ -340,5 +381,6 @@ function seedIfEmpty() {
 }
 
 seedIfEmpty();
+reseedUsersAndTeamsIfNeeded();
 
 export { db, SQLITE_PATH };

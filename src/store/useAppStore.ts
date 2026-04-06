@@ -111,6 +111,7 @@ interface AppState {
   updateProposalFinalValue: (id: string, value: number) => void;
 
   switchRole: (role: Role) => void;
+  switchUser: (userId: string) => void;
   resetDemo: () => void;
   pushNotification: (n: Omit<Notification, 'id' | 'at'>) => void;
 
@@ -141,7 +142,7 @@ function makeId(): string {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
-const initialUser = seedUsers.find(u => u.id === 'u4')!;
+const initialUser = seedUsers.find(u => u.id === 'u2')!;
 
 function getInitialState() {
   return {
@@ -637,6 +638,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const proposal = get().proposals.find(p => p.id === id);
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
+    const primaryContact = customer?.contacts?.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
     const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
     const approver = get().users.find(u => u.id === approverId);
     void triggerAutomation('proposal_approved', {
@@ -650,6 +652,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       salesRepId: rep?.id,
       salesRepName: rep?.name,
       salesRepPhone: (rep as { phone?: string } | null)?.phone,
+    });
+    void triggerAutomation('proposal_approved_customer_notify', {
+      proposalId: proposal?.id,
+      proposalNumber: proposal?.proposalNumber,
+      proposalTitle: proposal?.title,
+      grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
+      customerId: customer?.id,
+      customerName: customer?.companyName,
+      customerPhone: primaryContact?.phone,
+      customerEmail: primaryContact?.email,
+      approvedBy: approver?.name ?? '',
+      salesRepId: rep?.id,
+      salesRepName: rep?.name,
+      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      companyName: 'Cravingcode Technologies Pvt. Ltd.',
     });
   },
 
@@ -888,6 +905,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   switchRole: (role) => {
     const user = getUserForRole(role, get().users);
+    set({ me: meFromUser(user) });
+  },
+
+  switchUser: (userId) => {
+    const user = get().users.find((u) => u.id === userId);
+    if (!user) return;
     set({ me: meFromUser(user) });
   },
 

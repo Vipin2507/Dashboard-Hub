@@ -73,7 +73,12 @@ const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', '
 
 function RoleSwitcher() {
   const me = useAppStore((s) => s.me);
+  const users = useAppStore((s) => s.users);
   const switchRole = useAppStore((s) => s.switchRole);
+  const switchUser = useAppStore((s) => s.switchUser);
+
+  const usersForRole = users.filter((u) => u.role === me.role);
+  const showUserPicker = usersForRole.length > 1;
 
   return (
     <>
@@ -92,6 +97,26 @@ function RoleSwitcher() {
           ))}
         </SelectContent>
       </Select>
+
+      {showUserPicker && (
+        <>
+          <label className="mt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Switch User
+          </label>
+          <Select value={me.id} onValueChange={(v) => switchUser(v)}>
+            <SelectTrigger className="h-10 min-h-11 border-border bg-secondary text-sm sm:h-9 sm:min-h-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {usersForRole.map((u) => (
+                <SelectItem key={u.id} value={u.id} className="text-sm">
+                  {u.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </>
+      )}
     </>
   );
 }

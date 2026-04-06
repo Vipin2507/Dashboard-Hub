@@ -62,8 +62,11 @@ export function useApproveProposal() {
     onSuccess: async (proposal) => {
       INVALIDATE.proposal(qc, proposal.id, proposal.customerId);
       const users = useAppStore.getState().users;
+      const customers = useAppStore.getState().customers;
       const approver = users.find((u) => u.id === proposal.approvedBy);
       const rep = users.find((u) => u.id === proposal.assignedTo);
+      const customer = customers.find((c) => c.id === proposal.customerId);
+      const primary = customer?.contacts?.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
       await triggerAutomation("proposal_approved", {
         proposalId: proposal.id,
         proposalNumber: proposal.proposalNumber,
@@ -75,6 +78,21 @@ export function useApproveProposal() {
         salesRepId: rep?.id,
         salesRepName: rep?.name,
         salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+      });
+      await triggerAutomation("proposal_approved_customer_notify", {
+        proposalId: proposal.id,
+        proposalNumber: proposal.proposalNumber,
+        proposalTitle: proposal.title,
+        grandTotal: proposal.finalQuoteValue ?? proposal.grandTotal,
+        customerId: proposal.customerId,
+        customerName: proposal.customerName,
+        customerPhone: primary?.phone,
+        customerEmail: primary?.email,
+        approvedBy: approver?.name ?? me.name,
+        salesRepId: rep?.id,
+        salesRepName: rep?.name,
+        salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+        companyName: "Cravingcode Technologies Pvt. Ltd.",
       });
       useAppStore.getState().pushNotification({
         type: "INTERNAL_EMAIL",

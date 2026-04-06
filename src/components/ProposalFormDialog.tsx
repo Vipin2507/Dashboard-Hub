@@ -331,46 +331,46 @@ export function ProposalFormDialog({
           <DialogBody className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Title *</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Proposal title" />
+                <Label>Lead Name / Proposal Title *</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lead name or proposal title" />
               </div>
               <div className="space-y-2">
-                <Label>Customer *</Label>
+                <Label>Company Name *</Label>
                 <SearchableSelect
                   value={customerId}
                   onValueChange={setCustomerId}
                   options={customerOptions}
-                  placeholder="Select customer"
+                  placeholder="Select company"
                   triggerClassName="h-10 text-sm"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Assigned to *</Label>
+                <Label>Deal Owner *</Label>
                 <SearchableSelect
                   value={assignedTo || me.id}
                   onValueChange={setAssignedTo}
                   options={userOptions}
-                  placeholder="Select user"
+                  placeholder="Select deal owner"
                   triggerClassName="h-10 text-sm"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Valid until *</Label>
+                <Label>Valid Until *</Label>
                 <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
               </div>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
-                <Label>Customer notes (shown on proposal)</Label>
+                <Label>Remark (shown on proposal)</Label>
                 <Textarea value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} rows={2} />
               </div>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
-                <Label>Internal notes</Label>
+                <Label>Internal Notes</Label>
                 <Textarea value={internalNotes} onChange={(e) => setInternalNotes(e.target.value)} rows={2} />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Label>Line items</Label>
+                <Label>Line Items</Label>
                 <Button type="button" variant="outline" size="sm" onClick={() => setInventoryPickerOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Add from inventory
                 </Button>
@@ -384,12 +384,12 @@ export function ProposalFormDialog({
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs">Item / SKU</TableHead>
-                        <TableHead className="text-xs w-20">Qty</TableHead>
+                        <TableHead className="text-xs w-20">No. of License</TableHead>
                         <TableHead className="text-xs w-24">Unit Price</TableHead>
                         <TableHead className="text-xs w-20">Disc %</TableHead>
                         <TableHead className="text-xs w-16">GST %</TableHead>
-                        <TableHead className="text-xs text-right">Line Total</TableHead>
-                        <TableHead className="text-xs text-right">GST</TableHead>
+                        <TableHead className="text-xs text-right">Deal Value (Excl. GST)</TableHead>
+                        <TableHead className="text-xs text-right">GST Amount</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
@@ -455,10 +455,10 @@ export function ProposalFormDialog({
                     </TableBody>
                   </Table>
                   <div className="px-4 py-2 border-t bg-muted/30 text-xs space-y-1">
-                    <div className="flex justify-between"><span>Subtotal</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
+                    <div className="flex justify-between"><span>Deal Value (Excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
                     <div className="flex justify-between"><span>Total Discount</span><span className="font-mono">-{formatINR(totals.totalDiscount)}</span></div>
                     <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
-                    <div className="flex justify-between font-medium"><span>Grand Total</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
+                    <div className="flex justify-between font-medium"><span>Deal Value (Incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
                   </div>
                 </div>
               )}
@@ -467,18 +467,18 @@ export function ProposalFormDialog({
                 <div className="flex items-center gap-4 pt-2">
                   <div className="flex items-center gap-2">
                     <Switch checked={overrideFinal} onCheckedChange={setOverrideFinal} />
-                    <Label>Override final quote value</Label>
+                    <Label>Override Deal Value (Incl. GST)</Label>
                   </div>
                   {overrideFinal && (
                     <div className="flex items-center gap-2">
                       <Input type="number" className="w-32" value={finalQuoteValue} onChange={(e) => setFinalQuoteValue(e.target.value)} placeholder={String(totals.grandTotal)} />
-                      <span className="text-xs text-muted-foreground">₹ (default: Grand Total)</span>
+                      <span className="text-xs text-muted-foreground">₹ (default: Deal Value incl. GST)</span>
                     </div>
                   )}
                 </div>
               )}
               {canOverride && overrideFinal && (
-                <p className="text-xs text-amber-600">This overrides the computed total on the proposal.</p>
+                <p className="text-xs text-amber-600">This overrides the computed deal value (including GST).</p>
               )}
             </div>
           </DialogBody>

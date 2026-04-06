@@ -645,30 +645,6 @@ export default function DealsPage() {
           })}
         </div>
 
-        {/* Filter chips */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs font-medium text-muted-foreground mr-1">Status:</span>
-          <Button
-            variant={statusFilter === "all" ? "default" : "outline"}
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setStatusFilterAndUrl("all")}
-          >
-            All
-          </Button>
-          {DEAL_STATUSES.map((st) => (
-            <Button
-              key={st}
-              variant={statusFilter === st ? "default" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setStatusFilterAndUrl(st)}
-            >
-              {st}
-            </Button>
-          ))}
-        </div>
-
         <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           <Card className="bg-card border border-border">
             <CardContent className="p-4">

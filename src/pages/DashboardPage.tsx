@@ -233,7 +233,7 @@ export default function DashboardPage() {
   const activeProposalsCount = useMemo(
     () =>
       filteredProposals.filter(
-        (p) => p.status === "sent" || p.status === "approval_pending" || p.status === "approved",
+        (p) => p.status === "sent" || p.status === "approval_pending" || p.status === "approved" || p.status === "negotiation" || p.status === "won",
       ).length,
     [filteredProposals],
   );
@@ -290,7 +290,7 @@ export default function DashboardPage() {
   // KPI Row 1 — Top 4 cards (large)
   const kpiRow1 = [
     { label: 'Total Revenue', value: formatINR(totalRevenue), sub: 'From paid payments', icon: DollarSign, color: 'text-green-600' },
-    { label: 'Active Proposals', value: String(activeProposalsCount), sub: 'Sent / Pending / Approved', icon: TrendingUp, color: 'text-primary' },
+    { label: 'Active Proposals', value: String(activeProposalsCount), sub: 'Sent / Pending / Approved / Negotiation / Won', icon: TrendingUp, color: 'text-primary' },
     { label: 'Deals Closed (This Month)', value: String(dealsClosedThisMonth), sub: 'Won this month', icon: CheckCircle, color: 'text-success' },
     { label: 'New Customers (This Month)', value: String(newCustomersThisMonth), sub: 'Added this month', icon: Users, color: 'text-primary' },
   ];
@@ -333,6 +333,9 @@ export default function DashboardPage() {
     'sent',
     'approval_pending',
     'approved',
+    'negotiation',
+    'won',
+    'cold',
     'rejected',
     'deal_created',
   ];
@@ -351,6 +354,9 @@ export default function DashboardPage() {
     sent: '#0072BC',
     'approval_pending': '#f59e0b',
     approved: '#22c55e',
+    negotiation: '#6366f1',
+    won: '#10b981',
+    cold: '#64748b',
     rejected: '#ef4444',
     deal_created: '#a855f7',
   };
@@ -388,6 +394,44 @@ export default function DashboardPage() {
     () => [...filteredProposals].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5),
     [filteredProposals]
   );
+
+  const isAdminView = me.role === "super_admin" || me.role === "sales_manager";
+  const teamPerformance = useMemo(() => {
+    if (!isAdminView) return [];
+    const reps = users.filter((u) => u.role === "sales_rep");
+    const dealsWon = filteredDeals.filter((d) => normalizeDealStatus(d.dealStatus) === "Closed/Won");
+    return reps
+      .map((u) => {
+        const proposalCount = filteredProposals.filter((p) => p.assignedTo === u.id).length;
+        const approvalPending = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "approval_pending").length;
+        const approved = filteredProposals.filter((p) => p.assignedTo === u.id && (p.status === "approved" || p.status === "won" || p.status === "deal_created")).length;
+        const negotiation = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "negotiation").length;
+        const cold = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "cold").length;
+        const dealsWonCount = dealsWon.filter((d) => d.ownerUserId === u.id).length;
+        const dealsWonValue = dealsWon
+          .filter((d) => d.ownerUserId === u.id)
+          .reduce((s, d) => s + Number(d.value ?? 0), 0);
+        return {
+          userId: u.id,
+          name: u.name,
+          proposalCount,
+          approvalPending,
+          approved,
+          negotiation,
+          cold,
+          dealsWonCount,
+          dealsWonValue,
+        };
+      })
+      .sort((a, b) => b.dealsWonValue - a.dealsWonValue);
+  }, [isAdminView, users, filteredProposals, filteredDeals]);
+
+  const leastPerforming = useMemo(() => {
+    if (!teamPerformance.length) return null;
+    // Least performing by won value; tie-breaker by won count.
+    const sorted = [...teamPerformance].sort((a, b) => a.dealsWonValue - b.dealsWonValue || a.dealsWonCount - b.dealsWonCount);
+    return sorted[0] ?? null;
+  }, [teamPerformance]);
 
   const applyQuery = (path: string, extra: Record<string, string>) => {
     const qs = new URLSearchParams();
@@ -773,6 +817,76 @@ export default function DashboardPage() {
           </Card>
           </div>
         </div>
+
+        {isAdminView && (
+          <Card className="border border-border bg-card">
+            <CardContent className="p-0">
+              <div className="flex flex-col gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
+                <div>
+                  <h3 className="font-semibold text-foreground">Team performance</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Least performing:{" "}
+                    <span className="font-medium text-foreground">
+                      {leastPerforming ? `${leastPerforming.name} (₹${Math.round(leastPerforming.dealsWonValue).toLocaleString("en-IN")})` : "—"}
+                    </span>
+                  </p>
+                </div>
+                <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate("/deals")}>
+                  View deals
+                </Button>
+              </div>
+              {teamPerformance.length ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
+                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Executive
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                        Proposals
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                        Pending
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
+                        Approved
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell sm:px-4 sm:py-3">
+                        Negotiation
+                      </TableHead>
+                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell sm:px-4 sm:py-3">
+                        Cold
+                      </TableHead>
+                      <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
+                        Won (₹)
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody className="divide-y divide-border">
+                    {teamPerformance.map((r) => (
+                      <TableRow key={r.userId} className="transition-colors hover:bg-muted/50">
+                        <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
+                          {r.name}
+                          <div className="text-xs text-muted-foreground md:hidden">
+                            {r.proposalCount} proposals · {r.dealsWonCount} won
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.proposalCount}</TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.approvalPending}</TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.approved}</TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm lg:table-cell sm:px-4 sm:py-3.5">{r.negotiation}</TableCell>
+                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm lg:table-cell sm:px-4 sm:py-3.5">{r.cold}</TableCell>
+                        <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">{formatINR(r.dealsWonValue)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">No sales reps in scope</div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent>

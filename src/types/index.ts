@@ -228,6 +228,9 @@ export type ProposalStatus =
   | 'sent'
   | 'approval_pending'
   | 'approved'
+  | 'negotiation'
+  | 'won'
+  | 'cold'
   | 'rejected'
   | 'deal_created';
 

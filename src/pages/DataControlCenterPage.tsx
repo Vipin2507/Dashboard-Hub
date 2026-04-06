@@ -753,16 +753,41 @@ export default function DataControlCenterPage() {
                 </div>
                 <div className="flex-1 space-y-1">
                   <Label className="text-xs">Value</Label>
-                  <Input
-                    value={br.value}
-                    onChange={(e) =>
-                      setBulkFieldRows((rows) => {
-                        const next = [...rows];
-                        next[i] = { ...next[i], value: e.target.value };
-                        return next;
-                      })
-                    }
-                  />
+                  {br.fieldKey === "assignedTo" &&
+                  (activeModule === "deals_section" || activeModule === "proposals_section") ? (
+                    <Select
+                      value={br.value}
+                      onValueChange={(v) =>
+                        setBulkFieldRows((rows) => {
+                          const next = [...rows];
+                          next[i] = { ...next[i], value: v };
+                          return next;
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select executive" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {users.map((u) => (
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={br.value}
+                      onChange={(e) =>
+                        setBulkFieldRows((rows) => {
+                          const next = [...rows];
+                          next[i] = { ...next[i], value: e.target.value };
+                          return next;
+                        })
+                      }
+                    />
+                  )}
                 </div>
                 <Button
                   type="button"
@@ -915,14 +940,15 @@ function EditableCell({
   onSave: (value: unknown) => void;
 }) {
   const [local, setLocal] = useState(() =>
-    field.key === "assignedTo" && moduleId === "deals_section"
+    field.key === "assignedTo" && (moduleId === "deals_section" || moduleId === "proposals_section")
       ? String(row.assignedTo ?? "")
       : displayCellValue(row, field.key),
   );
   const [openHist, setOpenHist] = useState(false);
 
   useEffect(() => {
-    if (field.key === "assignedTo" && moduleId === "deals_section") setLocal(String(row.assignedTo ?? ""));
+    if (field.key === "assignedTo" && (moduleId === "deals_section" || moduleId === "proposals_section"))
+      setLocal(String(row.assignedTo ?? ""));
     else setLocal(displayCellValue(row, field.key));
   }, [row, field.key, moduleId]);
 
@@ -937,7 +963,7 @@ function EditableCell({
 
   const commit = () => {
     const before =
-      field.key === "assignedTo" && moduleId === "deals_section"
+      field.key === "assignedTo" && (moduleId === "deals_section" || moduleId === "proposals_section")
         ? String(row.assignedTo ?? "")
         : displayCellValue(row, field.key);
     if (local === before) return;
@@ -946,7 +972,7 @@ function EditableCell({
   };
 
   const inner = editMode ? (
-    field.key === "assignedTo" && moduleId === "deals_section" ? (
+    field.key === "assignedTo" && (moduleId === "deals_section" || moduleId === "proposals_section") ? (
       <Select
         value={String(local)}
         onValueChange={(v) => {

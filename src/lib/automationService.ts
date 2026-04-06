@@ -528,6 +528,9 @@ export function checkAndTriggerProposalFollowUps(): void {
       const customer = customers.find((c) => c.id === proposal.customerId);
       const rep = users.find((u) => u.id === proposal.assignedTo);
 
+      // Cold/Won/Deal-created proposals should not receive follow-ups.
+      if (proposal.status === "cold" || proposal.status === "won" || proposal.status === "deal_created") return;
+
       followUpTemplates.forEach((tpl) => {
         const delay = tpl.delayHours ?? 0;
         if (elapsedHours < delay) return;

@@ -182,6 +182,20 @@ export function registerDataControlApi(app, db, helpers = {}) {
         { key: "remarks", label: "Remarks", editable: true },
       ],
     },
+    proposals_section: {
+      id: "proposals_section",
+      label: "Proposals",
+      entityType: "proposal",
+      fields: [
+        { key: "proposalNumber", label: "Proposal #", editable: false },
+        { key: "title", label: "Title", editable: false },
+        { key: "customerName", label: "Company name", editable: false },
+        { key: "status", label: "Status", editable: false },
+        { key: "assignedTo", label: "Assigned to", editable: true },
+        { key: "createdAt", label: "Created", editable: false },
+        { key: "updatedAt", label: "Updated", editable: false },
+      ],
+    },
   };
 
   function buildCustomerRows() {
@@ -346,6 +360,44 @@ export function registerDataControlApi(app, db, helpers = {}) {
     });
   }
 
+  function buildProposalRows() {
+    const rows = db.prepare("SELECT id, data FROM proposals ORDER BY createdAt DESC").all();
+    return rows
+      .map((r) => {
+        const lm = lastModifiedFor("proposal", r.id);
+        try {
+          const p = JSON.parse(r.data);
+          const cust = p.customerId ? db.prepare("SELECT name FROM customers WHERE id = ?").get(p.customerId) : null;
+          return {
+            id: p.id || r.id,
+            proposalNumber: p.proposalNumber ?? "",
+            title: p.title ?? "",
+            customerName: p.customerName ?? cust?.name ?? "",
+            status: p.status ?? "",
+            assignedTo: p.assignedTo ?? "",
+            assignedToName: p.assignedToName ?? userNameById(p.assignedTo ?? ""),
+            createdAt: (p.createdAt ?? "").slice(0, 10),
+            updatedAt: (p.updatedAt ?? "").slice(0, 10),
+            _lastModified: lm,
+          };
+        } catch {
+          return {
+            id: r.id,
+            proposalNumber: "",
+            title: "",
+            customerName: "",
+            status: "",
+            assignedTo: "",
+            assignedToName: "",
+            createdAt: "",
+            updatedAt: "",
+            _lastModified: lm,
+          };
+        }
+      })
+      .filter(Boolean);
+  }
+
   app.get("/api/data-control/meta", (req, res) => {
     if (!requireSuperAdmin(req, res)) return;
     const modules = Object.values(META).map((m) => ({
@@ -371,6 +423,7 @@ export function registerDataControlApi(app, db, helpers = {}) {
     else if (mod === "payment_section") rows = buildPaymentRows();
     else if (mod === "inventory") rows = buildInventoryRows();
     else if (mod === "executives") rows = buildExecutiveRows();
+    else if (mod === "proposals_section") rows = buildProposalRows();
     res.json({ module: mod, rows });
   });
 
@@ -562,6 +615,29 @@ export function registerDataControlApi(app, db, helpers = {}) {
       );
       auditInsert(auditAction, mod, "user", recordId, fieldKey, oldVal, value, auditAction === "bulk_edit" ? { bulk: true } : null, userId, userName);
       return { ok: true, at };
+    }
+
+    if (mod === "proposals_section") {
+      const row = db.prepare("SELECT * FROM proposals WHERE id = ?").get(recordId);
+      if (!row) return { error: "Not found", status: 404 };
+      const before = buildProposalRows().find((r) => r.id === recordId);
+      const oldVal = before?.[fieldKey];
+      if (fieldKey !== "assignedTo") return { error: "Only assignedTo is editable here", status: 400 };
+      const newUserId = String(value || "").trim();
+      const u = db.prepare("SELECT * FROM users WHERE id = ?").get(newUserId);
+      if (!u) return { error: "User not found", status: 400 };
+      const now = new Date().toISOString();
+      const data = JSON.parse(row.data);
+      data.assignedTo = newUserId;
+      data.assignedToName = u.name;
+      data.teamId = u.teamId;
+      data.regionId = u.regionId;
+      data.updatedAt = now;
+      db.prepare(
+        `UPDATE proposals SET assignedTo=?, updatedAt=?, data=? WHERE id=?`,
+      ).run(newUserId, now, JSON.stringify(data), recordId);
+      auditInsert(auditAction, mod, "proposal", recordId, fieldKey, oldVal, newUserId, auditAction === "bulk_edit" ? { bulk: true } : null, userId, userName);
+      return { ok: true, at: now };
     }
 
     return { error: "Unsupported module", status: 400 };

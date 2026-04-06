@@ -40,6 +40,9 @@ import {
   Loader2,
   Filter,
   Upload,
+  Handshake,
+  Trophy,
+  Snowflake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DataTablePagination } from "@/components/DataTablePagination";
@@ -72,6 +75,9 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "sent", label: "Sent" },
   { value: "approval_pending", label: "Approval Pending" },
   { value: "approved", label: "Approved" },
+  { value: "negotiation", label: "Negotiation" },
+  { value: "won", label: "Won" },
+  { value: "cold", label: "Cold" },
   { value: "rejected", label: "Rejected" },
   { value: "deal_created", label: "Deal Created" },
 ];
@@ -81,13 +87,27 @@ const STATUS_BADGE: Record<ProposalStatus, string> = {
   sent: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
   approval_pending: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   approved: "bg-green-500/15 text-green-700 dark:text-green-300",
+  negotiation: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
+  won: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  cold: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
   rejected: "bg-red-500/15 text-red-700 dark:text-red-300",
   deal_created: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
 };
 
 type SortKey = "date" | "value" | "customer";
 
-const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = ["all", "draft", "sent", "approval_pending", "approved", "rejected", "deal_created"];
+const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = [
+  "all",
+  "draft",
+  "sent",
+  "approval_pending",
+  "approved",
+  "negotiation",
+  "won",
+  "cold",
+  "rejected",
+  "deal_created",
+];
 
 function formatProposalDate(iso: string | undefined) {
   if (!iso) return "—";
@@ -271,16 +291,48 @@ export default function Proposals() {
   };
 
   const isExpired = (p: Proposal) => {
-    if (p.status === "approved" || p.status === "deal_created") return false;
+    if (p.status === "approved" || p.status === "deal_created" || p.status === "won" || p.status === "cold") return false;
     return p.validUntil && new Date(p.validUntil) < new Date();
   };
 
   const detailProposal = detailId ? proposals.find((p) => p.id === detailId) : null;
   const canEditProposal = (p: Proposal) => {
     if (!canUpdate) return false;
-    if (p.status !== "draft" && p.status !== "rejected") return false;
+    if (p.status !== "draft" && p.status !== "rejected" && p.status !== "negotiation") return false;
     if (scope === "SELF" && p.assignedTo !== me.id) return false;
     return true;
+  };
+
+  const canActOnOutcome = (p: Proposal) => {
+    if (!canUpdate) return false;
+    if (scope === "SELF" && p.assignedTo !== me.id) return false;
+    if (p.dealId) return false;
+    return ["sent", "approved", "negotiation", "won"].includes(p.status);
+  };
+
+  const markNegotiation = (id: string) => {
+    const p = proposals.find((x) => x.id === id);
+    if (!p) return;
+    updateProposal(id, { status: "negotiation" });
+    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    toast({ title: "Marked as negotiation", description: p.proposalNumber });
+  };
+
+  const markCold = (id: string) => {
+    const p = proposals.find((x) => x.id === id);
+    if (!p) return;
+    updateProposal(id, { status: "cold" });
+    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    toast({ title: "Marked as cold", description: p.proposalNumber });
+  };
+
+  const markWon = (id: string) => {
+    const p = proposals.find((x) => x.id === id);
+    if (!p) return;
+    updateProposal(id, { status: "won" });
+    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    toast({ title: "Marked as won", description: "Convert to a deal to continue the pipeline." });
+    setCreateDealId(id);
   };
 
   return (
@@ -288,63 +340,42 @@ export default function Proposals() {
       <Topbar
         title="Proposals"
         subtitle={`${visible.length} proposals`}
-      />
-      <div className="mx-auto w-full max-w-[1400px] space-y-4">
-        {proposalsQuery.isLoading && (
-          <div className="text-sm text-muted-foreground">Loading proposals...</div>
-        )}
-
-        {/* Title + primary actions (matches Customers page pattern) */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground sm:text-xl">Proposals</h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {filtered.length} shown
-              {visible.length !== filtered.length ? ` · ${visible.length} in your access` : ""}
-            </p>
-          </div>
-          {(canExport || canCreate) && (
-            <div className="flex w-full flex-wrap items-stretch justify-end gap-2 sm:w-auto sm:items-center">
+        actions={
+          (canExport || canCreate) && (
+            <div className="flex items-center gap-2">
               {canExport && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 min-h-9 min-w-0 flex-1 sm:min-w-[7.5rem] sm:flex-initial"
-                  onClick={handleExportCsv}
-                >
+                <Button variant="outline" size="sm" className="h-9" onClick={handleExportCsv}>
                   <FileDown className="mr-1.5 h-4 w-4 shrink-0" />
-                  <span className="truncate">Export</span>
+                  <span className="hidden sm:inline">Export</span>
                 </Button>
               )}
               {canCreate && (
                 <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 min-h-9 min-w-0 flex-1 sm:min-w-[9rem] sm:flex-initial"
-                    onClick={() => setBulkImportOpen(true)}
-                  >
+                  <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
                     <Upload className="mr-1.5 h-4 w-4 shrink-0" />
-                    <span className="truncate">Bulk import</span>
+                    <span className="hidden sm:inline">Bulk import</span>
                   </Button>
                   <Button
-                    className={cn(
-                      "h-9 min-h-9 min-w-0 bg-primary text-primary-foreground hover:bg-primary/90 sm:min-w-[9rem] sm:flex-initial",
-                      canExport ? "flex-[1_1_100%]" : "flex-1",
-                    )}
+                    className="h-9 bg-primary text-primary-foreground hover:bg-primary/90"
                     onClick={() => {
                       setEditingId(null);
                       setFormOpen(true);
                     }}
                   >
                     <Plus className="mr-1.5 h-4 w-4 shrink-0" />
-                    <span className="truncate">New Proposal</span>
+                    <span className="hidden sm:inline">New Proposal</span>
+                    <span className="sm:hidden">New</span>
                   </Button>
                 </>
               )}
             </div>
-          )}
-        </div>
+          )
+        }
+      />
+      <div className="mx-auto w-full max-w-[1400px] space-y-4 p-4">
+        {proposalsQuery.isLoading && (
+          <div className="text-sm text-muted-foreground">Loading proposals...</div>
+        )}
 
         {/* Search + filters only */}
         <div className="space-y-3">
@@ -374,11 +405,11 @@ export default function Proposals() {
           </div>
           <div
             className={cn(
-              "flex flex-col gap-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3",
+              "flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between",
               !filtersOpen && "hidden sm:flex",
             )}
           >
-            <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-0.5 sm:max-w-full sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <div className="scrollbar-none flex gap-1.5 overflow-x-auto pb-0.5 lg:max-w-[60%] lg:flex-wrap lg:overflow-visible lg:pb-0">
               {STATUS_OPTIONS.map((o) => (
                 <button
                   key={o.value}
@@ -398,7 +429,7 @@ export default function Proposals() {
                 </button>
               ))}
             </div>
-            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 lg:max-w-4xl">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-2 lg:w-auto">
               <Input
                 type="date"
                 value={dateFrom}
@@ -406,7 +437,7 @@ export default function Proposals() {
                   setDateFrom(e.target.value);
                   setPage(1);
                 }}
-                className="h-9 min-w-0 w-full sm:w-[140px]"
+                className="h-9 min-w-0 w-full sm:w-[150px]"
               />
               <Input
                 type="date"
@@ -415,11 +446,17 @@ export default function Proposals() {
                   setDateTo(e.target.value);
                   setPage(1);
                 }}
-                className="h-9 min-w-0 w-full sm:w-[140px]"
+                className="h-9 min-w-0 w-full sm:w-[150px]"
               />
               {(me.role === "super_admin" || me.role === "sales_manager") && (
-                <Select value={assignedToFilter} onValueChange={(v) => { setAssignedToFilter(v); setPage(1); }}>
-                  <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-40">
+                <Select
+                  value={assignedToFilter}
+                  onValueChange={(v) => {
+                    setAssignedToFilter(v);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-[170px]">
                     <SelectValue placeholder="Assigned to" />
                   </SelectTrigger>
                   <SelectContent>
@@ -433,7 +470,7 @@ export default function Proposals() {
                 </Select>
               )}
               <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-                <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-36">
+                <SelectTrigger className="col-span-2 h-9 w-full min-w-0 sm:col-span-1 sm:w-[170px]">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -549,7 +586,7 @@ export default function Proposals() {
                           </TableCell>
                           <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
                             <Badge variant="secondary" className={STATUS_BADGE[p.status]}>
-                              {p.status.replace("_", " ")}
+                              <span className="whitespace-nowrap">{p.status.replace(/_/g, " ")}</span>
                             </Badge>
                           </TableCell>
                           <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">{p.assignedToName}</TableCell>
@@ -558,7 +595,7 @@ export default function Proposals() {
                           </TableCell>
                           <TableCell className="hidden px-3 py-3 text-sm font-medium xl:table-cell md:px-4 md:py-3.5">{p.title}</TableCell>
                           <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
-                            <div className="flex items-center gap-1 flex-wrap">
+                            <div className="flex items-center gap-1 whitespace-nowrap overflow-x-auto scrollbar-none">
                               {canUpdate && (
                                 <Button variant="ghost" size="icon" className="h-8 w-8" title="View" onClick={() => setDetailId(p.id)}>
                                   <Eye className="w-4 h-4" />
@@ -569,7 +606,7 @@ export default function Proposals() {
                                   <Pencil className="w-4 h-4" />
                                 </Button>
                               )}
-                              {canSend && (p.status === "approved" || p.status === "draft") && (
+                              {canSend && (p.status === "approved" || p.status === "draft" || p.status === "negotiation") && (
                                 <Button variant="ghost" size="icon" className="h-8 w-8" title="Send" onClick={() => setSendId(p.id)}>
                                   <Send className="w-4 h-4" />
                                 </Button>
@@ -587,6 +624,21 @@ export default function Proposals() {
                               {(canApprove || me.role === "super_admin") && p.status === "approved" && !p.dealId && (
                                 <Button variant="ghost" size="icon" className="h-8 w-8" title="Create Deal" onClick={() => setCreateDealId(p.id)}>
                                   <FileText className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {canActOnOutcome(p) && p.status !== "negotiation" && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8" title="Mark Negotiation" onClick={() => markNegotiation(p.id)}>
+                                  <Handshake className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {canActOnOutcome(p) && p.status !== "won" && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" title="Mark Won" onClick={() => markWon(p.id)}>
+                                  <Trophy className="w-4 h-4" />
+                                </Button>
+                              )}
+                              {canActOnOutcome(p) && p.status !== "cold" && (
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-600" title="Mark Cold" onClick={() => markCold(p.id)}>
+                                  <Snowflake className="w-4 h-4" />
                                 </Button>
                               )}
                               {canDelete && p.status === "draft" && (
@@ -627,6 +679,9 @@ export default function Proposals() {
         onReject={() => detailId && setRejectId(detailId)}
         onSend={() => detailId && setSendId(detailId)}
         onCreateDeal={() => detailId && setCreateDealId(detailId)}
+        onMarkNegotiation={() => detailId && markNegotiation(detailId)}
+        onMarkWon={() => detailId && markWon(detailId)}
+        onMarkCold={() => detailId && markCold(detailId)}
         onDownloadPdf={() => detailProposal && handleDownloadPdf(detailProposal)}
         isPdfLoading={pdfLoading}
       />
