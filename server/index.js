@@ -745,7 +745,7 @@ function getAutomationSettingsFromDb() {
 }
 
 /** Server-side proxy to WAHA — avoids mixed content (HTTPS page → HTTP WAHA blocked by the browser). */
-app.post("/api/integrations/waha/sendText", async (req, res) => {
+async function proxyWahaSendText(req, res) {
   try {
     const settings = getAutomationSettingsFromDb();
     const base = String(settings.wahaApiUrl || "").trim().replace(/\/$/, "");
@@ -776,9 +776,13 @@ app.post("/api/integrations/waha/sendText", async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: String(e?.message || e) });
   }
-});
+}
 
-app.get("/api/integrations/waha/sessions", async (_req, res) => {
+app.post("/api/integrations/waha/sendText", proxyWahaSendText);
+// nginx often strips `/api` when proxy_pass uses a trailing slash — backend then sees `/integrations/...`
+app.post("/integrations/waha/sendText", proxyWahaSendText);
+
+async function proxyWahaSessions(_req, res) {
   try {
     const settings = getAutomationSettingsFromDb();
     const base = String(settings.wahaApiUrl || "").trim().replace(/\/$/, "");
@@ -802,10 +806,13 @@ app.get("/api/integrations/waha/sessions", async (_req, res) => {
   } catch (e) {
     res.status(502).json({ error: String(e?.message || e) });
   }
-});
+}
+
+app.get("/api/integrations/waha/sessions", proxyWahaSessions);
+app.get("/integrations/waha/sessions", proxyWahaSessions);
 
 /** n8n webhook proxy — avoids mixed content when the app is HTTPS and n8n is HTTP-only. */
-app.post("/api/integrations/n8n/webhook/:segment", async (req, res) => {
+async function proxyN8nWebhook(req, res) {
   try {
     const settings = getAutomationSettingsFromDb();
     const base = String(settings.n8nWebhookBase || "").trim().replace(/\/$/, "");
@@ -840,7 +847,10 @@ app.post("/api/integrations/n8n/webhook/:segment", async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: String(e?.message || e) });
   }
-});
+}
+
+app.post("/api/integrations/n8n/webhook/:segment", proxyN8nWebhook);
+app.post("/integrations/n8n/webhook/:segment", proxyN8nWebhook);
 
 app.put("/api/customers/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(req.params.id);
