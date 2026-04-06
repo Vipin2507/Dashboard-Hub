@@ -1,3 +1,5 @@
+// Add the production hostname (e.g. dashboard.buildesk.ae) under Firebase Console → Authentication →
+// Settings → Authorized domains, or OAuth popups/redirects will warn and fail on that domain.
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";

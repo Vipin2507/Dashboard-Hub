@@ -84,11 +84,19 @@ export function registerIntegrationProxies(app, { db }) {
     }
   }
 
-  async function proxyN8nWebhook(req, res) {
+  /**
+   * @param {import("express").Request} req
+   * @param {import("express").Response} res
+   * @param {string | undefined} segmentOverride optional — use for explicit paths like `/webhook/buildesk-health` (hyphen in segment)
+   */
+  async function proxyN8nWebhook(req, res, segmentOverride) {
     try {
       const settings = getAutomationSettingsFromDb(db);
       const base = n8nBase(settings);
-      const raw = String(req.params.segment || "");
+      const raw =
+        segmentOverride != null && segmentOverride !== ""
+          ? String(segmentOverride)
+          : String(req.params?.segment || "");
       const segment = raw.replace(/[^a-zA-Z0-9._-]/g, "");
       if (!segment || segment !== raw) {
         return res.status(400).json({ error: "Invalid webhook name" });
@@ -134,13 +142,48 @@ export function registerIntegrationProxies(app, { db }) {
     });
   }
 
+  function n8nWebhookGetFixed(segment) {
+    return (_req, res) => {
+      res.json({
+        ok: true,
+        segment,
+        methodExpected: "POST",
+        hint:
+          "The app calls this URL with POST JSON. Use Automation → Settings → “Test connection” to hit n8n.",
+      });
+    };
+  }
+
   // Explicit app.* routes (avoid relying only on Router — works across Express 4/5 and odd proxies)
   app.post("/api/integrations/waha/sendText", proxyWahaSendText);
   app.post("/integrations/waha/sendText", proxyWahaSendText);
   app.get("/api/integrations/waha/sessions", proxyWahaSessions);
   app.get("/integrations/waha/sessions", proxyWahaSessions);
-  app.post("/api/integrations/n8n/webhook/:segment", proxyN8nWebhook);
-  app.post("/integrations/n8n/webhook/:segment", proxyN8nWebhook);
+
+  // Explicit n8n paths (some Express/nginx setups mishandle :segment with hyphens)
+  app.post("/api/integrations/n8n/webhook/buildesk-health", (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-health");
+  });
+  app.post("/api/integrations/n8n/webhook/buildesk-email", (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-email");
+  });
+  app.post("/integrations/n8n/webhook/buildesk-health", (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-health");
+  });
+  app.post("/integrations/n8n/webhook/buildesk-email", (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-email");
+  });
+  app.get("/api/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
+  app.get("/api/integrations/n8n/webhook/buildesk-email", n8nWebhookGetFixed("buildesk-email"));
+  app.get("/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
+  app.get("/integrations/n8n/webhook/buildesk-email", n8nWebhookGetFixed("buildesk-email"));
+
+  app.post("/api/integrations/n8n/webhook/:segment", (req, res) => {
+    void proxyN8nWebhook(req, res, undefined);
+  });
+  app.post("/integrations/n8n/webhook/:segment", (req, res) => {
+    void proxyN8nWebhook(req, res, undefined);
+  });
   app.get("/api/integrations/n8n/webhook/:segment", n8nWebhookGet);
   app.get("/integrations/n8n/webhook/:segment", n8nWebhookGet);
   app.get("/api/integrations/ping", ping);

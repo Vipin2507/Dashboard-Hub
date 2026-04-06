@@ -20,7 +20,10 @@ function orderedIntegrationBases(): string[] {
     import.meta.env.VITE_API_INTEGRATIONS_ALT_HOST as string | undefined,
     API_BASE_URL,
     import.meta.env.VITE_INTEGRATIONS_FALLBACK_ORIGIN as string | undefined,
-    typeof window !== "undefined" ? window.location.origin : undefined,
+    // Dashboard nginx often returns 405 for POST /api/… (SPA). Omit unless you proxy /api on dashboard.
+    ...(import.meta.env.VITE_INTEGRATIONS_INCLUDE_DASHBOARD_ORIGIN === "true" && typeof window !== "undefined"
+      ? [window.location.origin]
+      : []),
   ];
   const seen = new Set<string>();
   const out: string[] = [];
