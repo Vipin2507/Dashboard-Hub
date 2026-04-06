@@ -22,6 +22,42 @@ import {
 import { useAppStore } from "@/store/useAppStore";
 import type { Proposal, Region } from "@/types";
 
+async function saveProposalsToApi(proposals: Proposal[]): Promise<void> {
+  const bulkUrl = apiUrl("/api/proposals/bulk");
+  const bulkRes = await fetch(bulkUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(proposals),
+  });
+
+  if (bulkRes.ok) return;
+
+  if (bulkRes.status !== 404 && bulkRes.status !== 405) {
+    const msg = await bulkRes.text().catch(() => bulkRes.statusText);
+    throw new Error(msg || `Bulk save failed (${bulkRes.status})`);
+  }
+
+  let failed = 0;
+  let lastErr = "";
+  for (const p of proposals) {
+    const r = await fetch(apiUrl("/api/proposals"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    });
+    if (!r.ok) {
+      failed += 1;
+      lastErr = (await r.text().catch(() => r.statusText)) || `${r.status}`;
+    }
+  }
+  if (failed === proposals.length) {
+    throw new Error(lastErr || "Could not save proposals (single-item API also failed).");
+  }
+  if (failed > 0) {
+    throw new Error(`${proposals.length - failed} saved, ${failed} failed. Last error: ${lastErr}`);
+  }
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -105,12 +141,7 @@ export function BulkImportProposalsDialog({
         return;
       }
 
-      const res = await fetch(apiUrl("/api/proposals/bulk"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposals),
-      });
-      if (!res.ok) throw new Error("Bulk save failed");
+      await saveProposalsToApi(proposals);
 
       const listRes = await fetch(apiUrl("/api/proposals"));
       if (listRes.ok) {
