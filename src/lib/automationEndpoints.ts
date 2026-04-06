@@ -6,12 +6,16 @@ function isBrowserHttps(): boolean {
 }
 
 /**
- * Calls the Node integration proxy (`/api/integrations/...`). If that returns 404 (API host not
- * updated / wrong service), retries the same path on the **current page origin** so nginx on the
- * dashboard host can proxy to WAHA/n8n without changing VITE_API_BASE_URL.
+ * Calls the Node integration proxy (`/api/integrations/...`). Retries on **404 or 405** so that:
+ * - 404: API host missing routes
+ * - 405: nginx served POST with SPA `location /` + `try_files` (POST not allowed) — try next origin
  *
- * Optional: `VITE_INTEGRATIONS_FALLBACK_ORIGIN` (e.g. https://dashboard.buildesk.ae) for a third try.
+ * Optional: `VITE_INTEGRATIONS_FALLBACK_ORIGIN` for a third try.
  */
+function shouldRetryIntegration(status: number): boolean {
+  return status === 404 || status === 405;
+}
+
 export async function fetchIntegrationProxy(path: string, init?: RequestInit): Promise<Response> {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const urls: string[] = [];
@@ -27,7 +31,7 @@ export async function fetchIntegrationProxy(path: string, init?: RequestInit): P
   let last: Response | undefined;
   for (const url of urls) {
     last = await fetch(url, init);
-    if (last.status !== 404) return last;
+    if (!shouldRetryIntegration(last.status)) return last;
   }
   return last!;
 }
