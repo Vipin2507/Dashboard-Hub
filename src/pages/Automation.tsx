@@ -7,6 +7,7 @@ import {
   n8nBuildeskEmailWebhookUrl,
   n8nBuildeskHealthWebhookUrl,
   wahaSendTextUrl,
+  wahaSessionsUrl,
 } from "@/lib/automationEndpoints";
 import { runAutomationRules } from "@/lib/automationService";
 import { apiUrl } from "@/lib/api";
@@ -1068,7 +1069,7 @@ function SettingsTab() {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 5000);
     try {
-      const res = await fetch(`${settings.wahaApiUrl}/api/sessions`, {
+      const res = await fetch(wahaSessionsUrl(settings), {
         headers: { "X-Api-Key": settings.wahaApiKey },
         signal: ctrl.signal,
       });

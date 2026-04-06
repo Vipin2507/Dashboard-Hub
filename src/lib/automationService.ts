@@ -1,4 +1,4 @@
-import { wahaSendTextUrl } from "@/lib/automationEndpoints";
+import { n8nWebhookUrl, wahaSendTextUrl } from "@/lib/automationEndpoints";
 import { useAppStore } from "@/store/useAppStore";
 import type {
   AutomationChannel,
@@ -324,7 +324,7 @@ async function fireN8nWebhook(
     appendAutomationLog(logEntry);
 
     try {
-      const res = await fetch(`${settings.n8nWebhookBase}/${webhookPath}`, {
+      const res = await fetch(n8nWebhookUrl(settings, webhookPath), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -388,7 +388,9 @@ async function fireWhatsAppDirect(
     }
 
     try {
-      if (!import.meta.env.DEV && !settings.wahaApiUrl?.trim()) {
+      const useHttpsProxy =
+        typeof window !== "undefined" && window.location.protocol === "https:" && !import.meta.env.DEV;
+      if (!useHttpsProxy && !import.meta.env.DEV && !settings.wahaApiUrl?.trim()) {
         updateAutomationLog(logEntry.id, {
           status: "failed",
           errorMessage: "WAHA API URL is not set — open Automation → Settings and save your WAHA base URL.",
