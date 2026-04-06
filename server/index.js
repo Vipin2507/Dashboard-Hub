@@ -778,10 +778,6 @@ async function proxyWahaSendText(req, res) {
   }
 }
 
-app.post("/api/integrations/waha/sendText", proxyWahaSendText);
-// nginx often strips `/api` when proxy_pass uses a trailing slash — backend then sees `/integrations/...`
-app.post("/integrations/waha/sendText", proxyWahaSendText);
-
 async function proxyWahaSessions(_req, res) {
   try {
     const settings = getAutomationSettingsFromDb();
@@ -807,9 +803,6 @@ async function proxyWahaSessions(_req, res) {
     res.status(502).json({ error: String(e?.message || e) });
   }
 }
-
-app.get("/api/integrations/waha/sessions", proxyWahaSessions);
-app.get("/integrations/waha/sessions", proxyWahaSessions);
 
 /** n8n webhook proxy — avoids mixed content when the app is HTTPS and n8n is HTTP-only. */
 async function proxyN8nWebhook(req, res) {
@@ -849,8 +842,17 @@ async function proxyN8nWebhook(req, res) {
   }
 }
 
-app.post("/api/integrations/n8n/webhook/:segment", proxyN8nWebhook);
-app.post("/integrations/n8n/webhook/:segment", proxyN8nWebhook);
+const integrationsRouter = express.Router();
+integrationsRouter.post("/waha/sendText", proxyWahaSendText);
+integrationsRouter.get("/waha/sessions", proxyWahaSessions);
+integrationsRouter.post("/n8n/webhook/:segment", proxyN8nWebhook);
+integrationsRouter.get("/ping", (_req, res) => {
+  res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
+});
+
+app.use("/api/integrations", integrationsRouter);
+// nginx: `location /api/ { proxy_pass http://127.0.0.1:4000/; }` strips `/api` → mount same router on `/integrations`
+app.use("/integrations", integrationsRouter);
 
 app.put("/api/customers/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM customers WHERE id = ?").get(req.params.id);
