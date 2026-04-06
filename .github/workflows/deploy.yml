@@ -21,8 +21,9 @@ jobs:
       - name: Install & Build
         run: |
           npm install
-          # We manually inject the API URL here so the frontend knows where the backend is
+          # API host + explicit alt so integration POSTs try api.buildesk.ae even when VITE_API_BASE_URL matches the dashboard origin (avoids nginx 405 on SPA-only hosts).
           echo "VITE_API_BASE_URL=https://api.buildesk.ae" > .env.production
+          echo "VITE_API_INTEGRATIONS_ALT_HOST=https://api.buildesk.ae" >> .env.production
           npm run build
 
       - name: Deploy to VPS

@@ -4,14 +4,19 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localho
  * Builds an absolute API URL. If `VITE_API_BASE_URL` already ends with `/api` (common when the
  * API is mounted at `https://host/api`), do not duplicate `/api` when `path` starts with `/api/…`.
  */
-export function apiUrl(path: string): string {
+/** Same rules as `apiUrl`, but for an arbitrary origin (used for integration fallbacks). */
+export function apiUrlWithBase(baseUrl: string, path: string): string {
   let normalized = path.startsWith("/") ? path : `/${path}`;
-  const base = API_BASE_URL.replace(/\/$/, "");
+  const base = baseUrl.replace(/\/$/, "");
   if (base.endsWith("/api") && normalized.startsWith("/api")) {
     normalized = normalized.slice(4) || "/";
     if (!normalized.startsWith("/")) normalized = `/${normalized}`;
   }
   return `${base}${normalized}`;
+}
+
+export function apiUrl(path: string): string {
+  return apiUrlWithBase(API_BASE_URL, path);
 }
 
 function toApiPath(path: string): string {

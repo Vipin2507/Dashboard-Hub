@@ -1,4 +1,4 @@
-import { apiUrl } from "@/lib/api";
+import { API_BASE_URL, apiUrlWithBase } from "@/lib/api";
 import type { AutomationSettings } from "@/types/automation";
 
 function isBrowserHttps(): boolean {
@@ -6,11 +6,13 @@ function isBrowserHttps(): boolean {
 }
 
 /**
- * Calls the Node integration proxy (`/api/integrations/...`). Retries on **404 or 405** so that:
- * - 404: API host missing routes
- * - 405: nginx served POST with SPA `location /` + `try_files` (POST not allowed) — try next origin
+ * Calls the Node integration proxy (`/api/integrations/...`). Retries on **404 or 405**.
  *
- * Optional: `VITE_INTEGRATIONS_FALLBACK_ORIGIN` for a third try.
+ * Builds URLs from **several bases** so we don't dedupe away a second try when
+ * `VITE_API_BASE_URL` equals the dashboard origin (then POST only hit nginx SPA → 405).
+ *
+ * Bases: `VITE_API_BASE_URL`, page origin, `VITE_API_INTEGRATIONS_ALT_HOST` (e.g. api subdomain),
+ * `VITE_INTEGRATIONS_FALLBACK_ORIGIN`.
  */
 function shouldRetryIntegration(status: number): boolean {
   return status === 404 || status === 405;
@@ -18,16 +20,21 @@ function shouldRetryIntegration(status: number): boolean {
 
 export async function fetchIntegrationProxy(path: string, init?: RequestInit): Promise<Response> {
   const normalized = path.startsWith("/") ? path : `/${path}`;
+  const bases = new Set<string>();
+  const main = API_BASE_URL.replace(/\/$/, "");
+  if (main) bases.add(main);
+  if (typeof window !== "undefined") bases.add(window.location.origin);
+  const alt = (import.meta.env.VITE_API_INTEGRATIONS_ALT_HOST as string | undefined)?.replace(/\/$/, "");
+  if (alt) bases.add(alt);
+  const fb = (import.meta.env.VITE_INTEGRATIONS_FALLBACK_ORIGIN as string | undefined)?.replace(/\/$/, "");
+  if (fb) bases.add(fb);
+
   const urls: string[] = [];
-  const add = (u: string) => {
+  for (const b of bases) {
+    const u = apiUrlWithBase(b, normalized);
     if (!urls.includes(u)) urls.push(u);
-  };
-  add(apiUrl(normalized));
-  if (typeof window !== "undefined") {
-    add(`${window.location.origin}${normalized}`);
-    const fb = (import.meta.env.VITE_INTEGRATIONS_FALLBACK_ORIGIN as string | undefined)?.replace(/\/$/, "");
-    if (fb) add(`${fb}${normalized}`);
   }
+
   let last: Response | undefined;
   for (const url of urls) {
     last = await fetch(url, init);
