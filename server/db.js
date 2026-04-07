@@ -241,7 +241,12 @@ function setMeta(key, value) {
 }
 
 function reseedUsersAndTeamsIfNeeded() {
-  const SEED_KEY = "seed_users_teams_v2";
+  // Bump this key when seedUsers/seedTeams change so deploys refresh SQLite on existing installs.
+  // VPS: deploy + restart API. If still stale, set FORCE_RESEED_USERS=1 once, restart, then unset.
+  const SEED_KEY = "seed_users_teams_v3";
+  if (process.env.FORCE_RESEED_USERS === "1" || process.env.FORCE_RESEED_USERS === "true") {
+    db.prepare("DELETE FROM app_meta WHERE key = ?").run(SEED_KEY);
+  }
   if (getMeta(SEED_KEY) === "1") return;
 
   db.transaction(() => {
