@@ -34,6 +34,7 @@ import {
   seedInventoryItems,
   seedAutomationTemplates,
 } from '@/lib/seed';
+import { apiUrl } from '@/lib/api';
 
 interface AppState {
   me: MeContext;
@@ -138,9 +139,6 @@ function meFromUser(u: User): MeContext {
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
-const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 
 const initialUser = seedUsers.find(u => u.id === 'u2')!;
 

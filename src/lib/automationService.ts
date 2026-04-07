@@ -1,4 +1,5 @@
 import { fetchN8nWebhook, fetchWahaSendText } from "@/lib/automationEndpoints";
+import { apiUrl } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type {
   AutomationChannel,
@@ -10,8 +11,6 @@ import type {
 } from "@/types";
 
 const RULE_STATE_KEY = "buildesk_automation_rule_state_v1";
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
-const apiUrl = (path: string) => `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
 type RuleState = {
   followUpRuns: Record<string, number>;

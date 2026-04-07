@@ -1,4 +1,23 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+/**
+ * Where the SPA sends `/api/...` requests.
+ * - If `VITE_API_BASE_URL` is set at build time, that origin is used (e.g. `https://api.buildesk.ae`).
+ * - **Dev:** defaults to `http://localhost:4000`.
+ * - **Production without env:** uses same-origin (`""`) so `/api/users` hits the host that served the
+ *   SPA (nginx → Node). **A build that still pointed at `localhost` never reached your VPS API** and
+ *   kept showing bundled seed data.
+ */
+function resolveApiBaseUrl(): string {
+  const env = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (env != null && String(env).trim() !== "") {
+    return String(env).replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:4000";
+  }
+  return "";
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 /**
  * Builds an absolute API URL. If `VITE_API_BASE_URL` already ends with `/api` (common when the
