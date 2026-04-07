@@ -16,9 +16,8 @@ export function Topbar({ title, subtitle, actions, onMenuClick }: TopbarProps) {
   const handleMenu = onMenuClick ?? openSidebar;
 
   return (
-    <header
-      className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900"
-    >
+    <header className="sticky top-0 z-30">
+      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
       {/* Hamburger — mobile / tablet only */}
       <button
         type="button"
@@ -48,6 +47,10 @@ export function Topbar({ title, subtitle, actions, onMenuClick }: TopbarProps) {
         <NotificationBell />
         <UserMenu />
       </div>
+      </div>
+
+      {/* Spacing below top bar so content isn't cramped */}
+      <div className="h-3 sm:h-4 bg-transparent" />
     </header>
   );
 }

@@ -17,20 +17,18 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
       className={cn(
         "relative w-full",
         responsiveShell &&
-          "overflow-hidden rounded-lg border border-border -mx-4 border-x-0 sm:mx-0 sm:border-x",
+          "overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800 -mx-4 border-x-0 sm:mx-0 sm:border-x",
       )}
     >
-      <div className="overflow-x-auto">
-        <table
-          ref={ref}
-          className={cn(
-            "w-full caption-bottom text-sm",
-            responsiveShell && "min-w-[600px]",
-            className,
-          )}
-          {...props}
-        />
-      </div>
+      <table
+        ref={ref}
+        className={cn(
+          "w-full caption-bottom border-collapse text-sm",
+          responsiveShell && "min-w-[600px]",
+          className,
+        )}
+        {...props}
+      />
     </div>
   ),
 );
@@ -59,7 +57,10 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
   ({ className, ...props }, ref) => (
     <tr
       ref={ref}
-      className={cn("border-b transition-colors data-[state=selected]:bg-muted hover:bg-muted/50", className)}
+      className={cn(
+        "border-b border-gray-100 transition-colors duration-100 hover:bg-gray-50/70 data-[state=selected]:bg-muted dark:border-gray-800 dark:hover:bg-gray-800/50",
+        className,
+      )}
       {...props}
     />
   ),
@@ -71,7 +72,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        "h-12 px-4 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0",
+        "bg-gray-50 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-gray-500 whitespace-nowrap dark:bg-gray-900 dark:text-gray-400 [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}
@@ -82,7 +83,14 @@ TableHead.displayName = "TableHead";
 
 const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<HTMLTableCellElement>>(
   ({ className, ...props }, ref) => (
-    <td ref={ref} className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)} {...props} />
+    <td
+      ref={ref}
+      className={cn(
+        "px-4 py-3.5 align-middle text-sm text-gray-800 dark:text-gray-200 [&:has([role=checkbox])]:pr-0",
+        className,
+      )}
+      {...props}
+    />
   ),
 );
 TableCell.displayName = "TableCell";

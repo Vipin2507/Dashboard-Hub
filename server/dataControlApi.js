@@ -783,11 +783,12 @@ export function registerDataControlApi(app, db, helpers = {}) {
     rows.forEach((raw, index) => {
       try {
         const name = raw.itemName != null ? String(raw.itemName).trim() : "";
-        const sku = raw.sku != null ? String(raw.sku).trim() : "";
+        const codeRaw = raw.itemCode != null ? raw.itemCode : raw.sku;
+        const sku = codeRaw != null ? String(codeRaw).trim() : "";
         const category = raw.category != null ? String(raw.category).trim() : "";
         const unitOfMeasure = raw.unitOfMeasure != null && String(raw.unitOfMeasure).trim() ? String(raw.unitOfMeasure).trim() : "unit";
-        if (!name || !sku || !category) throw new Error("itemName, sku, and category are required");
-        if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(sku)) throw new Error("duplicate SKU");
+        if (!name || !sku || !category) throw new Error("itemName, item code, and category are required");
+        if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(sku)) throw new Error("duplicate item code");
         const id = "inv" + makeId();
         const statusStr = raw.status != null ? String(raw.status).toLowerCase() : "active";
         const row = {

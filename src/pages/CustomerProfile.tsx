@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -9,7 +9,6 @@ import {
   CustomerPaymentsLiveSection,
   CustomerActivityLiveFeed,
 } from "@/components/customer-profile/CustomerLiveSections";
-import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -59,7 +58,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
@@ -77,6 +75,9 @@ import {
   Activity,
   Ticket,
   IndianRupee,
+  CreditCard,
+  Package,
+  ArrowLeft,
 } from "lucide-react";
 import type { Customer, CustomerStatus, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
@@ -117,6 +118,19 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+const PROFILE_TABS: {
+  key: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+}[] = [
+  { key: "overview", label: "Overview", icon: Building2 },
+  { key: "transactions", label: "Transaction History", icon: CreditCard },
+  { key: "productline", label: "Product Line", icon: Package },
+  { key: "notes", label: "Notes & Attachments", icon: MessageSquare },
+  { key: "tickets", label: "Support Tickets", icon: Ticket },
+  { key: "activity", label: "Activity Log", icon: Activity },
+];
+
 function formatDate(s: string) {
   try {
     return new Date(s).toLocaleString("en-IN", {
@@ -138,9 +152,6 @@ export default function CustomerProfile() {
   const customers = useAppStore((s) => s.customers);
   const proposals = useAppStore((s) => s.proposals);
   const users = useAppStore((s) => s.users);
-  const regions = useAppStore((s) => s.regions);
-  const teams = useAppStore((s) => s.teams);
-
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
   const customer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
@@ -180,15 +191,12 @@ export default function CustomerProfile() {
 
   if (!customer) {
     return (
-      <>
-        <Topbar title="Customer" subtitle="Not found" />
-        <div className="mx-auto w-full max-w-[1400px] space-y-4">
-          <p className="text-muted-foreground">Customer not found or you don&apos;t have access.</p>
-          <Button variant="outline" className="mt-4" onClick={() => navigate("/customers")}>
-            Back to Customers
-          </Button>
-        </div>
-      </>
+      <div className="mx-auto w-full max-w-page space-y-4 py-2">
+        <p className="text-sm text-muted-foreground">Customer not found or you don&apos;t have access.</p>
+        <Button variant="outline" onClick={() => navigate("/customers")}>
+          Back to Customers
+        </Button>
+      </div>
     );
   }
 
@@ -209,237 +217,139 @@ export default function CustomerProfile() {
 
   return (
     <>
-      <Topbar
-        title={customer.companyName}
-        subtitle={customer.customerNumber}
-      />
-      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-col gap-4 lg:flex-row lg:gap-6">
-        {/* Sidebar: full width mobile, fixed 280px desktop */}
-        <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:w-[280px] lg:shrink-0 lg:self-start">
-          <Card className="border border-gray-200 p-4 shadow-none dark:border-gray-800 sm:p-5">
-            <CardContent className="space-y-0 p-0">
-              {/* Header — compact row on mobile */}
-              <div className="lg:space-y-2">
-                <div className="flex items-start gap-3 lg:block">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <h2 className="break-words text-base font-bold leading-snug text-gray-900 dark:text-gray-100 sm:text-lg">
-                      {customer.companyName}
-                    </h2>
-                    <p className="font-mono text-xs text-gray-400">{customer.customerNumber}</p>
-                  </div>
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
-                      STATUS_PILL[customer.status] ?? STATUS_PILL.inactive
-                    )}
-                  >
-                    {customer.status}
-                  </span>
+      <div className="mx-auto w-full max-w-page space-y-4">
+        <Button
+          type="button"
+          variant="ghost"
+          className="-ml-2 h-8 gap-1.5 px-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+          onClick={() => navigate("/customers")}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Customers
+        </Button>
+
+        <div className="flex flex-col gap-5 lg:flex-row">
+          <aside className="w-full flex-shrink-0 space-y-4 lg:w-72 lg:sticky lg:top-4 lg:self-start">
+            {/* Identity */}
+            <div className="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+              <div className="mb-4 flex items-start justify-between gap-2">
+                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950">
+                  <Building2 className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                 </div>
-                {customer.industry && (
-                  <p className="text-xs text-gray-500">{customer.industry}</p>
-                )}
-                {customer.website && (
-                  <a
-                    href={customer.website.startsWith("http") ? customer.website : `https://${customer.website}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    {customer.website} <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
-              </div>
-
-              <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
-
-              {/* Primary contact */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Primary Contact</p>
-                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 space-y-1">
-                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {primaryContact?.name}
-                  </p>
-                  {primaryContact?.designation && (
-                    <p className="text-xs text-gray-500">{primaryContact.designation}</p>
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
+                    STATUS_PILL[customer.status] ?? STATUS_PILL.inactive,
                   )}
-                  {primaryContact?.email && (
-                    <a
-                      href={`mailto:${primaryContact.email}`}
-                      className="text-xs text-blue-600 hover:underline block"
-                    >
-                      {primaryContact.email}
-                    </a>
-                  )}
-                  {primaryContact?.phone && (
-                    <p className="text-xs text-gray-500">{primaryContact.phone}</p>
-                  )}
-                </div>
+                >
+                  {customer.status}
+                </span>
               </div>
+              <h2 className="mb-0.5 text-base font-semibold leading-snug text-gray-900 dark:text-gray-100">
+                {customer.companyName}
+              </h2>
+              <p className="font-mono text-xs text-gray-400">{customer.customerNumber}</p>
+              {customer.industry && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{customer.industry}</p>}
+            </div>
 
-              <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
-
-              {/* Assignment */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Assigned To</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center flex-shrink-0">
-                    <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-                      {customer.assignedToName.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-800 dark:text-gray-200">
-                      {customer.assignedToName.replace(/\s*\(.*?\)\s*/g, "").trim()}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {regions.find((r) => r.id === customer.regionId)?.name} · {teams.find((t) => t.id === customer.teamId)?.name}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {customer.tags.length > 0 && (
-                <>
-                  <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
-                  <div className="flex flex-wrap gap-1.5">
-                    {customer.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-400"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
-
-              {/* Stats — 2 col grid mobile, block list desktop */}
-              <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-1 lg:gap-0 lg:space-y-3">
-                {[
+            {/* Quick stats */}
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Quick Stats</p>
+              {(
+                [
                   {
                     label: "Total Revenue",
                     value: `₹${customer.totalRevenue.toLocaleString("en-IN")}`,
-                    valueClass: "text-emerald-600 font-semibold",
+                    cls: "text-emerald-600 font-semibold",
                   },
-                  {
-                    label: "Deal Value",
-                    value: `₹${customer.totalDealValue.toLocaleString("en-IN")}`,
-                    valueClass: "font-medium",
-                  },
-                  {
-                    label: "Active Proposals",
-                    value: String(customer.activeProposalsCount),
-                    valueClass: "font-medium",
-                  },
-                  {
-                    label: "Active Deals",
-                    value: String(customer.activeDealsCount),
-                    valueClass: "font-medium",
-                  },
+                  { label: "Active Proposals", value: String(customer.activeProposalsCount), cls: "" },
+                  { label: "Active Deals", value: String(customer.activeDealsCount), cls: "" },
                   {
                     label: "Open Tickets",
                     value: String(openTicketsCount),
-                    valueClass: openTicketsCount > 0 ? "text-orange-600 font-medium" : "font-medium",
+                    cls: openTicketsCount > 0 ? "text-orange-600" : "",
                   },
-                ].map(({ label, value, valueClass }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between rounded-lg border border-gray-100 p-2.5 dark:border-gray-800 lg:rounded-none lg:border-0 lg:p-0 lg:py-0"
-                  >
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
-                    <span className={cn("text-sm font-medium text-gray-900 dark:text-gray-100", valueClass)}>
-                      {value}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                ] as const
+              ).map(({ label, value, cls }) => (
+                <div
+                  key={label}
+                  className="flex items-center justify-between border-b border-gray-100 py-1.5 last:border-0 dark:border-gray-800"
+                >
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+                  <span className={cn("text-sm font-medium text-gray-900 dark:text-gray-100", cls)}>{value}</span>
+                </div>
+              ))}
+            </div>
 
-              <Separator className="bg-gray-100 dark:bg-gray-800 my-4" />
-
-              <p className="text-xs text-gray-400">
-                Created{" "}
-                {new Date(customer.createdAt).toLocaleDateString("en-IN", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
-              </p>
-
-              {/* Quick actions */}
-              <div className="flex gap-2 pt-1">
-                {canUpdate && canUpdateCustomer && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 text-xs h-8"
-                    onClick={() => setEditOpen(true)}
-                  >
-                    <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                    Edit
-                  </Button>
-                )}
+            {/* Actions */}
+            <div className="flex gap-2">
+              {canUpdate && canUpdateCustomer && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="flex-1 text-xs h-8"
-                  onClick={() => navigate(`/proposals?customer=${customer.id}`)}
+                  className="h-8 flex-1 rounded-lg text-xs"
+                  onClick={() => setEditOpen(true)}
                 >
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Proposal
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                  Edit
                 </Button>
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button variant="outline" size="sm" className="flex-1 text-xs h-8" onClick={() => setLogActivityOpen(true)}>
-                  <Activity className="h-3.5 w-3.5 mr-1.5" /> Log Activity
-                </Button>
-                {canDelete && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 text-xs h-8 text-destructive"
-                    onClick={() => setDeleteConfirm(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-
-        {/* Main: full width, tabs + content */}
-        <div className="min-w-0 flex-1">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full flex-col">
-            <div className="mb-4 border-b border-gray-200 dark:border-gray-800">
-              <div className="scrollbar-none -mb-px flex overflow-x-auto">
-                {[
-                  { key: "overview", label: "Overview" },
-                  { key: "transactions", label: "Transaction History" },
-                  { key: "productline", label: "Product Line" },
-                  { key: "notes", label: "Notes & Attachments" },
-                  { key: "tickets", label: "Support Tickets" },
-                  { key: "activity", label: "Activity Log" },
-                ].map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key)}
-                    className={cn(
-                      "flex-shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors sm:px-4",
-                      activeTab === tab.key
-                        ? "border-blue-600 text-blue-600"
-                        : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+              )}
+              <Button
+                size="sm"
+                className="h-8 flex-1 rounded-lg bg-blue-600 text-xs text-white hover:bg-blue-700"
+                onClick={() => navigate(`/proposals?customer=${customer.id}`)}
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Proposal
+              </Button>
             </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 rounded-lg text-xs"
+                onClick={() => setLogActivityOpen(true)}
+              >
+                <Activity className="mr-1.5 h-3.5 w-3.5" /> Log
+              </Button>
+              {canDelete && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 flex-1 rounded-lg text-xs text-destructive"
+                  onClick={() => setDeleteConfirm(true)}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
+            </div>
+          </aside>
+
+          <div className="min-w-0 flex-1 space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full flex-col">
+              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+                <div className="scrollbar-none flex overflow-x-auto border-b border-gray-100 px-1 dark:border-gray-800">
+                  {PROFILE_TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setActiveTab(tab.key)}
+                        className={cn(
+                          "-mb-px flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                          activeTab === tab.key
+                            ? "border-blue-600 text-blue-600"
+                            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="p-5">
 
             <TabsContent value="overview" className="mt-0 space-y-6 flex-1">
               <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
@@ -655,7 +565,7 @@ export default function CustomerProfile() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">Item</TableHead>
-                    <TableHead className="text-xs">SKU</TableHead>
+                    <TableHead className="text-xs">Item code</TableHead>
                     <TableHead className="text-xs">Type</TableHead>
                     <TableHead className="text-xs text-right">Qty</TableHead>
                     <TableHead className="text-xs text-right">Unit Price</TableHead>
@@ -1075,7 +985,10 @@ export default function CustomerProfile() {
                 </CardContent>
               </Card>
             </TabsContent>
-          </Tabs>
+                </div>
+              </div>
+            </Tabs>
+          </div>
         </div>
       </div>
 

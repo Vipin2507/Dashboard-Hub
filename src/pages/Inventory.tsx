@@ -213,7 +213,7 @@ export default function Inventory() {
   const exportCsv = () => {
     const headers = [
       "Name",
-      "SKU",
+      "Item code",
       "Type",
       "Category",
       "Unit",
@@ -258,7 +258,7 @@ export default function Inventory() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="h-9 w-full pl-9 text-sm"
-              placeholder="Search name, SKU, category..."
+              placeholder="Search name, item code, category..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -392,7 +392,7 @@ export default function Inventory() {
                   <TableHeader>
                     <TableRow className="bg-muted/40">
                       <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="hidden text-xs md:table-cell">SKU</TableHead>
+                      <TableHead className="hidden text-xs md:table-cell">Item code</TableHead>
                       <TableHead className="hidden text-xs md:table-cell">Type</TableHead>
                       <TableHead className="hidden text-xs md:table-cell">GST %</TableHead>
                       <TableHead className="text-right text-xs">Price</TableHead>
@@ -530,7 +530,7 @@ export default function Inventory() {
           {detailItem && (
             <div className="mt-6 space-y-4 text-sm">
               <DetailRow label="Name" value={detailItem.name} />
-              <DetailRow label="SKU" value={detailItem.sku} mono />
+              <DetailRow label="Item code" value={detailItem.sku} mono />
               <DetailRow label="Type" value={detailItem.itemType} />
               <DetailRow label="Category" value={detailItem.category} />
               <DetailRow label="Unit of measure" value={detailItem.unitOfMeasure} />

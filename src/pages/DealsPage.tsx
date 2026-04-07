@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
-import { can, getScope, visibleWithScope, formatINR } from "@/lib/rbac";
+import { can, getScope, visibleWithScope } from "@/lib/rbac";
 import { canDeleteDeal, canEditDeal, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
 import { apiUrl } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
@@ -26,8 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Lock, DollarSign, TrendingUp, CheckCircle, Plus, Pencil, Trash2, Search, Eye, LayoutGrid, List } from "lucide-react";
-import { useMdUp } from "@/hooks/useSmUp";
+import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar } from "lucide-react";
 import type { Deal } from "@/types";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
@@ -65,6 +63,125 @@ function formatShortDate(iso: string | null | undefined) {
 
 const DEFAULT_SALES_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"];
 
+const DASHBOARD_STAGES = DEFAULT_SALES_STAGES.slice(0, 3);
+
+type StageVisual = { key: string; label: string; pillColor: string; dotColor: string };
+
+const DEAL_STAGE_VISUAL: StageVisual[] = [
+  {
+    key: "Prospecting",
+    label: "Prospecting",
+    pillColor: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
+    dotColor: "bg-slate-400",
+  },
+  {
+    key: "Qualified",
+    label: "Qualified",
+    pillColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
+    dotColor: "bg-blue-500",
+  },
+  {
+    key: "Proposal",
+    label: "Proposal",
+    pillColor: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-200",
+    dotColor: "bg-violet-500",
+  },
+  {
+    key: "Negotiation",
+    label: "Negotiation",
+    pillColor: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+    dotColor: "bg-amber-500",
+  },
+  {
+    key: "Closing",
+    label: "Closing",
+    pillColor: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+    dotColor: "bg-emerald-500",
+  },
+];
+
+function dealStatusLabel(s: string) {
+  if (s === "Closed/Lost") return "Lost";
+  if (s === "Closed/Won") return "Won";
+  return s;
+}
+
+function stagePillClass(stage: string) {
+  return (
+    DEAL_STAGE_VISUAL.find((s) => s.key === stage)?.pillColor ??
+    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+  );
+}
+
+function stageDotClass(stage: string) {
+  return DEAL_STAGE_VISUAL.find((s) => s.key === stage)?.dotColor ?? "bg-gray-400";
+}
+
+function formatDealListDate(iso: string | null | undefined) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return "—";
+  }
+}
+
+function isFollowUpOverdue(iso: string | null | undefined) {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const t = new Date();
+  d.setHours(0, 0, 0, 0);
+  t.setHours(0, 0, 0, 0);
+  return d < t;
+}
+
+function DealStageBadge({ stage }: { stage: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-[140px] truncate text-xs font-medium px-2 py-0.5 rounded-full",
+        stagePillClass(stage),
+      )}
+      title={stage}
+    >
+      {stage}
+    </span>
+  );
+}
+
+function DealStageSelector({
+  deal,
+  options,
+  disabled,
+  pending,
+  onStageChange,
+}: {
+  deal: Deal;
+  options: string[];
+  disabled: boolean;
+  pending: boolean;
+  onStageChange: (deal: Deal, stage: string) => void;
+}) {
+  return (
+    <Select
+      value={deal.stage}
+      disabled={disabled || pending}
+      onValueChange={(v) => onStageChange(deal, v)}
+    >
+      <SelectTrigger className="h-7 w-[min(148px,100%)] max-w-[148px] px-2 text-[11px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((s) => (
+          <SelectItem key={s} value={s} className="text-xs">
+            {s}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export default function DealsPage() {
   const queryClient = useQueryClient();
   const updateDealStage = useUpdateDealStage();
@@ -75,6 +192,8 @@ export default function DealsPage() {
   const setDeals = useAppStore((s) => s.setDeals);
   const customers = useAppStore((s) => s.customers);
   const users = useAppStore((s) => s.users);
+  const teams = useAppStore((s) => s.teams);
+  const regions = useAppStore((s) => s.regions);
   const scope = getScope(me.role, "deals");
   const visibleDeals = visibleWithScope(scope, me, deals);
   const scopedActiveDeals = useMemo(
@@ -101,8 +220,7 @@ export default function DealsPage() {
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
   const [lossTarget, setLossTarget] = useState<Deal | null>(null);
   const [lossReasonDraft, setLossReasonDraft] = useState("");
-  const mdUp = useMdUp();
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
 
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -152,10 +270,6 @@ export default function DealsPage() {
   useEffect(() => {
     checkDealFollowUpReminders(deals);
   }, [deals]);
-
-  useEffect(() => {
-    if (!mdUp) setViewMode("list");
-  }, [mdUp]);
 
   useEffect(() => {
     const q = searchParams.get("q");
@@ -403,6 +517,47 @@ export default function DealsPage() {
     return Array.from(new Set([...DEFAULT_SALES_STAGES, ...allStages]));
   }, [allStages]);
 
+  const activeDealsCount = useMemo(
+    () =>
+      visible.filter((d) => {
+        const s = normalizeDealStatus(d.dealStatus);
+        return s !== "Closed/Won" && s !== "Closed/Lost";
+      }).length,
+    [visible],
+  );
+
+  const wonValueThisMonth = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const mo = now.getMonth();
+    return visible.reduce((sum, d) => {
+      if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return sum;
+      const t = d.updatedAt || d.createdAt;
+      if (!t) return sum;
+      const dt = new Date(t);
+      if (dt.getFullYear() !== y || dt.getMonth() !== mo) return sum;
+      return sum + d.value;
+    }, 0);
+  }, [visible]);
+
+  const wonPct = totalValue > 0 ? Math.min((wonValueThisMonth / totalValue) * 100, 100) : 0;
+
+  const stageCounts = useMemo(() => {
+    const o: Record<string, number> = {};
+    visible.forEach((d) => {
+      o[d.stage] = (o[d.stage] ?? 0) + 1;
+    });
+    return o;
+  }, [visible]);
+
+  const stageValues = useMemo(() => {
+    const o: Record<string, number> = {};
+    visible.forEach((d) => {
+      o[d.stage] = (o[d.stage] ?? 0) + d.value;
+    });
+    return o;
+  }, [visible]);
+
   const setStatusFilterAndUrl = (s: "all" | DealPipelineStatus) => {
     setStatusFilter(s);
     const next = new URLSearchParams(searchParams);
@@ -565,344 +720,473 @@ export default function DealsPage() {
     );
   };
 
+  const openDeal = (d: Deal) => {
+    setSheetDeal(d);
+    setSheetMode("view");
+    setSheetOpen(true);
+  };
+
   return (
     <>
-      <Topbar title="Deals" subtitle="Track and manage all deals" />
-      <div className="space-y-4 sm:space-y-6">
-        {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              className="pl-8 h-9"
-              placeholder="Search deal, customer..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 -mx-4 sm:-mx-5 lg:-mx-6 px-4 sm:px-5 lg:px-6 py-6 space-y-5 max-w-[1440px] mx-auto">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight">Deals</h1>
+            <p className="text-sm font-normal text-gray-500 mt-0.5">{visible.length} deals shown</p>
           </div>
-          <Select value={stageFilter} onValueChange={setStageFilter}>
-            <SelectTrigger className="h-9 w-[160px]">
-              <SelectValue placeholder="Stage" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All stages</SelectItem>
-              {allStages.map((s) => (
-                <SelectItem key={s} value={s}>
-                  {s}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-            <SelectTrigger className="h-9 w-[170px]">
-              <SelectValue placeholder="Owner" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All owners</SelectItem>
-              {users.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {canCreate && (
-            <Button
-              className="h-9"
-              onClick={() => {
-                setSheetDeal(null);
-                setSheetMode("create");
-                setSheetOpen(true);
-              }}
-            >
-              <Plus className="w-4 h-4 mr-1.5" /> New Deal
-            </Button>
-          )}
-        </div>
-
-        {/* Pipeline status summary cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {DEAL_STATUSES.map((st) => {
-            const meta = DEAL_STATUS_META[st];
-            const count = statusCounts[st];
-            const active = statusFilter === st;
-            return (
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
               <button
-                key={st}
                 type="button"
-                onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
+                onClick={() => setViewMode("kanban")}
                 className={cn(
-                  "text-left rounded-lg border p-3 transition-all hover:ring-2 hover:ring-primary/30",
-                  meta.cardClass,
-                  active && "ring-2 ring-primary",
+                  "h-7 px-3 rounded-md text-xs font-medium transition-colors",
+                  viewMode === "kanban"
+                    ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600"
+                    : "text-gray-500 dark:text-gray-400",
                 )}
               >
-                <p className="text-xs font-semibold text-foreground/90">{st}</p>
-                <p className="text-2xl font-bold mt-1 tabular-nums">{count}</p>
-                <p className="text-[10px] text-muted-foreground leading-snug mt-1 line-clamp-2">{meta.description}</p>
+                Board
               </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "h-7 px-3 rounded-md text-xs font-medium transition-colors",
+                  viewMode === "list"
+                    ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600"
+                    : "text-gray-500 dark:text-gray-400",
+                )}
+              >
+                List
+              </button>
+            </div>
+            {canCreate && (
+              <Button
+                className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
+                onClick={() => {
+                  setSheetDeal(null);
+                  setSheetMode("create");
+                  setSheetOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1.5" />
+                New Deal
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
+
+        <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-12 lg:items-center">
+              <div className="relative min-w-0 lg:col-span-4">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-9 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
+                  placeholder="Search deal, customer..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:col-span-8 lg:grid-cols-5">
+                <Select value={stageFilter} onValueChange={setStageFilter}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="All stages" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All stages</SelectItem>
+                    {allStages.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilterAndUrl(v as "all" | DealPipelineStatus)}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="Deal status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    {DEAL_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {dealStatusLabel(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="All owners" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All owners</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={teamFilter} onValueChange={setTeamFilter}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="All teams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All teams</SelectItem>
+                    {teams.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={regionFilter} onValueChange={setRegionFilter}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="All regions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All regions</SelectItem>
+                    {regions.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 overflow-x-auto pb-1 pt-1">
+              <button
+                type="button"
+                onClick={() => setStatusFilterAndUrl("all")}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                  statusFilter === "all"
+                    ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
+                    : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                )}
+              >
+                All
+              </button>
+              {DEAL_STATUSES.map((st) => {
+                const meta = DEAL_STATUS_META[st];
+                const active = statusFilter === st;
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
+                    className={cn(
+                      "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      active
+                        ? cn("ring-2 ring-blue-500", meta.cardClass)
+                        : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                    )}
+                  >
+                    {dealStatusLabel(st)} ({statusCounts[st]})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Deal dashboard */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="col-span-2 lg:col-span-2 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-5 text-white shadow-sm">
+            <p className="text-xs font-medium text-blue-100 mb-3 uppercase tracking-wide">Total deal value</p>
+            <p className="text-3xl font-bold tracking-tight mb-1 tabular-nums">
+              ₹{totalValue.toLocaleString("en-IN")}
+            </p>
+            <p className="text-sm text-blue-100">{activeDealsCount} active deals</p>
+            <div className="mt-4 space-y-1.5">
+              <div className="flex justify-between text-xs text-blue-100">
+                <span>Won this month</span>
+                <span className="tabular-nums">₹{wonValueThisMonth.toLocaleString("en-IN")}</span>
+              </div>
+              <div className="h-1.5 bg-blue-500/50 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-white rounded-full transition-all duration-300"
+                  style={{ width: `${wonPct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+
+          {DASHBOARD_STAGES.map((stageKey) => {
+            const sv = DEAL_STAGE_VISUAL.find((s) => s.key === stageKey);
+            return (
+              <div
+                key={stageKey}
+                className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 shadow-sm"
+              >
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full truncate max-w-[7rem]", sv?.pillColor ?? stagePillClass(stageKey))}>
+                    {sv?.label ?? stageKey}
+                  </span>
+                  <span className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
+                    {stageCounts[stageKey] ?? 0}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                  ₹{(stageValues[stageKey] ?? 0).toLocaleString("en-IN")}
+                </p>
+              </div>
             );
           })}
         </div>
 
-        <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
-          <Card className="bg-card border border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground font-medium">Total Deal Value</p>
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <p className="text-2xl font-bold">{formatINR(totalValue)}</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-card border border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground font-medium">Visible Deals</p>
-                <TrendingUp className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <p className="text-2xl font-bold">{visible.length}</p>
-            </CardContent>
-          </Card>
-          <Card className="bg-card border border-border">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs text-muted-foreground font-medium">Locked Deals</p>
-                <CheckCircle className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <p className="text-2xl font-bold text-success">{visible.filter((d) => d.locked).length}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card className="overflow-hidden border border-border bg-card">
-          <CardContent className="p-0">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
-              <h3 className="font-semibold text-foreground">All Deals</h3>
-              {mdUp && (
-                <div className="flex gap-1 rounded-md border border-border p-0.5">
-                  <Button
-                    type="button"
-                    variant={viewMode === "list" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5"
-                    onClick={() => setViewMode("list")}
-                  >
-                    <List className="h-3.5 w-3.5" />
-                    List
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={viewMode === "kanban" ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-8 gap-1.5 px-2.5"
-                    onClick={() => setViewMode("kanban")}
-                  >
-                    <LayoutGrid className="h-3.5 w-3.5" />
-                    Kanban
-                  </Button>
+        {/* Kanban */}
+        {viewMode === "kanban" && (
+          <div className="overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6">
+            <div className="flex gap-4 min-w-max">
+              {stageSelectOptions.map((stage) => (
+                <div key={stage} className="w-72 flex-shrink-0">
+                  <div className="flex items-center justify-between mb-3 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", stageDotClass(stage))} />
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">{stage}</span>
+                      <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full shrink-0 tabular-nums">
+                        {visible.filter((d) => d.stage === stage).length}
+                      </span>
+                    </div>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
+                      ₹{(stageValues[stage] ?? 0).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {visible
+                      .filter((d) => d.stage === stage)
+                      .map((deal) => {
+                        const cust = customers.find((c) => c.id === deal.customerId)?.companyName ?? "—";
+                        const ownerName = users.find((u) => u.id === deal.ownerUserId)?.name ?? "";
+                        return (
+                          <div
+                            key={deal.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openDeal(deal)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                openDeal(deal);
+                              }
+                            }}
+                            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition-all duration-150 text-left w-full"
+                          >
+                            <div className="flex items-start justify-between gap-2 mb-2.5">
+                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-snug line-clamp-2 flex-1">
+                                {deal.name}
+                              </p>
+                              <span className="text-xs font-bold text-blue-600 whitespace-nowrap flex-shrink-0 tabular-nums">
+                                ₹{(deal.value ?? 0).toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-1">{cust}</p>
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
+                                  <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                                    {ownerName?.[0] ?? "?"}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-gray-400 truncate">{ownerName?.split(" ")[0] ?? "—"}</span>
+                              </div>
+                              {deal.nextFollowUpDate && (
+                                <span
+                                  className={cn(
+                                    "text-xs flex items-center gap-1 shrink-0",
+                                    isFollowUpOverdue(deal.nextFollowUpDate) ? "text-red-500 font-medium" : "text-gray-400",
+                                  )}
+                                >
+                                  <Calendar className="h-3 w-3" />
+                                  {formatDealListDate(deal.nextFollowUpDate)}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
-            {mdUp && viewMode === "kanban" ? (
-              <div className="overflow-x-auto pb-4 pt-2">
-                <div className="flex min-w-max gap-4 px-4">
-                  {stageSelectOptions.map((stage) => (
-                    <KanbanColumn
-                      key={stage}
-                      stage={stage}
-                      deals={visible.filter((d) => d.stage === stage)}
-                      customerName={(id) => customers.find((c) => c.id === id)?.companyName ?? "—"}
-                      onViewDeal={(d) => {
-                        setSheetDeal(d);
-                        setSheetMode("view");
-                        setSheetOpen(true);
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
-                        Title
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
-                        Value
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell md:px-4 md:py-3">
-                        Customer
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
-                        Stage
-                      </TableHead>
-                      <TableHead className="hidden min-w-[140px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground xl:table-cell md:px-4 md:py-3">
-                        Deal status
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
-                        Assigned To
-                      </TableHead>
-                      <TableHead className="hidden whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell md:px-4 md:py-3">
-                        Created
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground md:px-4 md:py-3">
-                        Actions
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {visible.map((d) => {
-                    const st = normalizeDealStatus(d.dealStatus);
-                    const badgeClass = DEAL_STATUS_META[st].badgeClass;
+          </div>
+        )}
+
+        {/* List view */}
+        {viewMode === "list" && (
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
+                    {["Deal", "Customer", "Value", "Stage", "Follow up", "Actions"].map((h) => (
+                      <th
+                        key={h}
+                        className={cn(
+                          "px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide",
+                          h === "Deal" && "text-left pl-5",
+                          h === "Value" && "text-right hidden sm:table-cell",
+                          h === "Follow up" && "text-left hidden md:table-cell",
+                          h === "Actions" && "text-center pr-5",
+                          !["Deal", "Value", "Follow up", "Actions"].includes(h) && "text-left",
+                        )}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {visible.map((deal) => {
+                    const cust = customers.find((c) => c.id === deal.customerId)?.companyName ?? "—";
+                    const ownerName = users.find((u) => u.id === deal.ownerUserId)?.name ?? "—";
                     return (
-                      <TableRow key={d.id}>
-                        <TableCell className="px-3 py-3 text-sm font-medium md:px-4 md:py-3.5">{d.name}</TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell md:px-4 md:py-3.5">
-                          {formatINR(d.value)}
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-sm text-muted-foreground md:table-cell md:px-4 md:py-3.5">
-                          {customers.find((c) => c.id === d.customerId) ? (
+                      <tr
+                        key={deal.id}
+                        className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
+                      >
+                        <td className="px-4 py-3.5 pl-5">
+                          <div>
                             <button
                               type="button"
-                              className="text-left text-primary hover:underline"
-                              onClick={() => navigate(`/customers/${d.customerId}`)}
+                              onClick={() => openDeal(deal)}
+                              className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left leading-snug line-clamp-2"
                             >
-                              {customers.find((c) => c.id === d.customerId)?.companyName}
+                              {deal.name}
                             </button>
-                          ) : (
-                            "—"
-                          )}
-                        </TableCell>
-                        <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
-                          {canUpdateDeal && !d.locked ? (
-                            <Select
-                              value={d.stage}
-                              disabled={updateDealStage.isPending}
-                              onValueChange={(v) =>
-                                updateDealStage.mutate({
-                                  dealId: d.id,
-                                  stage: v,
-                                  prevDealStatus: normalizeDealStatus(d.dealStatus),
-                                })
-                              }
-                            >
-                              <SelectTrigger className="h-8 w-[min(150px,100%)] max-w-[150px] px-2 text-[10px]">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {stageSelectOptions.map((s) => (
-                                  <SelectItem key={s} value={s} className="text-xs">
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">
-                              {d.stage}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden min-w-[140px] px-3 py-3 xl:table-cell md:px-4 md:py-3.5">
-                          {canUpdateDeal && !d.locked ? (
-                            <Select value={st} onValueChange={(v) => onInlineStatusChange(d, v)}>
-                              <SelectTrigger className={cn("h-8 border text-xs", badgeClass)}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {statusOptions.map((s) => (
-                                  <SelectItem key={s} value={s}>
-                                    {s}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Badge variant="outline" className={cn("border text-[10px]", badgeClass)}>
-                              {st}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">
-                          {users.find((u) => u.id === d.ownerUserId)?.name}
-                        </TableCell>
-                        <TableCell className="hidden whitespace-nowrap px-3 py-3 text-xs text-muted-foreground lg:table-cell md:px-4 md:py-3.5">
-                          {formatShortDate(d.createdAt)}
-                        </TableCell>
-                        <TableCell className="px-3 py-3 md:px-4 md:py-3.5">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {d.locked ? (
-                              <span className="flex items-center gap-1 text-xs text-success">
-                                <Lock className="w-3 h-3" /> Locked
-                              </span>
+                            <p className="text-xs text-gray-400 font-mono mt-0.5 truncate max-w-[220px]" title={deal.id}>
+                              {deal.id}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <div>
+                            {customers.find((c) => c.id === deal.customerId) ? (
+                              <button
+                                type="button"
+                                className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 text-left"
+                                onClick={() => navigate(`/customers/${deal.customerId}`)}
+                              >
+                                {cust}
+                              </button>
                             ) : (
-                              <span className="flex items-center gap-1 text-xs text-warning">
-                                <span className="w-2 h-2 rounded-full bg-warning" /> Open
+                              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{cust}</p>
+                            )}
+                            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{ownerName}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3.5 text-right hidden sm:table-cell">
+                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                            ₹{(deal.value ?? 0).toLocaleString("en-IN")}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <DealStageBadge stage={deal.stage} />
+                        </td>
+                        <td className="px-4 py-3.5 hidden md:table-cell">
+                          {deal.nextFollowUpDate ? (
+                            <span
+                              className={cn(
+                                "text-xs",
+                                isFollowUpOverdue(deal.nextFollowUpDate) ? "text-red-500 font-medium" : "text-gray-500 dark:text-gray-400",
+                              )}
+                            >
+                              {formatDealListDate(deal.nextFollowUpDate)}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 pr-5">
+                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                            {deal.locked && (
+                              <span title="Locked" className="text-emerald-600">
+                                <Lock className="h-3.5 w-3.5" />
                               </span>
                             )}
                             <Button
                               variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
+                              size="sm"
+                              className="h-7 w-7 p-0 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
+                              onClick={() => openDeal(deal)}
                               title="View"
-                              onClick={() => {
-                                setSheetDeal(d);
-                                setSheetMode("view");
-                                setSheetOpen(true);
-                              }}
                             >
-                              <Eye className="w-4 h-4" />
+                              <Eye className="h-3.5 w-3.5" />
                             </Button>
-                            {canUpdateDeal && !d.locked && (
+                            <DealStageSelector
+                              deal={deal}
+                              options={stageSelectOptions}
+                              disabled={!canUpdateDeal || !!deal.locked}
+                              pending={updateDealStage.isPending}
+                              onStageChange={(d, st) =>
+                                updateDealStage.mutate({
+                                  dealId: d.id,
+                                  stage: st,
+                                  prevDealStatus: normalizeDealStatus(d.dealStatus),
+                                })
+                              }
+                            />
+                            {canUpdateDeal && !deal.locked && (
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
+                                size="sm"
+                                className="h-7 w-7 p-0 rounded-md text-gray-400 hover:text-gray-700"
                                 title="Edit"
                                 onClick={() => {
-                                  setSheetDeal(d);
+                                  setSheetDeal(deal);
                                   setSheetMode("edit");
                                   setSheetOpen(true);
                                 }}
                               >
-                                <Pencil className="w-4 h-4" />
+                                <Pencil className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                            {canRemoveDeal && !d.locked && (
+                            {canRemoveDeal && !deal.locked && (
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive"
-                                title="Delete"
-                                onClick={() => setDeleteTarget(d)}
+                                size="sm"
+                                className="h-7 w-7 p-0 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                                title="Archive"
+                                onClick={() => setDeleteTarget(deal)}
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             )}
                           </div>
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     );
                   })}
-                    {visible.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
-                          No active deals in scope
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                  {visible.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                        No deals match your filters
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <Card className="bg-card border border-border">
           <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
             <p>
-              <strong className="text-foreground">Pipeline status</strong> drives reminders and win/loss automation.
+              <strong className="text-foreground">Deal status</strong> controls reminders and win/loss messages.
               Changing to <strong>Closed/Won</strong> notifies the team (deal_won templates).{" "}
               <strong>Closed/Lost</strong> requires a loss reason and fires deal_lost templates.
             </p>
@@ -1057,7 +1341,7 @@ export default function DealsPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Pipeline status *</Label>
+                  <Label>Deal status *</Label>
                   <Select
                     value={dealStatus}
                     onValueChange={(v) => setDealStatus(v as DealPipelineStatus)}
@@ -1296,41 +1580,5 @@ export default function DealsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
-}
-
-function KanbanColumn({
-  stage,
-  deals,
-  customerName,
-  onViewDeal,
-}: {
-  stage: string;
-  deals: Deal[];
-  customerName: (customerId: string) => string;
-  onViewDeal: (d: Deal) => void;
-}) {
-  return (
-    <div className="w-72 shrink-0">
-      <div className="rounded-lg bg-muted/60 p-3 dark:bg-muted/30">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {stage} ({deals.length})
-        </h3>
-        <div className="space-y-2">
-          {deals.map((deal) => (
-            <button
-              key={deal.id}
-              type="button"
-              onClick={() => onViewDeal(deal)}
-              className="w-full rounded-md border border-border bg-card p-3 text-left shadow-sm transition hover:bg-muted/50"
-            >
-              <p className="line-clamp-2 text-sm font-medium">{deal.name}</p>
-              <p className="mt-1 truncate text-xs text-muted-foreground">{customerName(deal.customerId)}</p>
-              <p className="mt-2 text-xs font-mono font-semibold tabular-nums">{formatINR(deal.value)}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 }

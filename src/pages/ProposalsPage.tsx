@@ -516,7 +516,7 @@ export default function ProposalsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="text-xs">Item</TableHead>
-                        <TableHead className="text-xs">SKU</TableHead>
+                        <TableHead className="text-xs">Item code</TableHead>
                         <TableHead className="text-xs w-20">Qty</TableHead>
                         <TableHead className="text-xs text-right">Unit price</TableHead>
                         <TableHead className="text-xs w-16">GST %</TableHead>
@@ -638,7 +638,7 @@ export default function ProposalsPage() {
           </DialogHeader>
           <DialogBody className="space-y-2">
             <Input
-              placeholder="Search by name or SKU..."
+              placeholder="Search by name or item code..."
               value={inventorySearch}
               onChange={e => setInventorySearch(e.target.value)}
             />
@@ -650,7 +650,7 @@ export default function ProposalsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="text-xs">Name</TableHead>
-                      <TableHead className="text-xs">SKU</TableHead>
+                      <TableHead className="text-xs">Item code</TableHead>
                       <TableHead className="text-xs text-right">Price</TableHead>
                       <TableHead className="w-20" />
                     </TableRow>

@@ -249,7 +249,7 @@ export function useCreateDealFromProposal() {
       });
       toast({
         title: "Deal created",
-        description: `${deal.name} is now in your pipeline`,
+        description: `${deal.name} is now listed under Deals.`,
       });
     },
   });

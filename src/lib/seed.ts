@@ -723,11 +723,218 @@ export const seedAutomationTemplates: AutomationTemplate[] = [
 ];
 
 const seedNow = '2026-03-01T10:00:00Z';
+function parseInrToNumber(raw: string) {
+  const cleaned = raw
+    .replace(/INR/gi, '')
+    .replace(/₹/g, '')
+    .replace(/,/g, '')
+    .trim();
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function makeImportedInventoryItems(): InventoryItem[] {
+  // Imported from the user's rate sheet (names + INR rates).
+  // Kept as plain text to avoid copy/paste errors and allow easy updates.
+  const namesRaw = `
+Buildesk Sales Management Application (CRM)
+Buildesk Post Sales Module
+Software Consultancy
+Website Development
+AMC
+Buildesk Sales Renewal
+Buildesk Post Sales Renewal
+Buildesk SMS Credit
+GSuite
+Integromat
+One-time Wati Setup and Integration
+Annual Pricing for Wati Annual License
+Make.com Annual License
+Support
+Manpower Supplement
+WhatsApp Business Credit Recharge
+IVR Licenses
+Auto Dialer Licenses
+IVR Setup & Integration
+Customisation
+Truecaller
+Integration / Implementation
+Software Support Service
+Reception Application Service
+Reception Application Tab-Based Service
+Annual License for Reception Admin Application
+Annual License for Reception Tablet / Mobile Application
+On Site Resource Deployment with Loading, Travel and Food
+Customisation, Effort, Delivery Cost and Other Charges
+Wati Annual Charges
+Wati Verification, Configuration, and Setup
+Buildesk Sales Licenses + Buildesk Post Sales Module Renewal
+Marketing & Branding
+Kredily Enterprise Plan
+Job Portal
+Lunch
+Training
+Buildesk Pay
+White labelled iOS and Android Customer App - Development, configuration, setup and delivery
+Customer Application License
+CS Payment
+Printing expenses
+SendGrid
+Truecaller (CR)
+DeskTrack
+TNT Mobitrack
+Google workspace
+Smart Android LED TV
+Trademark
+SMB
+VMN Charges
+Apple Developer Program (Automatic Renewal)
+Advertisement Receipt -9th MAHACON
+Email Services
+Website Hosting Charges
+Buildesk SIM Based Auto Dialer
+Buildesk Sales licenses + Buildesk Post Sales Module
+Other Charges
+DLT Fees
+Customer Application License Renewal
+Setup Charges
+On Premise Delivery Team Deployment for 15days
+On Premise Delivery Team Deployment for 15 days
+Pending Amount
+Setup, Integration, On-site training and Resource
+Customer App - White Labelled • Reception App • White Labelled • SMS and Email Integration• Setup and Training
+Test Cement
+Setup & Training
+Introductory Discount
+Buildesk Post sales + Buildesk Pay
+Buildesk Reception Application
+Test Product
+BUILDESK CONTRACTOR MODULE
+`;
+
+  const ratesRaw = `
+INR 25000.00
+INR 125000.00
+INR 50000.00
+INR 5000.00
+INR 5000.00
+INR 50000.00
+INR 200000.00
+INR 0.195
+INR 300.00
+INR 8400.00
+INR 1600.00
+INR 28560.00
+INR 9000.00
+INR 50000.00
+INR 40000.00
+INR 800.00
+INR 18000.00
+INR 80000.00
+INR 2000.00
+INR 2000.00
+INR 4500.00
+INR 16000.00
+INR 750000.00
+INR 60000.00
+INR 25000.00
+INR 25000.00
+INR 25000.00
+INR 10000.00
+INR 3000.00
+INR 65000.00
+INR 29000.00
+INR 20000.00
+INR 100000.00
+INR 5000.00
+INR 0.00
+INR 0.00
+INR 0.00
+INR 28000.00
+INR 100000.00
+INR 200000.00
+INR 9400.00
+INR 3238.09
+INR 12744.36
+INR 165660.00
+INR 18000.00
+INR 8000.00
+INR 2680.48
+INR 17186.72
+INR 5761.02
+INR 25000.00
+INR 600.00
+INR 373.00
+INR 30000.00
+INR 18000.00
+INR 10000.00
+INR 300.00
+INR 2000.00
+INR 2000.00
+INR 5900.00
+INR 20000.00
+INR 2000.00
+INR 2000.00
+INR 25000.00
+INR 25000.00
+INR 60000.00
+INR 40000.00
+INR 200000.00
+INR 350.00
+INR 100000.00
+INR 55000.00
+INR 100000.00
+INR 20000.00
+INR 12000.00
+INR 0.00
+INR 0.00
+`;
+
+  const names = namesRaw
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const rates = ratesRaw
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(parseInrToNumber);
+
+  const count = Math.min(names.length, rates.length);
+  const createdAt = seedNow;
+
+  return Array.from({ length: count }).map((_, idx) => {
+    const name = names[idx];
+    const sellingPrice = rates[idx];
+    const sku = `ITEM-${String(idx + 1).padStart(3, '0')}`;
+    return {
+      id: `inv_imp_${String(idx + 1).padStart(3, '0')}`,
+      name,
+      description: undefined,
+      itemType: 'service',
+      sku,
+      hsnSacCode: undefined,
+      category: 'Services',
+      unitOfMeasure: 'unit',
+      costPrice: 0,
+      sellingPrice,
+      taxRate: 18,
+      isActive: true,
+      createdAt,
+      updatedAt: createdAt,
+      createdBy: 'u1',
+      notes: undefined,
+    };
+  });
+}
+
+const importedInventoryItems = makeImportedInventoryItems();
+
 export const seedInventoryItems: InventoryItem[] = [
   {
     id: 'inv1',
     name: 'Buildesk CRM Pro',
-    description: 'Full CRM suite with contacts, pipeline, and reporting',
+    description: 'Full CRM suite with contacts, deals, and reporting',
     itemType: 'product',
     sku: 'CRM-PRO-001',
     hsnSacCode: '998314',
@@ -862,4 +1069,5 @@ export const seedInventoryItems: InventoryItem[] = [
     createdBy: 'u1',
     notes: 'Discontinued',
   },
+  ...importedInventoryItems,
 ];

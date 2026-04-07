@@ -1,4 +1,4 @@
-/** Pipeline status for deals (cards, filters, badges). */
+/** Deal status labels for deals (cards, filters, badges). */
 export const DEAL_STATUSES = [
   "Hot",
   "Cold",

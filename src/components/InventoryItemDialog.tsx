@@ -59,7 +59,7 @@ function buildSchema(existingSkus: string[], editingId: string | null) {
     .object({
       name: z.string().min(1, "Name is required"),
       itemType: z.enum(["product", "service", "subscription", "bundle"]),
-      sku: z.string().min(1, "SKU is required"),
+      sku: z.string().min(1, "Item code is required"),
       hsnSacCode: z.string().optional(),
       category: z.string().min(1, "Category is required"),
       unitOfMeasure: z.string().min(1, "Unit of measure is required"),
@@ -76,7 +76,7 @@ function buildSchema(existingSkus: string[], editingId: string | null) {
         const isDuplicate = existingSkus.some((s) => s.toUpperCase() === sku);
         return !isDuplicate;
       },
-      { message: "SKU already exists", path: ["sku"] }
+      { message: "This item code is already used", path: ["sku"] }
     );
 }
 
@@ -300,7 +300,7 @@ export function InventoryItemDialog({
                   name="sku"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>SKU *</FormLabel>
+                      <FormLabel>Item code *</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g. CRM-PRO-001" {...field} />
                       </FormControl>

@@ -208,7 +208,7 @@ export function ProposalDetailSheet({
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Item</TableHead>
-                  <TableHead className="text-xs">SKU</TableHead>
+                  <TableHead className="text-xs">Item code</TableHead>
                   <TableHead className="text-xs">Qty</TableHead>
                   <TableHead className="text-xs text-right">Unit Price</TableHead>
                   <TableHead className="text-xs">Disc %</TableHead>

@@ -327,7 +327,7 @@ export default function DashboardPage() {
     return months.map((m) => ({ month: m.month, full: m.full, revenueLakhs: Math.round((m.revenue / 100_000) * 100) / 100 }));
   }, [filteredCustomers, paymentHistory, now]);
 
-  // Proposal Pipeline — count per status, horizontal bar
+  // Proposals by status — count per status, horizontal bar
   const pipelineStatuses: ProposalStatus[] = [
     'draft',
     'sent',
@@ -455,7 +455,7 @@ export default function DashboardPage() {
 
   const handlePipelineBarClick = (statusKey: string, count: number) => {
     openDetail(
-      `Proposal Pipeline - ${statusKey.replace(/_/g, ' ')}`,
+      `Proposals — ${statusKey.replace(/_/g, ' ')}`,
       [{ key: statusKey, label: 'Count', value: String(count) }],
       applyQuery('/proposals', { status: statusKey }),
     );
@@ -469,71 +469,116 @@ export default function DashboardPage() {
       />
       <div className="space-y-4 sm:space-y-6">
         <Card className="bg-card border border-border">
-          <CardContent className="grid grid-cols-2 gap-2 p-4 sm:flex sm:flex-wrap sm:items-end">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">From</p>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="h-9 min-w-0 w-full sm:w-[150px]" />
+          <CardContent className="p-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-end">
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3 lg:col-span-9">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">From</p>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-9 min-w-0 w-full sm:w-[150px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">To</p>
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-9 min-w-0 w-full sm:w-[150px]"
+                  />
+                </div>
+
+                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[170px]">
+                    <SelectValue placeholder="All owners" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All owners</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={teamFilter} onValueChange={setTeamFilter}>
+                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]">
+                    <SelectValue placeholder="All teams" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All teams</SelectItem>
+                    {teams.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={regionFilter} onValueChange={setRegionFilter}>
+                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]">
+                    <SelectValue placeholder="All regions" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All regions</SelectItem>
+                    {regions.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={proposalStatusFilter} onValueChange={(v) => setProposalStatusFilter(v as ProposalStatus | 'all')}>
+                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[190px]">
+                    <SelectValue placeholder="All proposal statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All proposal statuses</SelectItem>
+                    {pipelineStatuses.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s.replace(/_/g, ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 lg:col-span-3 lg:flex lg:justify-end">
+                <Button
+                  variant="outline"
+                  className="h-9"
+                  onClick={() => {
+                    setDateFrom('');
+                    setDateTo('');
+                    setOwnerFilter('all');
+                    setTeamFilter('all');
+                    setRegionFilter('all');
+                    setProposalStatusFilter('all');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="h-9 gap-2"
+                  type="button"
+                  disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
+                  onClick={() => refetchAll()}
+                >
+                  {dashboardLoading || proposalsQuery.isFetching ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Refresh data
+                </Button>
+              </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">To</p>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 min-w-0 w-full sm:w-[150px]" />
-            </div>
-            <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[170px]"><SelectValue placeholder="Owner" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All owners</SelectItem>
-                {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={teamFilter} onValueChange={setTeamFilter}>
-              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]"><SelectValue placeholder="Team" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All teams</SelectItem>
-                {teams.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={regionFilter} onValueChange={setRegionFilter}>
-              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]"><SelectValue placeholder="Region" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All regions</SelectItem>
-                {regions.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={proposalStatusFilter} onValueChange={(v) => setProposalStatusFilter(v as ProposalStatus | 'all')}>
-              <SelectTrigger className="h-9 min-w-0 w-full sm:w-[180px]"><SelectValue placeholder="Proposal status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All proposal statuses</SelectItem>
-                {pipelineStatuses.map((s) => <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              className="col-span-2 h-9 sm:col-span-1"
-              onClick={() => {
-                setDateFrom('');
-                setDateTo('');
-                setOwnerFilter('all');
-                setTeamFilter('all');
-                setRegionFilter('all');
-                setProposalStatusFilter('all');
-              }}
-            >
-              Clear Filters
-            </Button>
-            <Button
-              variant="secondary"
-              className="col-span-2 h-9 gap-2 sm:col-span-1"
-              type="button"
-              disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
-              onClick={() => refetchAll()}
-            >
-              {dashboardLoading || proposalsQuery.isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              Refresh data
-            </Button>
           </CardContent>
         </Card>
         {dashboardLoading && (
@@ -632,7 +677,7 @@ export default function DashboardPage() {
 
             <Card className="border border-border bg-card shadow-none">
               <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
-                <CardTitle className="text-sm font-semibold sm:text-base">Proposal Pipeline</CardTitle>
+                <CardTitle className="text-sm font-semibold sm:text-base">Proposals by status</CardTitle>
               </CardHeader>
               <CardContent className="px-2 pb-4 sm:px-4">
                 <div className="h-48 sm:h-64 lg:h-72">

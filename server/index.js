@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { db, SQLITE_PATH } from "./db.js";
+import { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, forceReseedUsersAndTeams } from "./db.js";
 import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
 import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
@@ -12,6 +12,31 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 registerIntegrationProxies(app, { db });
+
+// Debug helpers (intentionally behind an env flag for VPS troubleshooting).
+function debugEnabled() {
+  return process.env.ALLOW_DEBUG_API === "1" || process.env.ALLOW_DEBUG_API === "true";
+}
+
+app.get("/api/_debug/db-info", (_req, res) => {
+  if (!debugEnabled()) return res.status(404).json({ error: "Not found" });
+  const meta = db.prepare("SELECT key, value, updatedAt FROM app_meta ORDER BY key").all();
+  const users = db.prepare("SELECT id, name, email, role, teamId, regionId, status FROM users ORDER BY name").all();
+  res.json({
+    sqlitePath: SQLITE_PATH,
+    usersTeamsSeedKey: USERS_TEAMS_SEED_KEY,
+    meta,
+    usersCount: users.length,
+    users,
+  });
+});
+
+app.post("/api/_debug/force-reseed-users-teams", (_req, res) => {
+  if (!debugEnabled()) return res.status(404).json({ error: "Not found" });
+  forceReseedUsersAndTeams();
+  const users = db.prepare("SELECT id, name, email, role, teamId, regionId, status FROM users ORDER BY name").all();
+  res.json({ ok: true, usersTeamsSeedKey: USERS_TEAMS_SEED_KEY, usersCount: users.length, users });
+});
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -908,8 +933,8 @@ app.get("/api/inventory/:id", (req, res) => {
 
 app.post("/api/inventory", (req, res) => {
   const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdBy, notes, stockQty, supplier, location } = req.body || {};
-  if (!name || !sku || !category || unitOfMeasure == null) return res.status(400).json({ error: "name, sku, category, and unitOfMeasure are required" });
-  if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(String(sku).trim())) return res.status(400).json({ error: "SKU already exists" });
+  if (!name || !sku || !category || unitOfMeasure == null) return res.status(400).json({ error: "name, item code, category, and unitOfMeasure are required" });
+  if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku) = UPPER(?)").get(String(sku).trim())) return res.status(400).json({ error: "Item code already exists" });
 
   const item = {
     id: "inv" + makeId(),
@@ -948,7 +973,7 @@ app.put("/api/inventory/:id", (req, res) => {
   const { name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, notes, stockQty, supplier, location } = req.body || {};
   if (sku !== undefined && String(sku).trim().toUpperCase() !== String(existing.sku).trim().toUpperCase()) {
     if (db.prepare("SELECT id FROM inventory WHERE UPPER(sku)=UPPER(?) AND id <> ?").get(String(sku).trim(), req.params.id)) {
-      return res.status(400).json({ error: "SKU already exists" });
+      return res.status(400).json({ error: "Item code already exists" });
     }
   }
 

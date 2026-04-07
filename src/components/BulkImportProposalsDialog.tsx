@@ -20,7 +20,7 @@ import {
   type ProposalExcelRow,
 } from "@/lib/bulkProposalExcel";
 import { useAppStore } from "@/store/useAppStore";
-import type { Proposal, Region } from "@/types";
+import type { Customer, CustomerStatus, Proposal, Region } from "@/types";
 
 async function saveProposalsToApi(proposals: Proposal[]): Promise<void> {
   const bulkUrl = apiUrl("/api/proposals/bulk");
@@ -78,6 +78,7 @@ export function BulkImportProposalsDialog({
   const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
   const inventoryItems = useAppStore((s) => s.inventoryItems);
+  const setCustomers = useAppStore((s) => s.setCustomers);
 
   const [file, setFile] = useState<File | null>(null);
   const [parsedRows, setParsedRows] = useState<{ rowIndex: number; data: ProposalExcelRow }[]>([]);
@@ -151,6 +152,87 @@ export function BulkImportProposalsDialog({
       } else {
         await queryClient.invalidateQueries({ queryKey: QK.proposals() });
         await queryClient.refetchQueries({ queryKey: QK.proposals() });
+      }
+
+      // New customers may have been created during the import. Refresh customers so they appear immediately.
+      const customersRes = await fetch(apiUrl("/api/customers"));
+      if (customersRes.ok) {
+        type ApiCustomer = {
+          id: string;
+          leadId?: string;
+          name: string;
+          state?: string | null;
+          gstin?: string | null;
+          regionId: string;
+          city?: string | null;
+          email?: string | null;
+          primaryPhone?: string | null;
+          status?: string | null;
+          createdAt?: string;
+          salesExecutive?: string | null;
+          accountManager?: string | null;
+          deliveryExecutive?: string | null;
+        };
+
+        const toUiCustomer = (row: ApiCustomer): Customer => {
+          const regionName = regions.find((r) => r.id === row.regionId)?.name ?? "Unknown";
+          const assignedUser =
+            users.find((u) => u.name === row.salesExecutive) ??
+            users.find((u) => u.regionId === row.regionId && u.role === "sales_rep") ??
+            users[0];
+          const nowIso = row.createdAt ?? new Date().toISOString();
+          return {
+            id: row.id,
+            customerNumber: row.leadId ?? `CUST-${row.id.slice(-4).toUpperCase()}`,
+            companyName: row.name,
+            status: (row.status as CustomerStatus) ?? "active",
+            gstin: row.gstin ?? undefined,
+            pan: undefined,
+            industry: undefined,
+            website: undefined,
+            address: {
+              city: row.city ?? undefined,
+              state: row.state ?? undefined,
+              country: "India",
+            },
+            contacts: [
+              {
+                id: `ct-${row.id}`,
+                name: row.name,
+                email: row.email ?? undefined,
+                phone: row.primaryPhone ?? undefined,
+                isPrimary: true,
+              },
+            ],
+            regionId: row.regionId,
+            regionName,
+            teamId: assignedUser?.teamId ?? users[0]?.teamId ?? "t1",
+            assignedTo: assignedUser?.id ?? users[0]?.id ?? me.id,
+            assignedToName: assignedUser?.name ?? row.salesExecutive ?? "Unassigned",
+            tags: [],
+            notes: [],
+            attachments: [],
+            productLines: [],
+            payments: [],
+            invoices: [],
+            supportTickets: [],
+            activityLog: [],
+            totalRevenue: 0,
+            totalDealValue: 0,
+            activeProposalsCount: 0,
+            activeDealsCount: 0,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            createdBy: me.id,
+          };
+        };
+
+        const customerRows = (await customersRes.json()) as ApiCustomer[];
+        const customers: Customer[] = customerRows.map(toUiCustomer);
+        queryClient.setQueryData(QK.customers(), customers);
+        setCustomers(customers);
+      } else {
+        await queryClient.invalidateQueries({ queryKey: QK.customers() });
       }
 
       const extra =

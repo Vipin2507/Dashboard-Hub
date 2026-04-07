@@ -305,7 +305,7 @@ export interface Deal {
   value: number;
   locked: boolean;
   proposalId: string | null;
-  /** Pipeline status: Hot, Cold, Active, Pending, Closed/Won, Closed/Lost */
+  /** Deal status: Hot, Cold, Active, Pending, Closed/Won, Closed/Lost */
   dealStatus?: string;
   dealSource?: string | null;
   expectedCloseDate?: string | null;

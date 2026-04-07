@@ -368,7 +368,7 @@ export default function DataControlCenterPage() {
         : activeModule === "inventory"
           ? [
               "itemName",
-              "sku",
+              "itemCode",
               "category",
               "unitOfMeasure",
               "quantity",
@@ -396,7 +396,7 @@ export default function DataControlCenterPage() {
       activeModule === "customer_management"
         ? ["<region id>", "Example Pvt Ltd", "9990001111", "a@b.com", "Mumbai", "active", "", "", ""]
         : activeModule === "inventory"
-          ? ["Sample item", "SKU-001", "General", "unit", "10", "100", "0", "18", "active", "", "", ""]
+          ? ["Sample item", "ITEM-001", "General", "unit", "10", "100", "0", "18", "active", "", "", ""]
           : ["<customer id>", "<user id>", "New deal", "50000", "Qualification", "Medium", "", "", "", ""];
     const ws = XLSX.utils.aoa_to_sheet([headers, example]);
     const wb = XLSX.utils.book_new();

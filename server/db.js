@@ -8,6 +8,8 @@ const schemaPath = path.resolve(process.cwd(), "server", "schema.sql");
 fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
 
 const db = new Database(SQLITE_PATH);
+// eslint-disable-next-line no-console
+console.log(`[buildesk] sqlite: ${SQLITE_PATH}`);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(fs.readFileSync(schemaPath, "utf8"));
@@ -119,8 +121,209 @@ const seedCustomers = [
   },
 ];
 
+function parseInrToNumber(raw) {
+  const cleaned = String(raw || "")
+    .replace(/INR/gi, "")
+    .replace(/₹/g, "")
+    .replace(/,/g, "")
+    .trim();
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function makeImportedInventory(seedNow) {
+  const namesRaw = `
+Buildesk Sales Management Application (CRM)
+Buildesk Post Sales Module
+Software Consultancy
+Website Development
+AMC
+Buildesk Sales Renewal
+Buildesk Post Sales Renewal
+Buildesk SMS Credit
+GSuite
+Integromat
+One-time Wati Setup and Integration
+Annual Pricing for Wati Annual License
+Make.com Annual License
+Support
+Manpower Supplement
+WhatsApp Business Credit Recharge
+IVR Licenses
+Auto Dialer Licenses
+IVR Setup & Integration
+Customisation
+Truecaller
+Integration / Implementation
+Software Support Service
+Reception Application Service
+Reception Application Tab-Based Service
+Annual License for Reception Admin Application
+Annual License for Reception Tablet / Mobile Application
+On Site Resource Deployment with Loading, Travel and Food
+Customisation, Effort, Delivery Cost and Other Charges
+Wati Annual Charges
+Wati Verification, Configuration, and Setup
+Buildesk Sales Licenses + Buildesk Post Sales Module Renewal
+Marketing & Branding
+Kredily Enterprise Plan
+Job Portal
+Lunch
+Training
+Buildesk Pay
+White labelled iOS and Android Customer App - Development, configuration, setup and delivery
+Customer Application License
+CS Payment
+Printing expenses
+SendGrid
+Truecaller (CR)
+DeskTrack
+TNT Mobitrack
+Google workspace
+Smart Android LED TV
+Trademark
+SMB
+VMN Charges
+Apple Developer Program (Automatic Renewal)
+Advertisement Receipt -9th MAHACON
+Email Services
+Website Hosting Charges
+Buildesk SIM Based Auto Dialer
+Buildesk Sales licenses + Buildesk Post Sales Module
+Other Charges
+DLT Fees
+Customer Application License Renewal
+Setup Charges
+On Premise Delivery Team Deployment for 15days
+On Premise Delivery Team Deployment for 15 days
+Pending Amount
+Setup, Integration, On-site training and Resource
+Customer App - White Labelled • Reception App • White Labelled • SMS and Email Integration• Setup and Training
+Test Cement
+Setup & Training
+Introductory Discount
+Buildesk Post sales + Buildesk Pay
+Buildesk Reception Application
+Test Product
+BUILDESK CONTRACTOR MODULE
+`;
+
+  const ratesRaw = `
+INR 25000.00
+INR 125000.00
+INR 50000.00
+INR 5000.00
+INR 5000.00
+INR 50000.00
+INR 200000.00
+INR 0.195
+INR 300.00
+INR 8400.00
+INR 1600.00
+INR 28560.00
+INR 9000.00
+INR 50000.00
+INR 40000.00
+INR 800.00
+INR 18000.00
+INR 80000.00
+INR 2000.00
+INR 2000.00
+INR 4500.00
+INR 16000.00
+INR 750000.00
+INR 60000.00
+INR 25000.00
+INR 25000.00
+INR 25000.00
+INR 10000.00
+INR 3000.00
+INR 65000.00
+INR 29000.00
+INR 20000.00
+INR 100000.00
+INR 5000.00
+INR 0.00
+INR 0.00
+INR 0.00
+INR 28000.00
+INR 100000.00
+INR 200000.00
+INR 9400.00
+INR 3238.09
+INR 12744.36
+INR 165660.00
+INR 18000.00
+INR 8000.00
+INR 2680.48
+INR 17186.72
+INR 5761.02
+INR 25000.00
+INR 600.00
+INR 373.00
+INR 30000.00
+INR 18000.00
+INR 10000.00
+INR 300.00
+INR 2000.00
+INR 2000.00
+INR 5900.00
+INR 20000.00
+INR 2000.00
+INR 2000.00
+INR 25000.00
+INR 25000.00
+INR 60000.00
+INR 40000.00
+INR 200000.00
+INR 350.00
+INR 100000.00
+INR 55000.00
+INR 100000.00
+INR 20000.00
+INR 12000.00
+INR 0.00
+INR 0.00
+`;
+
+  const names = namesRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const rates = ratesRaw
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map(parseInrToNumber);
+
+  const count = Math.min(names.length, rates.length);
+  return Array.from({ length: count }).map((_, idx) => {
+    const name = names[idx];
+    const sellingPrice = rates[idx];
+    const sku = `ITEM-${String(idx + 1).padStart(3, "0")}`;
+    return {
+      id: `inv_imp_${String(idx + 1).padStart(3, "0")}`,
+      name,
+      description: null,
+      itemType: "service",
+      sku,
+      hsnSacCode: null,
+      category: "Services",
+      unitOfMeasure: "unit",
+      costPrice: 0,
+      sellingPrice,
+      taxRate: 18,
+      isActive: 1,
+      createdAt: seedNow,
+      updatedAt: seedNow,
+      createdBy: "u1",
+      notes: null,
+    };
+  });
+}
+
 const seedInventory = [
-  { id: "inv1", name: "Buildesk CRM Pro", description: "Full CRM suite with contacts, pipeline, and reporting", itemType: "product", sku: "CRM-PRO-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 8000, sellingPrice: 15000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Flagship product" },
+  { id: "inv1", name: "Buildesk CRM Pro", description: "Full CRM suite with contacts, deals, and reporting", itemType: "product", sku: "CRM-PRO-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 8000, sellingPrice: 15000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Flagship product" },
   { id: "inv2", name: "ERP Integration Service", description: "One-time implementation and integration with existing ERP", itemType: "service", sku: "SVC-ERP-001", hsnSacCode: "998313", category: "ERP Platform", unitOfMeasure: "per hour", costPrice: 1200, sellingPrice: 2500, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
   { id: "inv3", name: "Analytics Add-on Annual", description: "Advanced analytics and BI dashboards", itemType: "subscription", sku: "SUB-ANAL-ANN", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per year", costPrice: 24000, sellingPrice: 42000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
   { id: "inv4", name: "Enterprise Bundle", description: "CRM + ERP + Analytics, annual commitment", itemType: "bundle", sku: "BND-ENT-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per year", costPrice: 180000, sellingPrice: 320000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
@@ -128,6 +331,7 @@ const seedInventory = [
   { id: "inv6", name: "Implementation Services Pack", description: "On-site implementation and training", itemType: "service", sku: "SVC-IMPL-001", hsnSacCode: "998313", category: "Implementation Services", unitOfMeasure: "per unit", costPrice: 45000, sellingPrice: 75000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
   { id: "inv7", name: "Storage Add-on (per GB)", description: "Additional cloud storage per GB per month", itemType: "subscription", sku: "SUB-STOR-GB", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per GB", costPrice: 2, sellingPrice: 5, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
   { id: "inv8", name: "Legacy CRM Lite (Discontinued)", description: "Legacy lite version - no new sales", itemType: "product", sku: "CRM-LITE-OLD", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 2000, sellingPrice: 3500, taxRate: 18, isActive: 0, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Discontinued" },
+  ...makeImportedInventory(seedNow),
 ];
 
 const seedMasters = [
@@ -240,10 +444,12 @@ function setMeta(key, value) {
   ).run(key, value, new Date().toISOString());
 }
 
+const USERS_TEAMS_SEED_KEY = "seed_users_teams_v4";
+
 function reseedUsersAndTeamsIfNeeded() {
   // Bump this key when seedUsers/seedTeams change so deploys refresh SQLite on existing installs.
   // VPS: deploy + restart API. If still stale, set FORCE_RESEED_USERS=1 once, restart, then unset.
-  const SEED_KEY = "seed_users_teams_v4";
+  const SEED_KEY = USERS_TEAMS_SEED_KEY;
   if (process.env.FORCE_RESEED_USERS === "1" || process.env.FORCE_RESEED_USERS === "true") {
     db.prepare("DELETE FROM app_meta WHERE key = ?").run(SEED_KEY);
   }
@@ -265,6 +471,11 @@ function reseedUsersAndTeamsIfNeeded() {
   })();
 
   setMeta(SEED_KEY, "1");
+}
+
+function forceReseedUsersAndTeams() {
+  db.prepare("DELETE FROM app_meta WHERE key = ?").run(USERS_TEAMS_SEED_KEY);
+  reseedUsersAndTeamsIfNeeded();
 }
 
 const seedNotifications = [
@@ -390,4 +601,4 @@ function seedIfEmpty() {
 seedIfEmpty();
 reseedUsersAndTeamsIfNeeded();
 
-export { db, SQLITE_PATH };
+export { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, reseedUsersAndTeamsIfNeeded, forceReseedUsersAndTeams };

@@ -14,7 +14,6 @@ import { DataTablePagination } from "@/components/DataTablePagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -100,42 +99,34 @@ const CHANNEL_ICON: Record<AutomationChannel, React.ReactNode> = {
   in_app: <Bell className="h-4 w-4 text-purple-600" />,
 };
 
-function ConnectionStatus() {
+function ConnectionStatusPill({ service }: { service: "n8n" | "waha" }) {
   const settings = useAppStore((s) => s.automationSettings);
+  const isConnected = service === "n8n" ? settings.isN8nConnected : settings.isWahaConnected;
+  const label = service === "n8n" ? "n8n" : "WAHA";
   return (
-    <div className="flex items-center gap-2">
-      <span
-        className={cn(
-          "px-2.5 py-1 rounded-full text-xs font-medium",
-          settings.isN8nConnected
-            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-        )}
-      >
-        n8n {settings.isN8nConnected ? "connected" : "offline"}
-      </span>
-      <span
-        className={cn(
-          "px-2.5 py-1 rounded-full text-xs font-medium",
-          settings.isWahaConnected
-            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-        )}
-      >
-        WAHA {settings.isWahaConnected ? "connected" : "offline"}
-      </span>
-    </div>
+    <span
+      className={cn(
+        "px-2.5 py-1 rounded-full text-xs font-medium",
+        isConnected
+          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+      )}
+    >
+      {label} {isConnected ? "connected" : "offline"}
+    </span>
   );
 }
 
 export default function Automation() {
   const automationTemplates = useAppStore((s) => s.automationTemplates);
+  const automationLogs = useAppStore((s) => s.automationLogs);
   const automationSettings = useAppStore((s) => s.automationSettings);
   const setAutomationTemplates = useAppStore((s) => s.setAutomationTemplates);
   const setAutomationLogs = useAppStore((s) => s.setAutomationLogs);
   const setAutomationSettings = useAppStore((s) => s.setAutomationSettings);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<AutomationTemplate | null>(null);
+  const [activeTab, setActiveTab] = useState<"Templates" | "Activity Logs" | "Settings">("Templates");
 
   useEffect(() => {
     let mounted = true;
@@ -185,17 +176,31 @@ export default function Automation() {
     };
   }, []);
 
+  const sentToday = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return automationLogs.filter((l) => {
+      if (l.status !== "sent") return false;
+      const dt = new Date(l.sentAt);
+      dt.setHours(0, 0, 0, 0);
+      return dt.getTime() === today.getTime();
+    }).length;
+  }, [automationLogs]);
+
+  const failed = useMemo(() => automationLogs.filter((l) => l.status === "failed").length, [automationLogs]);
+
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-4 sm:space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Automation</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Manage WhatsApp, email workflows and notification templates
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight">Automation</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Manage WhatsApp, email and notification workflows
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <ConnectionStatus />
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          <ConnectionStatusPill service="n8n" />
+          <ConnectionStatusPill service="waha" />
           <Button
             variant="outline"
             className="h-9"
@@ -208,7 +213,7 @@ export default function Automation() {
           </Button>
           <Button
             onClick={() => setShowAddTemplate(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white h-9"
+            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
           >
             <Plus className="h-4 w-4 mr-1.5" />
             New Template
@@ -216,32 +221,58 @@ export default function Automation() {
         </div>
       </div>
 
-      <Tabs defaultValue="templates">
-        <TabsList className="border-b w-full justify-start rounded-none bg-transparent p-0 h-auto gap-0">
-          {["templates", "logs", "settings"].map((tab) => (
-            <TabsTrigger
-              key={tab}
-              value={tab}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 data-[state=active]:text-blue-600 capitalize px-5 py-3 text-sm font-medium"
-            >
-              {tab === "logs" ? "Activity Logs" : tab}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: "Total Templates", value: automationTemplates.length },
+          {
+            label: "Active",
+            value: automationTemplates.filter((t) => t.isActive).length,
+            color: "text-emerald-600",
+          },
+          { label: "Sent Today", value: sentToday, color: "text-blue-600" },
+          {
+            label: "Failed",
+            value: failed,
+            color: failed > 0 ? "text-red-600" : "text-gray-900 dark:text-gray-100",
+          },
+        ].map((s) => (
+          <div
+            key={s.label}
+            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4"
+          >
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">{s.label}</p>
+            <p className={cn("text-2xl font-bold tracking-tight", s.color ?? "text-gray-900 dark:text-gray-100")}>
+              {s.value}
+            </p>
+          </div>
+        ))}
+      </div>
 
-        <TabsContent value="templates" className="mt-6">
-          <TemplatesTab
-            onNew={() => setShowAddTemplate(true)}
-            onEdit={(t) => setEditingTemplate(t)}
-          />
-        </TabsContent>
-        <TabsContent value="logs" className="mt-6">
-          <LogsTab />
-        </TabsContent>
-        <TabsContent value="settings" className="mt-6">
-          <SettingsTab />
-        </TabsContent>
-      </Tabs>
+      <div className="border-b border-gray-200 dark:border-gray-800">
+        <div className="flex gap-0">
+          {(["Templates", "Activity Logs", "Settings"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
+                activeTab === tab
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+              )}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "Templates" && (
+        <TemplatesTab onNew={() => setShowAddTemplate(true)} onEdit={(t) => setEditingTemplate(t)} />
+      )}
+      {activeTab === "Activity Logs" && <LogsTab />}
+      {activeTab === "Settings" && <SettingsTab />}
 
       <Dialog open={showAddTemplate} onOpenChange={setShowAddTemplate}>
         <TemplateDialog template={null} onClose={() => setShowAddTemplate(false)} />
@@ -250,6 +281,146 @@ export default function Automation() {
       <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
         <TemplateDialog template={editingTemplate} onClose={() => setEditingTemplate(null)} />
       </Dialog>
+    </div>
+  );
+}
+
+function AutomationTemplateCard({
+  template,
+  onEdit,
+  onDelete,
+  onToggle,
+  onTest,
+}: {
+  template: AutomationTemplate;
+  onEdit: (t: AutomationTemplate) => void;
+  onDelete: (id: string) => void;
+  onToggle: (id: string) => void;
+  onTest: (t: AutomationTemplate) => void;
+}) {
+  const CHANNEL_CONFIG: Record<
+    string,
+    { icon: typeof MessageSquare; color: string; bg: string; label: string }
+  > = {
+    whatsapp: {
+      icon: MessageSquare,
+      color: "text-emerald-600",
+      bg: "bg-emerald-50 dark:bg-emerald-950",
+      label: "WhatsApp",
+    },
+    email: {
+      icon: Mail,
+      color: "text-blue-600",
+      bg: "bg-blue-50 dark:bg-blue-950",
+      label: "Email",
+    },
+    in_app: {
+      icon: Bell,
+      color: "text-purple-600",
+      bg: "bg-purple-50 dark:bg-purple-950",
+      label: "In-App",
+    },
+    sms: {
+      icon: MessageSquare,
+      color: "text-orange-600",
+      bg: "bg-orange-50 dark:bg-orange-950",
+      label: "SMS",
+    },
+  };
+
+  const ch = CHANNEL_CONFIG[template.channel] ?? CHANNEL_CONFIG.in_app;
+  const ChannelIcon = ch.icon;
+
+  return (
+    <div
+      className={cn(
+        "bg-white dark:bg-gray-900 border rounded-xl p-5",
+        "transition-all duration-200",
+        template.isActive
+          ? "border-gray-200 dark:border-gray-800 hover:shadow-sm"
+          : "border-gray-100 dark:border-gray-800/50 opacity-60",
+      )}
+    >
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", ch.bg)}>
+            <ChannelIcon className={cn("h-4.5 w-4.5", ch.color)} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-snug truncate">
+              {template.name}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">{ch.label}</p>
+          </div>
+        </div>
+
+        <Switch
+          checked={template.isActive}
+          onCheckedChange={() => onToggle(template.id)}
+          className="flex-shrink-0"
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+          {TRIGGER_LABELS[template.trigger] ?? template.trigger}
+        </span>
+        {template.recipients.map((r) => (
+          <span
+            key={r}
+            className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 capitalize"
+          >
+            {r.replace("_", " ")}
+          </span>
+        ))}
+      </div>
+
+      {(template.delayHours ?? 0) > 0 && (
+        <div className="flex items-center gap-1.5 mb-3">
+          <Clock className="h-3.5 w-3.5 text-gray-400" />
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            Sends after {template.delayHours}h
+            {template.repeatEveryHours ? ` · repeats every ${template.repeatEveryHours}h` : ""}
+            {template.maxRepeats ? ` · max ${template.maxRepeats}x` : ""}
+          </span>
+        </div>
+      )}
+
+      <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg px-3 py-2.5 mb-4 border border-gray-100 dark:border-gray-700">
+        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-mono">
+          {template.body}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1 h-8 text-xs rounded-lg"
+          onClick={() => onEdit(template)}
+        >
+          <Pencil className="h-3 w-3 mr-1.5" />
+          Edit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-8 p-0 rounded-lg text-blue-600 border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+          title="Test send"
+          onClick={() => onTest(template)}
+        >
+          <Play className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-8 p-0 rounded-lg text-red-500 border-red-100 hover:bg-red-50 dark:hover:bg-red-950/30"
+          onClick={() => onDelete(template.id)}
+          title="Delete"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -425,81 +596,16 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredTemplates.map((template) => (
-          <Card
+          <AutomationTemplateCard
             key={template.id}
-            className="border border-gray-200 shadow-none transition-shadow hover:shadow-sm dark:border-gray-800"
-          >
-            <CardContent className="p-4 sm:p-5">
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="flex-shrink-0 text-gray-500">{CHANNEL_ICON[template.channel]}</span>
-                    <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {template.name}
-                    </h3>
-                  </div>
-                  <p className="mt-0.5 text-xs capitalize text-gray-400">{template.channel.replace("_", " ")}</p>
-                </div>
-                <Switch
-                  className="flex-shrink-0"
-                  checked={template.isActive}
-                  onCheckedChange={() => toggleAutomationTemplate(template.id)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-                    {TRIGGER_LABELS[template.trigger]}
-                  </span>
-                  {template.recipients.map((r) => (
-                    <span
-                      key={r}
-                      className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                    >
-                      {r.replace("_", " ")}
-                    </span>
-                  ))}
-                </div>
-
-                {(template.delayHours ?? 0) > 0 && (
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-                    <span>
-                      Send after {template.delayHours}h
-                      {template.repeatEveryHours ? `, repeat every ${template.repeatEveryHours}h` : ""}
-                      {template.maxRepeats ? ` (max ${template.maxRepeats}x)` : ""}
-                    </span>
-                  </div>
-                )}
-
-                <p className="line-clamp-2 rounded bg-gray-50 p-2 text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
-                  {template.body}
-                </p>
-              </div>
-
-              <div className="mt-4 flex gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
-                <Button variant="outline" size="sm" className="h-8 flex-1 text-xs" onClick={() => onEdit(template)}>
-                  <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                  Edit
-                </Button>
-                <Button variant="outline" size="sm" className="h-8 w-8 shrink-0 p-0" onClick={() => openTestTemplate(template)} title="Test send">
-                  <Play className="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 w-8 shrink-0 p-0 text-red-500 hover:text-red-700"
-                  onClick={() => confirmDelete(template.id)}
-                  title="Delete"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            template={template}
+            onEdit={onEdit}
+            onDelete={confirmDelete}
+            onToggle={toggleAutomationTemplate}
+            onTest={openTestTemplate}
+          />
         ))}
       </div>
 

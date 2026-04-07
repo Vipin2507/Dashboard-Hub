@@ -13,7 +13,7 @@ export function UserMenu() {
   return (
     <>
       <div className="hidden items-center gap-2 text-sm text-muted-foreground md:flex">
-        <span className="max-w-[7rem] truncate font-medium text-foreground lg:max-w-[12rem]">{me.name}</span>
+        <span className="max-w-[12rem] truncate font-medium text-foreground lg:max-w-[18rem]">{me.name}</span>
         <Badge variant="outline" className="hidden shrink-0 text-xs font-normal lg:inline-flex">
           {ROLE_LABELS[me.role]}
         </Badge>

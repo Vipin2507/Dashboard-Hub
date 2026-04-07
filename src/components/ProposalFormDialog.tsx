@@ -383,7 +383,7 @@ export function ProposalFormDialog({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-xs">Item / SKU</TableHead>
+                        <TableHead className="text-xs">Item / code</TableHead>
                         <TableHead className="text-xs w-20">No. of License</TableHead>
                         <TableHead className="text-xs w-24">Unit Price</TableHead>
                         <TableHead className="text-xs w-20">Disc %</TableHead>
@@ -497,7 +497,7 @@ export function ProposalFormDialog({
         <DialogContent className={dialogSmMaxMd}>
           <DialogHeader><DialogTitle>Add item from inventory</DialogTitle></DialogHeader>
           <DialogBody className="space-y-2">
-          <Input placeholder="Search name, SKU, category..." value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} />
+          <Input placeholder="Search name, item code, category..." value={inventorySearch} onChange={(e) => setInventorySearch(e.target.value)} />
           <div className="max-h-64 overflow-y-auto border rounded-md">
             {inventoryFiltered.map((it) => (
               <div key={it.id} className="flex items-center justify-between p-2 border-b hover:bg-muted/50">

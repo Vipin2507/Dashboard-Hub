@@ -17,11 +17,48 @@ export default {
         /** Align custom name with `SIDEBAR_RAIL_BREAKPOINT_PX` / Tailwind `lg` */
         nav: "1024px",
       },
+      /** Design tokens from `src/index.css` :root — use p-4, gap-3, m-6, etc. */
       spacing: {
+        1: "var(--space-1)",
+        2: "var(--space-2)",
+        3: "var(--space-3)",
+        4: "var(--space-4)",
+        5: "var(--space-5)",
+        6: "var(--space-6)",
+        8: "var(--space-8)",
+        10: "var(--space-10)",
         topbar: "var(--app-topbar-height)",
         sidebar: "var(--app-sidebar-width)",
       },
+      fontSize: {
+        xs: ["var(--text-xs)", { lineHeight: "var(--lh-tight)" }],
+        sm: ["var(--text-sm)", { lineHeight: "var(--lh-normal)" }],
+        base: ["var(--text-base)", { lineHeight: "var(--lh-normal)" }],
+        md: ["var(--text-md)", { lineHeight: "var(--lh-normal)" }],
+        lg: ["var(--text-lg)", { lineHeight: "var(--lh-normal)" }],
+        xl: ["var(--text-xl)", { lineHeight: "var(--lh-tight)" }],
+        "2xl": ["var(--text-2xl)", { lineHeight: "var(--lh-tight)" }],
+      },
+      lineHeight: {
+        tight: "var(--lh-tight)",
+        normal: "var(--lh-normal)",
+        loose: "var(--lh-loose)",
+      },
+      borderRadius: {
+        /** Maps `rounded-xl` to design token (16px); shadcn `lg`/`md`/`sm` still use `--radius` */
+        xl: "var(--radius-xl)",
+        "ds-sm": "var(--radius-sm)",
+        "ds-md": "var(--radius-md)",
+        "ds-lg": "var(--radius-lg)",
+        "ds-xl": "var(--radius-xl)",
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        hover: "var(--shadow-hover)",
+      },
       maxWidth: {
+        /** App content column (Part 0 page shell) */
+        page: "var(--page-max-width)",
         "sidebar-drawer": "var(--app-sidebar-drawer-max)",
         "screen-xl": "1400px",
       },
