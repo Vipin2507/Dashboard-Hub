@@ -322,17 +322,7 @@ INR 0.00
   });
 }
 
-const seedInventory = [
-  { id: "inv1", name: "Buildesk CRM Pro", description: "Full CRM suite with contacts, deals, and reporting", itemType: "product", sku: "CRM-PRO-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 8000, sellingPrice: 15000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Flagship product" },
-  { id: "inv2", name: "ERP Integration Service", description: "One-time implementation and integration with existing ERP", itemType: "service", sku: "SVC-ERP-001", hsnSacCode: "998313", category: "ERP Platform", unitOfMeasure: "per hour", costPrice: 1200, sellingPrice: 2500, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv3", name: "Analytics Add-on Annual", description: "Advanced analytics and BI dashboards", itemType: "subscription", sku: "SUB-ANAL-ANN", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per year", costPrice: 24000, sellingPrice: 42000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv4", name: "Enterprise Bundle", description: "CRM + ERP + Analytics, annual commitment", itemType: "bundle", sku: "BND-ENT-001", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per year", costPrice: 180000, sellingPrice: 320000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv5", name: "Support & AMC Monthly", description: "Monthly support and annual maintenance contract", itemType: "subscription", sku: "SUB-AMC-MON", hsnSacCode: "998313", category: "Support & AMC", unitOfMeasure: "per month", costPrice: 3000, sellingPrice: 5500, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv6", name: "Implementation Services Pack", description: "On-site implementation and training", itemType: "service", sku: "SVC-IMPL-001", hsnSacCode: "998313", category: "Implementation Services", unitOfMeasure: "per unit", costPrice: 45000, sellingPrice: 75000, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv7", name: "Storage Add-on (per GB)", description: "Additional cloud storage per GB per month", itemType: "subscription", sku: "SUB-STOR-GB", hsnSacCode: "998314", category: "Analytics Add-on", unitOfMeasure: "per GB", costPrice: 2, sellingPrice: 5, taxRate: 18, isActive: 1, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: null },
-  { id: "inv8", name: "Legacy CRM Lite (Discontinued)", description: "Legacy lite version - no new sales", itemType: "product", sku: "CRM-LITE-OLD", hsnSacCode: "998314", category: "CRM Suite", unitOfMeasure: "per license", costPrice: 2000, sellingPrice: 3500, taxRate: 18, isActive: 0, createdAt: seedNow, updatedAt: seedNow, createdBy: "u1", notes: "Discontinued" },
-  ...makeImportedInventory(seedNow),
-];
+const seedInventory = makeImportedInventory(seedNow);
 
 const seedMasters = [
   { id: "mc1", name: "CRM Suite", type: "product_category" },
