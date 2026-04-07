@@ -549,12 +549,13 @@ export default function Proposals() {
 
         {/* Search + filters */}
         <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 max-w-sm flex-1">
+          <div className="flex flex-col gap-3">
+            {/* Search */}
+            <div className="relative w-full">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
                 placeholder="Search proposal, customer..."
-                className="h-9 pl-9 text-sm"
+                className="h-10 w-full pl-9 text-sm"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -563,7 +564,8 @@ export default function Proposals() {
               />
             </div>
 
-            <div className="scrollbar-none flex flex-shrink-0 items-center gap-1.5 overflow-x-auto">
+            {/* Status */}
+            <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pb-0.5">
               {STATUS_OPTIONS.map((o) => (
                 <button
                   key={o.value}
@@ -584,7 +586,8 @@ export default function Proposals() {
               ))}
             </div>
 
-            <div className="ml-auto flex flex-shrink-0 flex-wrap items-center gap-2">
+            {/* Other filters */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 lg:items-center">
               {(me.role === "super_admin" || me.role === "sales_manager") && (
                 <Select
                   value={assignedToFilter}
@@ -593,7 +596,7 @@ export default function Proposals() {
                     setPage(1);
                   }}
                 >
-                  <SelectTrigger className="h-9 w-full text-sm sm:w-44">
+                  <SelectTrigger className="h-9 w-full text-sm">
                     <SelectValue placeholder="All users" />
                   </SelectTrigger>
                   <SelectContent>
@@ -614,7 +617,7 @@ export default function Proposals() {
                   setDateFrom(e.target.value);
                   setPage(1);
                 }}
-                className="h-9 w-full text-sm sm:w-[150px]"
+                className="h-9 w-full text-sm"
               />
               <Input
                 type="date"
@@ -623,11 +626,11 @@ export default function Proposals() {
                   setDateTo(e.target.value);
                   setPage(1);
                 }}
-                className="h-9 w-full text-sm sm:w-[150px]"
+                className="h-9 w-full text-sm"
               />
 
               <Select value={sortBy} onValueChange={(v) => (setSortBy(v as SortKey), setPage(1))}>
-                <SelectTrigger className="h-9 w-full text-sm sm:w-40">
+                <SelectTrigger className="h-9 w-full text-sm">
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
                 <SelectContent>
@@ -640,7 +643,13 @@ export default function Proposals() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 w-full text-sm sm:w-auto"
+                className={cn(
+                  "h-9 w-full text-sm",
+                  // keep it on the far right on wider screens
+                  "sm:col-start-4 sm:justify-self-end sm:w-[160px]",
+                  (me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-6",
+                  !(me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-5",
+                )}
                 onClick={() => {
                   setSearch("");
                   setStatusFilter("all");
