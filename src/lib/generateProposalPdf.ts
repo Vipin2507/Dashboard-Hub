@@ -3,7 +3,8 @@ import type { jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
 
-const BLUE = [23, 111, 241] as const;
+// Brand blue (hex #176CEC)
+const BLUE = [23, 108, 236] as const;
 const PAGE_W = 210;
 const PAGE_H = 297;
 
@@ -26,8 +27,9 @@ const L = {
   headerTextY: 10,
   headerLineY: 15,
   /** Cover — title block uses ~14mm left (docx text box aligned to margin) */
-  coverTitleX: 14,
-  coverTitleY: 197,
+  // Cover tweaks: slightly more left + a bit higher
+  coverTitleX: 6,
+  coverTitleY: 120,
   coverTitleSize: 20,
   coverTitleLineGap: 10,
   coverContactFont: 11,
@@ -89,6 +91,33 @@ function cleanName(name: string): string {
 function toTitleCase(str: string): string {
   if (!str.trim()) return "";
   return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.slice(1).toLowerCase());
+}
+
+function hasAny(haystack: string, needles: string[]): boolean {
+  const h = haystack.toLowerCase();
+  return needles.some((n) => h.includes(n));
+}
+
+function getCoverLetterSubject(proposal: Proposal): string {
+  const title = (proposal.title ?? "").toLowerCase();
+  const names = proposal.lineItems?.map((li) => li.name ?? "").join(" ").toLowerCase() ?? "";
+  const blob = `${title} ${names}`;
+
+  const hasCrm = hasAny(blob, ["crm", "pre sales", "sales management", "buildesk sales"]);
+  const hasProject = hasAny(blob, ["project", "post sales", "buildesk post sales"]);
+
+  if (hasCrm && hasProject) return "Re: Enclosed Proposal for Buildesk Annual Pre and Post Sales Management License";
+  if (hasCrm) return "Re: Enclosed Proposal for Buildesk Annual Pre Sales Management License";
+  if (hasProject) return "Re: Enclosed Proposal for Buildesk Annual Post Sales Management License";
+  return "Re: Enclosed Proposal for Buildesk Annual Sales Management License";
+}
+
+function getTermsForProposal(proposal: Proposal): string[] {
+  const terms = [...DEFAULT_TERMS];
+  if (proposal.paymentTerms) terms[1] = proposal.paymentTerms;
+  // Remove "third from last" point as requested.
+  if (terms.length >= 3) terms.splice(terms.length - 3, 1);
+  return terms;
 }
 
 function formatINR(amount: number): string {
@@ -203,16 +232,21 @@ function addPageHeader(doc: jsPDF): void {
 
   doc.setFont("helvetica", "normal");
   doc.setTextColor(40, 40, 40);
+  doc.setFont("helvetica", "normal");
   const inW = doc.getTextWidth(".in");
-  const bW = doc.getTextWidth("buildesk");
   const wW = doc.getTextWidth("www.");
-  doc.text("www.", L.rightEdge - inW - bW - wW, L.headerTextY);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-  doc.text("buildesk", L.rightEdge - inW - bW, L.headerTextY);
+  const bW = doc.getTextWidth("buildesk");
+  const startX = L.rightEdge - (wW + bW + inW);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(40, 40, 40);
-  doc.text(".in", L.rightEdge - inW, L.headerTextY);
+  doc.text("www.", startX, L.headerTextY);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+  doc.text("buildesk", startX + wW, L.headerTextY);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(40, 40, 40);
+  doc.text(".in", startX + wW + bW, L.headerTextY);
 }
 
 function addPageNumber(doc: jsPDF, num: number): void {
@@ -240,9 +274,9 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, images: Record<string, 
     ty += L.coverTitleLineGap;
   }
 
-  doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+  doc.setTextColor(255, 255, 255);
   doc.setFontSize(L.coverTitleSize);
-  doc.text(`For ${proposal.customerName}`, L.coverTitleX, ty + 2);
+  doc.text(`For ${String(proposal.customerName || "").toUpperCase()}`, L.coverTitleX, ty + 2);
 
   const users = useAppStore.getState().users;
   const rep = users.find((u) => u.id === proposal.assignedTo);
@@ -367,18 +401,20 @@ function renderCoverLetterPage(
 
   doc.addImage(images.blueArrow, imageDataFormat(images.blueArrow), L.arrowX, L.arrowY, L.arrowW, L.arrowH);
 
-  doc.setFont("helvetica", "normal");
+  const toY = 30;
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.body);
   doc.setTextColor(40, 40, 40);
-  doc.text(`Date: ${formatProposalDate(proposal.createdAt)}`, L.marginLeft, L.contentStartY);
+  doc.text(`Date: ${formatProposalDate(proposal.createdAt)}`, L.rightEdge, toY, { align: "right" });
 
-  doc.text("To,", L.marginLeft, 30);
+  doc.setFont("helvetica", "normal");
+  doc.text("To,", L.marginLeft, toY);
   doc.setFont("helvetica", "bold");
   doc.text(proposal.customerName, L.marginLeft, 36);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.body);
-  doc.text("Re: Enclosed Proposal for Buildesk Annual Sales Management License", L.marginLeft, 46);
+  doc.text(getCoverLetterSubject(proposal), L.marginLeft, 46);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(FONT.body);
@@ -464,20 +500,22 @@ function renderCommercialSection(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.commercialTitle);
   doc.setTextColor(0, 0, 0);
-  doc.text("Commercial", L.marginLeft, L.contentStartY);
+  const commercialY = L.contentStartY + 6;
+  doc.text("Commercial", L.marginLeft, commercialY);
 
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.5);
   const comW = doc.getTextWidth("Commercial");
-  doc.line(L.marginLeft, L.contentStartY + 1.5, L.marginLeft + comW, L.contentStartY + 1.5);
+  doc.line(L.marginLeft, commercialY + 1.5, L.marginLeft + comW, commercialY + 1.5);
 
   const moduleHeading = `Module 1: Buildesk Annual End to End Sales Management — ${proposal.title}`;
   doc.setFontSize(FONT.moduleTitle);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(40, 40, 40);
   const moduleLines = doc.splitTextToSize(moduleHeading, L.contentWidth);
-  doc.text(moduleLines, L.marginLeft, 30);
-  const tableStart = 30 + moduleLines.length * 6 + 4;
+  const moduleY = commercialY + 10;
+  doc.text(moduleLines, L.marginLeft, moduleY);
+  const tableStart = moduleY + moduleLines.length * 6 + 2;
 
   const tableBody: unknown[] = chunk.map((item, idx) => [
     globalOffset + idx + 1,
@@ -498,7 +536,7 @@ function renderCommercialSection(
         styles: {
           halign: "right",
           fontStyle: "bold",
-          textColor: [BLUE[0], BLUE[1], BLUE[2]],
+          textColor: [0, 0, 0],
           fontSize: 10,
         },
       },
@@ -510,27 +548,38 @@ function renderCommercialSection(
     head: [["Sr. No.", "Description", "Service", "Annual License Cost (in INR)"]],
     body: tableBody as never,
     theme: "grid",
+    tableLineColor: [0, 0, 0],
+    tableLineWidth: 0.35,
+    styles: {
+      font: "helvetica",
+      fontSize: 10,
+      textColor: [40, 40, 40],
+      lineColor: [0, 0, 0],
+      lineWidth: 0.35,
+      cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
+      valign: "middle",
+    },
     headStyles: {
       fillColor: [BLUE[0], BLUE[1], BLUE[2]],
       textColor: [255, 255, 255],
       fontStyle: "bold",
-      fontSize: 9,
+      fontSize: 10,
       halign: "center",
-      lineColor: [BLUE[0], BLUE[1], BLUE[2]],
-      lineWidth: 0.3,
+      lineColor: [0, 0, 0],
+      lineWidth: 0.35,
       cellPadding: { top: 4, bottom: 4, left: 3, right: 3 },
     },
     bodyStyles: {
-      fontSize: 9,
+      fontSize: 10,
       textColor: [40, 40, 40],
-      lineColor: [180, 180, 180],
-      lineWidth: 0.3,
-      cellPadding: { top: 3, bottom: 3, left: 3, right: 3 },
+      lineColor: [0, 0, 0],
+      lineWidth: 0.35,
+      cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
       0: { halign: "center", cellWidth: L.comColSr },
-      1: { halign: "left", cellWidth: L.comColDesc },
+      1: { halign: "left", cellWidth: L.comColDesc, fontSize: 10.5 },
       2: { halign: "center", cellWidth: L.comColSvc },
       3: { halign: "right", cellWidth: L.comColCost },
     },
@@ -548,22 +597,54 @@ function renderCommercialSection(
         data.cell.styles.fillColor = [235, 244, 252];
         data.cell.styles.fontStyle = "bold";
         if (data.column.index === 3) {
-          data.cell.styles.textColor = [BLUE[0], BLUE[1], BLUE[2]];
+          data.cell.styles.textColor = [0, 0, 0];
           data.cell.styles.fontSize = 10;
         }
       }
     },
   });
 
-  if (proposal.customerNotes && chunkIndex === totalChunks - 1) {
-    const noteY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 6;
+  const isLastCommercialPage = chunkIndex === totalChunks - 1;
+  let afterY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+
+  if (proposal.customerNotes && isLastCommercialPage) {
+    const noteY = afterY + 6;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(FONT.tableBody);
     doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
     doc.text("NOTE:", L.marginLeft, noteY);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(50, 50, 50);
-    renderParagraph(doc, proposal.customerNotes, L.marginLeft, noteY + 5, L.contentWidth, 5, FONT.bodySmall);
+    afterY = renderParagraph(doc, proposal.customerNotes, L.marginLeft, noteY + 5, L.contentWidth, 5, FONT.bodySmall);
+  }
+
+  // Terms should start immediately after the product table (or NOTE), not on a separate page.
+  if (isLastCommercialPage) {
+    const titleY = afterY + 10;
+    const startTermsOnNewPage = titleY > L.footerBreakY - 40;
+    if (startTermsOnNewPage) {
+      addPageNumber(doc, pageNum);
+      doc.addPage();
+      addPageHeader(doc);
+      afterY = L.contentStartY;
+    }
+
+    const termsTitleY = startTermsOnNewPage ? L.contentStartY : titleY;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(FONT.termsTitle);
+    doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+    doc.text("Terms &", L.marginLeft, termsTitleY);
+    const termsAmpW = doc.getTextWidth("Terms &");
+    doc.setTextColor(0, 0, 0);
+    doc.text(" Conditions", L.marginLeft + termsAmpW, termsTitleY);
+
+    const terms = getTermsForProposal(proposal);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(40, 40, 40);
+    const yStart = termsTitleY + 10;
+    renderBulletList(doc, terms, L.marginLeft, yStart, L.contentWidth, 5.2, 2.5, 9.5);
   }
 
   addPageNumber(doc, pageNum);
@@ -595,8 +676,7 @@ function renderTermsPage(doc: jsPDF, proposal: Proposal, pageNum: number): void 
   doc.setTextColor(0, 0, 0);
   doc.text("Terms & Conditions", L.marginLeft, L.contentStartY);
 
-  const terms = [...DEFAULT_TERMS];
-  if (proposal.paymentTerms) terms[1] = proposal.paymentTerms;
+  const terms = getTermsForProposal(proposal);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
@@ -814,9 +894,6 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
       totalToShow,
     );
   });
-
-  doc.addPage();
-  renderTermsPage(doc, proposal, pageNum++);
 
   doc.addPage();
   renderSLAPages(doc, pageNum);
