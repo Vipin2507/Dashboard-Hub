@@ -1,9 +1,13 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { fileURLToPath } from "url";
 
-const SQLITE_PATH = process.env.SQLITE_PATH || path.resolve(process.cwd(), "data", "app.db");
-const schemaPath = path.resolve(process.cwd(), "server", "schema.sql");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const SQLITE_PATH = process.env.SQLITE_PATH || path.resolve(__dirname, "..", "data", "app.db");
+const schemaPath = path.resolve(__dirname, "schema.sql");
 
 fs.mkdirSync(path.dirname(SQLITE_PATH), { recursive: true });
 
