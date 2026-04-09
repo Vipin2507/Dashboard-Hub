@@ -317,13 +317,12 @@ function renderVersionPage(
   );
 
   const users = useAppStore.getState().users;
+  const DEFAULT_VERSION_COMMENT = "This is the first version of Proposal to be submitted for Buildesk Annual Licenses";
   const versionData =
     proposal.versionHistory?.map((v) => {
       const user = users.find((u) => u.id === v.createdBy);
       const userName = user ? `Mr. ${user.name}` : v.createdBy;
-      const comment =
-        v.notes?.trim() ||
-        "This is the First version of Proposal to be submitted for Buildesk Annual Licenses.";
+      const comment = DEFAULT_VERSION_COMMENT;
       return [
         Number(v.version ?? 1).toFixed(1),
         formatProposalDate(v.createdAt ?? proposal.createdAt),
@@ -335,7 +334,7 @@ function renderVersionPage(
         Number(proposal.currentVersion || 1).toFixed(1),
         formatProposalDate(proposal.createdAt),
         `Mr. ${proposal.assignedToName}`,
-        "This is the First version of Proposal to be submitted for Buildesk Annual Licenses.",
+        DEFAULT_VERSION_COMMENT,
       ],
     ];
 
@@ -795,7 +794,8 @@ function sectionHeading(doc: jsPDF, title: string, y: number): number {
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.2);
   doc.line(L.marginLeft, y + 1.5, L.marginLeft + doc.getTextWidth(title), y + 1.5);
-  return y + 7;
+  // Slightly tighter spacing after SLA headings.
+  return y + 5.5;
 }
 
 function renderSLAPages(doc: jsPDF, startPageNum: number): number {
@@ -804,30 +804,44 @@ function renderSLAPages(doc: jsPDF, startPageNum: number): number {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.pageTitle);
   doc.setTextColor(0, 0, 0);
-  doc.text("Annexure: Buildesk SLA", L.marginLeft, L.contentStartY);
+  const annexureTitleY = L.contentStartY + 8;
+  doc.text("Annexure: Buildesk SLA", L.marginLeft, annexureTitleY);
 
   let pageNum = startPageNum;
-  let y = 32;
+  let y = annexureTitleY + 10;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(50, 50, 50);
 
+  // Continuation pages (no Annexure title) should start higher to avoid excess whitespace.
+  const continuationStartY = 28;
+
+  const newSlaPage = (): void => {
+    addPageNumber(doc, pageNum);
+    pageNum += 1;
+    doc.addPage();
+    addPageHeader(doc);
+    y = continuationStartY;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9.5);
+    doc.setTextColor(50, 50, 50);
+  };
+
   const ensureSpace = (needed: number): void => {
     if (y + needed > L.footerBreakY) {
-      addPageNumber(doc, pageNum);
-      pageNum += 1;
-      doc.addPage();
-      addPageHeader(doc);
-      y = 32;
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(9.5);
-      doc.setTextColor(50, 50, 50);
+      newSlaPage();
     }
   };
 
   for (const section of SLA_SECTIONS) {
     if (section.title) {
-      ensureSpace(16);
+      // Avoid orphaning a section title at the page bottom:
+      // ensure there's space for the heading plus at least the first paragraph.
+      const firstPara = section.paragraphs?.[0] ?? "";
+      const firstParaLines = firstPara ? doc.splitTextToSize(firstPara, L.contentWidth) : [];
+      const firstParaH = firstParaLines.length ? firstParaLines.length * LINE_HEIGHT + 4 : 0;
+      // 16 ≈ heading + underline + small breathing room
+      ensureSpace(16 + firstParaH);
       y = sectionHeading(doc, section.title, y);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
@@ -842,9 +856,31 @@ function renderSLAPages(doc: jsPDF, startPageNum: number): number {
     }
 
     if (section.bullets?.length) {
-      ensureSpace(20);
-      y = renderBulletList(doc, section.bullets, L.marginLeft, y, L.contentWidth, 5.2, 2, 9.5);
-      y += 2;
+      const isTechnicalSupport = (section.title ?? "").toLowerCase() === "technical support";
+      const splitAt = isTechnicalSupport
+        ? section.bullets.findIndex((b) =>
+            b.toLowerCase().includes("systems scripts and configurations are maintained"),
+          )
+        : -1;
+
+      if (isTechnicalSupport && splitAt >= 0 && splitAt < section.bullets.length - 1) {
+        const first = section.bullets.slice(0, splitAt + 1);
+        const rest = section.bullets.slice(splitAt + 1);
+
+        ensureSpace(20);
+        y = renderBulletList(doc, first, L.marginLeft, y, L.contentWidth, 5.2, 2, 9.5);
+        y += 2;
+
+        // Force the remaining points onto a new page.
+        newSlaPage();
+        ensureSpace(20);
+        y = renderBulletList(doc, rest, L.marginLeft, y, L.contentWidth, 5.2, 2, 9.5);
+        y += 2;
+      } else {
+        ensureSpace(20);
+        y = renderBulletList(doc, section.bullets, L.marginLeft, y, L.contentWidth, 5.2, 2, 9.5);
+        y += 2;
+      }
     }
   }
 
