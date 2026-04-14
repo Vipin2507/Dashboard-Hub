@@ -24,6 +24,16 @@ function migrateDealSchema() {
   const names = new Set(cols.map((c) => c.name));
   const add = (sql) => db.exec(sql);
   if (!names.has("dealStatus")) add("ALTER TABLE deals ADD COLUMN dealStatus TEXT DEFAULT 'Active'");
+  if (!names.has("invoiceStatus")) add("ALTER TABLE deals ADD COLUMN invoiceStatus TEXT");
+  if (!names.has("invoiceDate")) add("ALTER TABLE deals ADD COLUMN invoiceDate TEXT");
+  if (!names.has("invoiceNumber")) add("ALTER TABLE deals ADD COLUMN invoiceNumber TEXT");
+  if (!names.has("totalAmount")) add("ALTER TABLE deals ADD COLUMN totalAmount REAL NOT NULL DEFAULT 0");
+  if (!names.has("taxAmount")) add("ALTER TABLE deals ADD COLUMN taxAmount REAL NOT NULL DEFAULT 0");
+  if (!names.has("amountWithoutTax")) add("ALTER TABLE deals ADD COLUMN amountWithoutTax REAL NOT NULL DEFAULT 0");
+  if (!names.has("placeOfSupply")) add("ALTER TABLE deals ADD COLUMN placeOfSupply TEXT");
+  if (!names.has("balanceAmount")) add("ALTER TABLE deals ADD COLUMN balanceAmount REAL NOT NULL DEFAULT 0");
+  if (!names.has("amountPaid")) add("ALTER TABLE deals ADD COLUMN amountPaid REAL NOT NULL DEFAULT 0");
+  if (!names.has("serviceName")) add("ALTER TABLE deals ADD COLUMN serviceName TEXT");
   if (!names.has("dealSource")) add("ALTER TABLE deals ADD COLUMN dealSource TEXT");
   if (!names.has("expectedCloseDate")) add("ALTER TABLE deals ADD COLUMN expectedCloseDate TEXT");
   if (!names.has("priority")) add("ALTER TABLE deals ADD COLUMN priority TEXT DEFAULT 'Medium'");
@@ -41,6 +51,11 @@ function migrateDealSchema() {
   if (!names.has("deletedByName")) add("ALTER TABLE deals ADD COLUMN deletedByName TEXT");
   db.prepare("UPDATE deals SET dealStatus = 'Active' WHERE dealStatus IS NULL OR dealStatus = ''").run();
   db.prepare("UPDATE deals SET priority = 'Medium' WHERE priority IS NULL OR priority = ''").run();
+  db.prepare("UPDATE deals SET totalAmount = COALESCE(totalAmount, value, 0) WHERE totalAmount IS NULL").run();
+  db.prepare("UPDATE deals SET amountPaid = COALESCE(amountPaid, 0) WHERE amountPaid IS NULL").run();
+  db.prepare("UPDATE deals SET balanceAmount = COALESCE(balanceAmount, totalAmount - amountPaid, 0) WHERE balanceAmount IS NULL").run();
+  db.prepare("UPDATE deals SET taxAmount = COALESCE(taxAmount, 0) WHERE taxAmount IS NULL").run();
+  db.prepare("UPDATE deals SET amountWithoutTax = COALESCE(amountWithoutTax, 0) WHERE amountWithoutTax IS NULL").run();
   db.prepare(
     "UPDATE deals SET createdAt = COALESCE(createdAt, lastActivityAt, datetime('now')) WHERE createdAt IS NULL OR createdAt = ''",
   ).run();

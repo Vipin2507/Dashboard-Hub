@@ -25,8 +25,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar } from "lucide-react";
+import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload } from "lucide-react";
 import type { Deal } from "@/types";
+import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -126,6 +127,12 @@ function formatDealListDate(iso: string | null | undefined) {
   }
 }
 
+function formatINRAmount(n: number | null | undefined) {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return "—";
+  return `₹${v.toLocaleString("en-IN")}`;
+}
+
 function isFollowUpOverdue(iso: string | null | undefined) {
   if (!iso) return false;
   const d = new Date(iso);
@@ -221,6 +228,7 @@ export default function DealsPage() {
   const [lossTarget, setLossTarget] = useState<Deal | null>(null);
   const [lossReasonDraft, setLossReasonDraft] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
@@ -489,10 +497,14 @@ export default function DealsPage() {
     return scopedActiveDeals.filter((d) => {
       if (q) {
         const customerName = customers.find((c) => c.id === d.customerId)?.companyName ?? "";
+        const inv = String(d.invoiceNumber ?? "").toLowerCase();
+        const svc = String(d.serviceName ?? "").toLowerCase();
         if (
           !d.id.toLowerCase().includes(q) &&
           !d.name.toLowerCase().includes(q) &&
-          !customerName.toLowerCase().includes(q)
+          !customerName.toLowerCase().includes(q) &&
+          !inv.includes(q) &&
+          !svc.includes(q)
         ) {
           return false;
         }
@@ -763,17 +775,28 @@ export default function DealsPage() {
               </button>
             </div>
             {canCreate && (
-              <Button
-                className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
-                onClick={() => {
-                  setSheetDeal(null);
-                  setSheetMode("create");
-                  setSheetOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                New Deal
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 px-4 text-sm rounded-lg"
+                  onClick={() => setBulkImportOpen(true)}
+                >
+                  <Upload className="h-4 w-4 mr-1.5" />
+                  Bulk import
+                </Button>
+                <Button
+                  className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
+                  onClick={() => {
+                    setSheetDeal(null);
+                    setSheetMode("create");
+                    setSheetOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  New Deal
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1032,16 +1055,34 @@ export default function DealsPage() {
               <table className="w-full">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
-                    {["Deal", "Customer", "Value", "Stage", "Follow up", "Actions"].map((h) => (
+                    {[
+                      "Status",
+                      "Invoice Date",
+                      "Invoice#",
+                      "Customer Name",
+                      "Total",
+                      "Tax Amount",
+                      "Amount Without Tax",
+                      "Place of Supply",
+                      "Balance",
+                      "Amount Paid",
+                      "Service",
+                      "Actions",
+                    ].map((h) => (
                       <th
                         key={h}
                         className={cn(
                           "px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide",
-                          h === "Deal" && "text-left pl-5",
-                          h === "Value" && "text-right hidden sm:table-cell",
-                          h === "Follow up" && "text-left hidden md:table-cell",
+                          (h === "Customer Name" || h === "Invoice#" || h === "Place of Supply" || h === "Service") && "text-left",
+                          (h === "Total" ||
+                            h === "Tax Amount" ||
+                            h === "Amount Without Tax" ||
+                            h === "Balance" ||
+                            h === "Amount Paid") &&
+                            "text-right",
+                          (h === "Tax Amount" || h === "Amount Without Tax") && "hidden lg:table-cell",
+                          (h === "Place of Supply" || h === "Service") && "hidden md:table-cell",
                           h === "Actions" && "text-center pr-5",
-                          !["Deal", "Value", "Follow up", "Actions"].includes(h) && "text-left",
                         )}
                       >
                         {h}
@@ -1052,63 +1093,60 @@ export default function DealsPage() {
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {visible.map((deal) => {
                     const cust = customers.find((c) => c.id === deal.customerId)?.companyName ?? "—";
-                    const ownerName = users.find((u) => u.id === deal.ownerUserId)?.name ?? "—";
                     return (
                       <tr
                         key={deal.id}
                         className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
                       >
-                        <td className="px-4 py-3.5 pl-5">
-                          <div>
+                        <td className="px-4 py-3.5 pl-5 text-sm font-medium">
+                          {deal.invoiceStatus ?? "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-sm tabular-nums">
+                          {formatDealListDate(deal.invoiceDate)}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <button
+                            type="button"
+                            onClick={() => openDeal(deal)}
+                            className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left"
+                            title={deal.id}
+                          >
+                            {deal.invoiceNumber ?? deal.id}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          {customers.find((c) => c.id === deal.customerId) ? (
                             <button
                               type="button"
-                              onClick={() => openDeal(deal)}
-                              className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left leading-snug line-clamp-2"
+                              className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 text-left"
+                              onClick={() => navigate(`/customers/${deal.customerId}`)}
                             >
-                              {deal.name}
+                              {cust}
                             </button>
-                            <p className="text-xs text-gray-400 font-mono mt-0.5 truncate max-w-[220px]" title={deal.id}>
-                              {deal.id}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <div>
-                            {customers.find((c) => c.id === deal.customerId) ? (
-                              <button
-                                type="button"
-                                className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 text-left"
-                                onClick={() => navigate(`/customers/${deal.customerId}`)}
-                              >
-                                {cust}
-                              </button>
-                            ) : (
-                              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{cust}</p>
-                            )}
-                            <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{ownerName}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5 text-right hidden sm:table-cell">
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
-                            ₹{(deal.value ?? 0).toLocaleString("en-IN")}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <DealStageBadge stage={deal.stage} />
-                        </td>
-                        <td className="px-4 py-3.5 hidden md:table-cell">
-                          {deal.nextFollowUpDate ? (
-                            <span
-                              className={cn(
-                                "text-xs",
-                                isFollowUpOverdue(deal.nextFollowUpDate) ? "text-red-500 font-medium" : "text-gray-500 dark:text-gray-400",
-                              )}
-                            >
-                              {formatDealListDate(deal.nextFollowUpDate)}
-                            </span>
                           ) : (
-                            <span className="text-xs text-gray-400">—</span>
+                            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{cust}</p>
                           )}
+                        </td>
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm font-semibold text-gray-900 dark:text-gray-100">
+                          {formatINRAmount(deal.totalAmount ?? deal.value)}
+                        </td>
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
+                          {formatINRAmount(deal.taxAmount)}
+                        </td>
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
+                          {formatINRAmount(deal.amountWithoutTax)}
+                        </td>
+                        <td className="px-4 py-3.5 text-sm hidden md:table-cell">
+                          {deal.placeOfSupply ?? "—"}
+                        </td>
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                          {formatINRAmount(deal.balanceAmount)}
+                        </td>
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                          {formatINRAmount(deal.amountPaid)}
+                        </td>
+                        <td className="px-4 py-3.5 text-sm hidden md:table-cell">
+                          {deal.serviceName ?? "—"}
                         </td>
                         <td className="px-4 py-3.5 pr-5">
                           <div className="flex items-center justify-center gap-1 flex-wrap">
@@ -1172,7 +1210,7 @@ export default function DealsPage() {
                   })}
                   {visible.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                      <td colSpan={12} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
                         No deals match your filters
                       </td>
                     </tr>
@@ -1579,6 +1617,16 @@ export default function DealsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <BulkImportDealsDialog
+        open={bulkImportOpen}
+        onOpenChange={setBulkImportOpen}
+        existingDeals={scopedActiveDeals}
+        onImported={async () => {
+          await queryClient.invalidateQueries({ queryKey: [...QK.deals({ role: me.role })] });
+          await dealsQuery.refetch();
+        }}
+      />
     </>
   );
 }

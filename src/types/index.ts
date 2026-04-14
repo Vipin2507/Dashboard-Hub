@@ -311,6 +311,17 @@ export interface Deal {
   proposalId: string | null;
   /** Deal status: Hot, Cold, Active, Pending, Closed/Won, Closed/Lost */
   dealStatus?: string;
+  /** Invoice tracker fields (bulk upload template) */
+  invoiceStatus?: string | null;
+  invoiceDate?: string | null;
+  invoiceNumber?: string | null;
+  totalAmount?: number;
+  taxAmount?: number;
+  amountWithoutTax?: number;
+  placeOfSupply?: string | null;
+  balanceAmount?: number;
+  amountPaid?: number;
+  serviceName?: string | null;
   dealSource?: string | null;
   expectedCloseDate?: string | null;
   priority?: string;

@@ -10,7 +10,9 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
-app.use(express.json());
+// Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 registerIntegrationProxies(app, { db });
 
 // Debug helpers (intentionally behind an env flag for VPS troubleshooting).
@@ -74,6 +76,16 @@ function logDealFieldChanges(dbConn, dealId, before, after, userId, userName) {
     "value",
     "locked",
     "proposalId",
+    "invoiceStatus",
+    "invoiceDate",
+    "invoiceNumber",
+    "totalAmount",
+    "taxAmount",
+    "amountWithoutTax",
+    "placeOfSupply",
+    "balanceAmount",
+    "amountPaid",
+    "serviceName",
     "dealSource",
     "expectedCloseDate",
     "priority",
@@ -125,6 +137,16 @@ function toDealResponse(row) {
     value: Number(row.value) || 0,
     locked: !!row.locked,
     dealStatus: row.dealStatus || "Active",
+    invoiceStatus: row.invoiceStatus ?? null,
+    invoiceDate: row.invoiceDate ?? null,
+    invoiceNumber: row.invoiceNumber ?? null,
+    totalAmount: row.totalAmount != null ? Number(row.totalAmount) : 0,
+    taxAmount: row.taxAmount != null ? Number(row.taxAmount) : 0,
+    amountWithoutTax: row.amountWithoutTax != null ? Number(row.amountWithoutTax) : 0,
+    placeOfSupply: row.placeOfSupply ?? null,
+    balanceAmount: row.balanceAmount != null ? Number(row.balanceAmount) : 0,
+    amountPaid: row.amountPaid != null ? Number(row.amountPaid) : 0,
+    serviceName: row.serviceName ?? null,
     dealSource: row.dealSource ?? null,
     expectedCloseDate: row.expectedCloseDate ?? null,
     priority: row.priority || "Medium",
@@ -458,6 +480,16 @@ app.post("/api/deals", (req, res) => {
     locked,
     proposalId,
     dealStatus,
+    invoiceStatus,
+    invoiceDate,
+    invoiceNumber,
+    totalAmount,
+    taxAmount,
+    amountWithoutTax,
+    placeOfSupply,
+    balanceAmount,
+    amountPaid,
+    serviceName,
     dealSource,
     expectedCloseDate,
     priority,
@@ -499,6 +531,16 @@ app.post("/api/deals", (req, res) => {
     locked: locked ? 1 : 0,
     proposalId: proposalId || null,
     dealStatus: ds,
+    invoiceStatus: invoiceStatus != null && String(invoiceStatus).trim() ? String(invoiceStatus).trim() : null,
+    invoiceDate: invoiceDate != null && String(invoiceDate).trim() ? String(invoiceDate).trim() : null,
+    invoiceNumber: invoiceNumber != null && String(invoiceNumber).trim() ? String(invoiceNumber).trim() : null,
+    totalAmount: totalAmount != null ? Number(totalAmount) || 0 : Number(value) || 0,
+    taxAmount: taxAmount != null ? Number(taxAmount) || 0 : 0,
+    amountWithoutTax: amountWithoutTax != null ? Number(amountWithoutTax) || 0 : 0,
+    placeOfSupply: placeOfSupply != null && String(placeOfSupply).trim() ? String(placeOfSupply).trim() : null,
+    balanceAmount: balanceAmount != null ? Number(balanceAmount) || 0 : 0,
+    amountPaid: amountPaid != null ? Number(amountPaid) || 0 : 0,
+    serviceName: serviceName != null && String(serviceName).trim() ? String(serviceName).trim() : null,
     dealSource: dealSource || null,
     expectedCloseDate: expectedCloseDate || null,
     priority: priority || "Medium",
@@ -518,11 +560,13 @@ app.post("/api/deals", (req, res) => {
   db.prepare(`
     INSERT INTO deals (
       id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
-      dealStatus, dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
+      dealStatus, invoiceStatus, invoiceDate, invoiceNumber, totalAmount, taxAmount, amountWithoutTax, placeOfSupply, balanceAmount, amountPaid, serviceName,
+      dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
       contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt
     ) VALUES (
       @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
-      @dealStatus, @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
+      @dealStatus, @invoiceStatus, @invoiceDate, @invoiceNumber, @totalAmount, @taxAmount, @amountWithoutTax, @placeOfSupply, @balanceAmount, @amountPaid, @serviceName,
+      @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
       @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt
     )
   `).run(deal);
@@ -542,6 +586,108 @@ app.post("/api/deals", (req, res) => {
     changedByName,
   );
   res.status(201).json(toDealResponse(deal));
+});
+
+app.post("/api/deals/bulk", (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : [];
+  const now = new Date().toISOString();
+
+  const insert = db.prepare(`
+    INSERT INTO deals (
+      id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
+      dealStatus, invoiceStatus, invoiceDate, invoiceNumber, totalAmount, taxAmount, amountWithoutTax, placeOfSupply, balanceAmount, amountPaid, serviceName,
+      dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
+      contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt
+    ) VALUES (
+      @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
+      @dealStatus, @invoiceStatus, @invoiceDate, @invoiceNumber, @totalAmount, @taxAmount, @amountWithoutTax, @placeOfSupply, @balanceAmount, @amountPaid, @serviceName,
+      @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
+      @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt
+    )
+  `);
+
+  const created = [];
+  let skipped = 0;
+
+  const tx = db.transaction((rows) => {
+    for (const raw of rows) {
+      const it = raw || {};
+      const { actorRole, changedByUserId, changedByName, createdByUserId, createdByName } = it;
+
+      if (!it.name || !it.customerId || !it.ownerUserId || !it.teamId || !it.regionId || !it.stage) {
+        skipped += 1;
+        continue;
+      }
+      const numVal = Number(it.value);
+      if (!Number.isFinite(numVal) || numVal <= 0) {
+        skipped += 1;
+        continue;
+      }
+
+      const ds = it.dealStatus || "Active";
+      if (ds === "Closed/Lost" && !isSuperAdminRole(actorRole)) {
+        skipped += 1;
+        continue;
+      }
+      if (ds === "Closed/Lost" && (!it.lossReason || !String(it.lossReason).trim())) {
+        skipped += 1;
+        continue;
+      }
+
+      const creatorId = createdByUserId || changedByUserId;
+      const creatorName = createdByName || changedByName;
+      const id = nextDealId();
+      const deal = {
+        id,
+        name: it.name,
+        customerId: it.customerId,
+        ownerUserId: it.ownerUserId,
+        teamId: it.teamId,
+        regionId: it.regionId,
+        stage: it.stage,
+        value: Number(it.value) || 0,
+        locked: it.locked ? 1 : 0,
+        proposalId: it.proposalId || null,
+        dealStatus: ds,
+        invoiceStatus: it.invoiceStatus != null && String(it.invoiceStatus).trim() ? String(it.invoiceStatus).trim() : null,
+        invoiceDate: it.invoiceDate != null && String(it.invoiceDate).trim() ? String(it.invoiceDate).trim() : null,
+        invoiceNumber: it.invoiceNumber != null && String(it.invoiceNumber).trim() ? String(it.invoiceNumber).trim() : null,
+        totalAmount: it.totalAmount != null ? Number(it.totalAmount) || 0 : Number(it.value) || 0,
+        taxAmount: it.taxAmount != null ? Number(it.taxAmount) || 0 : 0,
+        amountWithoutTax: it.amountWithoutTax != null ? Number(it.amountWithoutTax) || 0 : 0,
+        placeOfSupply: it.placeOfSupply != null && String(it.placeOfSupply).trim() ? String(it.placeOfSupply).trim() : null,
+        balanceAmount: it.balanceAmount != null ? Number(it.balanceAmount) || 0 : 0,
+        amountPaid: it.amountPaid != null ? Number(it.amountPaid) || 0 : 0,
+        serviceName: it.serviceName != null && String(it.serviceName).trim() ? String(it.serviceName).trim() : null,
+        dealSource: it.dealSource || null,
+        expectedCloseDate: it.expectedCloseDate || null,
+        priority: it.priority || "Medium",
+        lastActivityAt: now,
+        nextFollowUpDate: it.nextFollowUpDate || null,
+        lossReason: ds === "Closed/Lost" ? (it.lossReason || null) : null,
+        contactPhone: it.contactPhone != null && String(it.contactPhone).trim() ? String(it.contactPhone).trim() : null,
+        remarks: it.remarks != null && String(it.remarks).trim() ? String(it.remarks).trim() : null,
+        createdByUserId: creatorId || null,
+        createdByName: creatorName || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      insert.run(deal);
+      logDealAudit(
+        db,
+        deal.id,
+        "deal_created",
+        { dealId: deal.id, dealStatus: deal.dealStatus, name: deal.name, value: deal.value, customerId: deal.customerId, ownerUserId: deal.ownerUserId },
+        changedByUserId,
+        changedByName,
+      );
+      created.push(toDealResponse(deal));
+    }
+  });
+
+  tx(items);
+  res.status(201).json({ created: created.length, skipped, deals: created });
 });
 
 app.put("/api/deals/:id", (req, res) => {
@@ -565,6 +711,16 @@ app.put("/api/deals/:id", (req, res) => {
     locked,
     proposalId,
     dealStatus,
+    invoiceStatus,
+    invoiceDate,
+    invoiceNumber,
+    totalAmount,
+    taxAmount,
+    amountWithoutTax,
+    placeOfSupply,
+    balanceAmount,
+    amountPaid,
+    serviceName,
     dealSource,
     expectedCloseDate,
     priority,
@@ -601,6 +757,16 @@ app.put("/api/deals/:id", (req, res) => {
     ...(locked !== undefined && { locked: locked ? 1 : 0 }),
     ...(proposalId !== undefined && { proposalId: proposalId || null }),
     dealStatus: mergedStatus,
+    ...(invoiceStatus !== undefined && { invoiceStatus: invoiceStatus != null && String(invoiceStatus).trim() ? String(invoiceStatus).trim() : null }),
+    ...(invoiceDate !== undefined && { invoiceDate: invoiceDate != null && String(invoiceDate).trim() ? String(invoiceDate).trim() : null }),
+    ...(invoiceNumber !== undefined && { invoiceNumber: invoiceNumber != null && String(invoiceNumber).trim() ? String(invoiceNumber).trim() : null }),
+    ...(totalAmount !== undefined && { totalAmount: totalAmount != null ? Number(totalAmount) || 0 : 0 }),
+    ...(taxAmount !== undefined && { taxAmount: taxAmount != null ? Number(taxAmount) || 0 : 0 }),
+    ...(amountWithoutTax !== undefined && { amountWithoutTax: amountWithoutTax != null ? Number(amountWithoutTax) || 0 : 0 }),
+    ...(placeOfSupply !== undefined && { placeOfSupply: placeOfSupply != null && String(placeOfSupply).trim() ? String(placeOfSupply).trim() : null }),
+    ...(balanceAmount !== undefined && { balanceAmount: balanceAmount != null ? Number(balanceAmount) || 0 : 0 }),
+    ...(amountPaid !== undefined && { amountPaid: amountPaid != null ? Number(amountPaid) || 0 : 0 }),
+    ...(serviceName !== undefined && { serviceName: serviceName != null && String(serviceName).trim() ? String(serviceName).trim() : null }),
     ...(dealSource !== undefined && { dealSource: dealSource || null }),
     ...(expectedCloseDate !== undefined && { expectedCloseDate: expectedCloseDate || null }),
     ...(priority !== undefined && { priority: priority || "Medium" }),
@@ -620,7 +786,10 @@ app.put("/api/deals/:id", (req, res) => {
     UPDATE deals SET
       name=@name, customerId=@customerId, ownerUserId=@ownerUserId, teamId=@teamId, regionId=@regionId,
       stage=@stage, value=@value, locked=@locked, proposalId=@proposalId,
-      dealStatus=@dealStatus, dealSource=@dealSource, expectedCloseDate=@expectedCloseDate,
+      dealStatus=@dealStatus, invoiceStatus=@invoiceStatus, invoiceDate=@invoiceDate, invoiceNumber=@invoiceNumber,
+      totalAmount=@totalAmount, taxAmount=@taxAmount, amountWithoutTax=@amountWithoutTax, placeOfSupply=@placeOfSupply,
+      balanceAmount=@balanceAmount, amountPaid=@amountPaid, serviceName=@serviceName,
+      dealSource=@dealSource, expectedCloseDate=@expectedCloseDate,
       priority=@priority, lastActivityAt=@lastActivityAt, nextFollowUpDate=@nextFollowUpDate, lossReason=@lossReason,
       contactPhone=@contactPhone, remarks=@remarks, updatedAt=@updatedAt
     WHERE id=@id
