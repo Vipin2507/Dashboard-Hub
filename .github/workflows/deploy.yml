@@ -1,9 +1,9 @@
-name: Build and Deploy Dashboard
+name: Build and Deploy Dashboard & Backend
 
 on:
   push:
     branches:
-      - main  # This starts the process every time you push code
+      - main
 
 jobs:
   deploy:
@@ -16,17 +16,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      - name: Install & Build
+      # --- FRONTEND BUILD & DEPLOY ---
+      - name: Install & Build Frontend
         run: |
           npm install
-          # API host + explicit alt so integration POSTs try api.buildesk.ae even when VITE_API_BASE_URL matches the dashboard origin (avoids nginx 405 on SPA-only hosts).
           echo "VITE_API_BASE_URL=https://api.buildesk.ae" > .env.production
           echo "VITE_API_INTEGRATIONS_ALT_HOST=https://api.buildesk.ae" >> .env.production
           npm run build
 
-      - name: Deploy to VPS
+      - name: Deploy Frontend to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -34,16 +34,40 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "dist/*"
           target: "/home/buildesk-dashboard/htdocs/dashboard.buildesk.ae/public/"
-          strip_components: 1 # This puts the CONTENTS of dist/ into public/
+          strip_components: 1
 
-      - name: Permissions & Reload
+      # --- BACKEND SYNC & RESTART ---
+      - name: Deploy Backend to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Ensure the web server user owns the new files
+            # 1. Move to backend folder
+            cd /home/buildesk-api/htdocs/api.buildesk.ae
+
+            # 2. Fix the "dubious ownership" error for Git
+            git config --global --add safe.directory /home/buildesk-api/htdocs/api.buildesk.ae
+
+            # 3. Pull latest code (this includes your clean server/db.js)
+            # We use 'reset --hard' to make sure any manual server edits are overwritten by GitHub
+            sudo -u buildesk-api git fetch --all
+            sudo -u buildesk-api git reset --hard origin/main
+
+            # 4. Install dependencies (Re-compiles better-sqlite3 for the server's Node version)
+            sudo -u buildesk-api npm install
+
+            # 5. Restart the API to apply changes
+            sudo -u buildesk-api pm2 restart buildesk-api --update-env
+
+      # --- FINAL PERMISSIONS ---
+      - name: Permissions & Reload Nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
             chown -R buildesk-dashboard:buildesk-dashboard /home/buildesk-dashboard/htdocs/dashboard.buildesk.ae/public
-            # Clear Nginx memory
             systemctl reload nginx
