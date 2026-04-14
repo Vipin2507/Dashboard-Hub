@@ -523,6 +523,16 @@ function renderCommercialSection(
     formatINR(Math.round(lineAmountExTax(item))),
   ]);
 
+  const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
+  if (chunkIndex === totalChunks - 1 && setupCharges > 0) {
+    tableBody.push([
+      "",
+      "Setup & Deployment Charges",
+      "-",
+      formatINR(Math.round(setupCharges)),
+    ]);
+  }
+
   if (chunkIndex === totalChunks - 1) {
     tableBody.push([
       {
@@ -914,7 +924,9 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
 
   const chunks = chunkLineItems(proposal.lineItems, ROWS_PER_COMMERCIAL_PAGE);
   const displayTotal = proposal.lineItems.reduce((sum, item) => sum + lineAmountExTax(item), 0);
-  const totalToShow = proposal.finalQuoteValue ?? displayTotal;
+  const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
+  const computedTotal = displayTotal + setupCharges;
+  const totalToShow = proposal.finalQuoteValue ?? computedTotal;
 
   chunks.forEach((chunk, idx) => {
     if (idx > 0) doc.addPage();

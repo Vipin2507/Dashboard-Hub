@@ -439,6 +439,7 @@ function setMeta(key, value) {
 }
 
 const USERS_TEAMS_SEED_KEY = "seed_users_teams_v4";
+const INVENTORY_SEED_KEY = "seed_inventory_v1";
 
 function reseedUsersAndTeamsIfNeeded() {
   // Bump this key when seedUsers/seedTeams change so deploys refresh SQLite on existing installs.
@@ -470,6 +471,30 @@ function reseedUsersAndTeamsIfNeeded() {
 function forceReseedUsersAndTeams() {
   db.prepare("DELETE FROM app_meta WHERE key = ?").run(USERS_TEAMS_SEED_KEY);
   reseedUsersAndTeamsIfNeeded();
+}
+
+function reseedInventoryIfRequested() {
+  // Dev/ops helper: allows refreshing seeded inventory on existing DBs.
+  // WARNING: This deletes ALL inventory rows before re-seeding.
+  const force =
+    process.env.FORCE_RESEED_INVENTORY === "1" || process.env.FORCE_RESEED_INVENTORY === "true";
+  if (!force) return;
+
+  console.log(`[buildesk] ${INVENTORY_SEED_KEY}: FORCE_RESEED_INVENTORY is set — reseeding inventory.`);
+  db.transaction(() => {
+    db.prepare("DELETE FROM inventory").run();
+
+    const insertInventory = db.prepare(`
+      INSERT INTO inventory (
+        id, name, description, itemType, sku, hsnSacCode, category, unitOfMeasure, costPrice, sellingPrice, taxRate, isActive, createdAt, updatedAt, createdBy, notes
+      ) VALUES (
+        @id, @name, @description, @itemType, @sku, @hsnSacCode, @category, @unitOfMeasure, @costPrice, @sellingPrice, @taxRate, @isActive, @createdAt, @updatedAt, @createdBy, @notes
+      )
+    `);
+    seedInventory.forEach((r) => insertInventory.run(r));
+  })();
+
+  setMeta(INVENTORY_SEED_KEY, "1");
 }
 
 const seedNotifications = [
@@ -593,6 +618,7 @@ function seedIfEmpty() {
 }
 
 seedIfEmpty();
+reseedInventoryIfRequested();
 reseedUsersAndTeamsIfNeeded();
 
-export { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, reseedUsersAndTeamsIfNeeded, forceReseedUsersAndTeams };
+export { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, INVENTORY_SEED_KEY, reseedUsersAndTeamsIfNeeded, forceReseedUsersAndTeams };

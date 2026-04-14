@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Topbar } from "@/components/Topbar";
 import { useAppStore } from "@/store/useAppStore";
@@ -73,10 +74,12 @@ export default function Inventory() {
       if (!res.ok) throw new Error("Failed to load inventory");
       return res.json() as Promise<InventoryItem[]>;
     },
-    onSuccess: (data) => {
-      setInventoryItems(data);
-    },
   });
+
+  // React Query v5 removed per-query callbacks (onSuccess). Keep Zustand store in sync.
+  useEffect(() => {
+    if (inventoryQuery.data) setInventoryItems(inventoryQuery.data);
+  }, [inventoryQuery.data, setInventoryItems]);
 
   const createMutation = useMutation({
     mutationFn: async (item: Omit<InventoryItem, "id" | "createdAt" | "updatedAt">) => {

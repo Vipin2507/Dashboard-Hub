@@ -94,6 +94,7 @@ export function ProposalDetailSheet({
   activityLog.sort((a, b) => b.at.localeCompare(a.at));
 
   const dealValueInclGst = proposal.finalQuoteValue ?? proposal.grandTotal;
+  const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -196,6 +197,7 @@ export function ProposalDetailSheet({
               <Row label="Team" value={team?.name} />
               <Row label="Deal Value (Excl. GST)" value={formatINR(proposal.subtotal)} />
               <Row label="GST Amount" value={formatINR(proposal.totalTax)} />
+              <Row label="Setup & Deployment Charges" value={formatINR(setupCharges)} />
               <Row label="Deal Value (Incl. GST)" value={formatINR(dealValueInclGst)} />
               {proposal.notes && <Row label="Internal notes" value={proposal.notes} />}
               {proposal.customerNotes && <Row label="Remark" value={proposal.customerNotes} />}
@@ -236,6 +238,7 @@ export function ProposalDetailSheet({
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-mono">{formatINR(proposal.subtotal)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Total Discount</span><span className="font-mono">-{formatINR(proposal.totalDiscount)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Total GST</span><span className="font-mono">{formatINR(proposal.totalTax)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Setup &amp; Deployment Charges</span><span className="font-mono">{formatINR(setupCharges)}</span></div>
               <div className="flex justify-between font-medium pt-1 border-t"><span>Grand Total</span><span className="font-mono">{formatINR(proposal.grandTotal)}</span></div>
               {proposal.finalQuoteValue != null && proposal.finalQuoteValue !== proposal.grandTotal && (
                 <div className="flex justify-between font-medium text-primary"><span>Final Quote (overridden)</span><span className="font-mono">{formatINR(proposal.finalQuoteValue)}</span></div>

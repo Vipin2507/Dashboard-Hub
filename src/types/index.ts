@@ -254,6 +254,8 @@ export interface ProposalVersion {
   createdBy: string;
   createdByName?: string;
   lineItems: ProposalLineItem[];
+  /** Fixed charges added on top of computed totals (default 0). */
+  setupDeploymentCharges: number;
   subtotal: number;
   totalDiscount: number;
   totalTax: number;
@@ -274,6 +276,8 @@ export interface Proposal {
   status: ProposalStatus;
   validUntil: string;
   lineItems: ProposalLineItem[];
+  /** Fixed charges added on top of computed totals (default 0). */
+  setupDeploymentCharges: number;
   subtotal: number;
   totalDiscount: number;
   totalTax: number;

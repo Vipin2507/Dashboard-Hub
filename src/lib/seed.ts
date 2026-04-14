@@ -372,8 +372,15 @@ function makeLineItem(
 }
 
 const pNow = '2026-03-12T10:00:00Z';
-function pVersions(lineItems: ProposalLineItem[], subtotal: number, totalDiscount: number, totalTax: number, grandTotal: number): ProposalVersion[] {
-  return [{ version: 1, createdAt: pNow, createdBy: 'u4', lineItems, subtotal, totalDiscount, totalTax, grandTotal }];
+function pVersions(
+  lineItems: ProposalLineItem[],
+  setupDeploymentCharges: number,
+  subtotal: number,
+  totalDiscount: number,
+  totalTax: number,
+  grandTotal: number,
+): ProposalVersion[] {
+  return [{ version: 1, createdAt: pNow, createdBy: 'u4', lineItems, setupDeploymentCharges, subtotal, totalDiscount, totalTax, grandTotal }];
 }
 
 export const seedProposals: Proposal[] = [
@@ -393,6 +400,7 @@ export const seedProposals: Proposal[] = [
       makeLineItem('li1', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 10, 15000, 18),
       makeLineItem('li2', 'inv3', 'Analytics Add-on Annual', 'SUB-ANAL-ANN', 1, 42000, 18),
     ],
+    setupDeploymentCharges: 0,
     subtotal: 192000,
     totalDiscount: 0,
     totalTax: 34560,
@@ -400,6 +408,7 @@ export const seedProposals: Proposal[] = [
     finalQuoteValue: 222000,
     versionHistory: pVersions(
       [makeLineItem('li1', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 10, 15000, 18), makeLineItem('li2', 'inv3', 'Analytics Add-on Annual', 'SUB-ANAL-ANN', 1, 42000, 18)],
+      0,
       192000, 0, 34560, 226560
     ),
     currentVersion: 1,
@@ -427,12 +436,14 @@ export const seedProposals: Proposal[] = [
       makeLineItem('li3', 'inv2', 'ERP Integration Service', 'SVC-ERP-001', 40, 2500, 18),
       makeLineItem('li4', 'inv5', 'Support & AMC Monthly', 'SUB-AMC-MON', 12, 5500, 18),
     ],
+    setupDeploymentCharges: 0,
     subtotal: 166000,
     totalDiscount: 0,
     totalTax: 29880,
     grandTotal: 195880,
     versionHistory: pVersions(
       [makeLineItem('li3', 'inv2', 'ERP Integration Service', 'SVC-ERP-001', 40, 2500, 18), makeLineItem('li4', 'inv5', 'Support & AMC Monthly', 'SUB-AMC-MON', 12, 5500, 18)],
+      0,
       166000, 0, 29880, 195880
     ),
     currentVersion: 1,
@@ -453,12 +464,14 @@ export const seedProposals: Proposal[] = [
     status: 'approved',
     validUntil: '2026-04-30',
     lineItems: [makeLineItem('li5', 'inv4', 'Enterprise Bundle', 'BND-ENT-001', 1, 320000, 18, 5)],
+    setupDeploymentCharges: 0,
     subtotal: 304000,
     totalDiscount: 16000,
     totalTax: 54720,
     grandTotal: 342720,
     versionHistory: pVersions(
       [makeLineItem('li5', 'inv4', 'Enterprise Bundle', 'BND-ENT-001', 1, 320000, 18, 5)],
+      0,
       304000, 16000, 54720, 342720
     ),
     currentVersion: 1,
@@ -481,11 +494,12 @@ export const seedProposals: Proposal[] = [
     status: 'draft',
     validUntil: '2026-05-01',
     lineItems: [makeLineItem('li6', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 5, 15000, 18)],
+    setupDeploymentCharges: 0,
     subtotal: 75000,
     totalDiscount: 0,
     totalTax: 13500,
     grandTotal: 88500,
-    versionHistory: pVersions([makeLineItem('li6', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 5, 15000, 18)], 75000, 0, 13500, 88500),
+    versionHistory: pVersions([makeLineItem('li6', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 5, 15000, 18)], 0, 75000, 0, 13500, 88500),
     currentVersion: 1,
     createdAt: '2026-03-13T09:00:00Z',
     updatedAt: '2026-03-13T09:00:00Z',
@@ -504,12 +518,13 @@ export const seedProposals: Proposal[] = [
     status: 'rejected',
     validUntil: '2026-04-10',
     lineItems: [makeLineItem('li7', 'inv6', 'Implementation Services Pack', 'SVC-IMPL-001', 1, 75000, 18)],
+    setupDeploymentCharges: 0,
     subtotal: 75000,
     totalDiscount: 0,
     totalTax: 13500,
     grandTotal: 88500,
     rejectionReason: 'Budget approved for next quarter. Please resubmit in April.',
-    versionHistory: pVersions([makeLineItem('li7', 'inv6', 'Implementation Services Pack', 'SVC-IMPL-001', 1, 75000, 18)], 75000, 0, 13500, 88500),
+    versionHistory: pVersions([makeLineItem('li7', 'inv6', 'Implementation Services Pack', 'SVC-IMPL-001', 1, 75000, 18)], 0, 75000, 0, 13500, 88500),
     currentVersion: 1,
     createdAt: '2026-03-10T11:00:00Z',
     updatedAt: '2026-03-11T16:00:00Z',
@@ -531,6 +546,7 @@ export const seedProposals: Proposal[] = [
       makeLineItem('li8', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 20, 14500, 18, 3),
       makeLineItem('li9', 'inv5', 'Support & AMC Monthly', 'SUB-AMC-MON', 12, 5000, 18),
     ],
+    setupDeploymentCharges: 0,
     subtotal: 340000,
     totalDiscount: 10200,
     totalTax: 59364,
@@ -539,6 +555,7 @@ export const seedProposals: Proposal[] = [
     dealId: 'd1',
     versionHistory: pVersions(
       [makeLineItem('li8', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 20, 14500, 18, 3), makeLineItem('li9', 'inv5', 'Support & AMC Monthly', 'SUB-AMC-MON', 12, 5000, 18)],
+      0,
       340000, 10200, 59364, 389164
     ),
     currentVersion: 1,

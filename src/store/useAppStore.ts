@@ -862,6 +862,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         createdAt: now,
         createdBy: me.id,
         lineItems: p.lineItems,
+        setupDeploymentCharges: Number((p as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0,
         subtotal: p.subtotal,
         totalDiscount: p.totalDiscount,
         totalTax: p.totalTax,

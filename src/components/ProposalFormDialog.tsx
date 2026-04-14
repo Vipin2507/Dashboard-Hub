@@ -89,6 +89,7 @@ export function ProposalFormDialog({
   const [customerNotes, setCustomerNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [lineItems, setLineItems] = useState<ProposalLineItem[]>([]);
+  const [setupDeploymentCharges, setSetupDeploymentCharges] = useState<number>(0);
   const [overrideFinal, setOverrideFinal] = useState(false);
   const [finalQuoteValue, setFinalQuoteValue] = useState("");
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
@@ -102,9 +103,9 @@ export function ProposalFormDialog({
     const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
     const totalDiscount = lineItems.reduce((s, li) => s + li.qty * li.unitPrice * (li.discount / 100), 0);
     const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
-    const grandTotal = subtotal + totalTax;
+    const grandTotal = subtotal + totalTax + (Number(setupDeploymentCharges) || 0);
     return { subtotal, totalDiscount, totalTax, grandTotal };
-  }, [lineItems]);
+  }, [lineItems, setupDeploymentCharges]);
 
   const customerOptions = useMemo(
     () => customers.map((c) => ({ value: c.id, label: c.companyName })),
@@ -205,13 +206,14 @@ export function ProposalFormDialog({
       status: editingProposal?.status ?? "draft",
       validUntil,
       lineItems,
+      setupDeploymentCharges: Number(setupDeploymentCharges) || 0,
       subtotal: totals.subtotal,
       totalDiscount: totals.totalDiscount,
       totalTax: totals.totalTax,
       grandTotal: totals.grandTotal,
       finalQuoteValue: overrideFinal ? value : undefined,
       versionHistory: editingProposal?.versionHistory ?? [
-        { version: 1, createdAt: now, createdBy: me.id, lineItems, subtotal: totals.subtotal, totalDiscount: totals.totalDiscount, totalTax: totals.totalTax, grandTotal: totals.grandTotal },
+        { version: 1, createdAt: now, createdBy: me.id, lineItems, setupDeploymentCharges: Number(setupDeploymentCharges) || 0, subtotal: totals.subtotal, totalDiscount: totals.totalDiscount, totalTax: totals.totalTax, grandTotal: totals.grandTotal },
       ],
       currentVersion: editingProposal?.currentVersion ?? 1,
       notes: internalNotes || undefined,
@@ -305,6 +307,7 @@ export function ProposalFormDialog({
       setCustomerNotes(editingProposal.customerNotes ?? "");
       setInternalNotes(editingProposal.notes ?? "");
       setLineItems(editingProposal.lineItems);
+      setSetupDeploymentCharges(Number(editingProposal.setupDeploymentCharges) || 0);
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
     } else {
@@ -315,6 +318,7 @@ export function ProposalFormDialog({
       setCustomerNotes("");
       setInternalNotes("");
       setLineItems([]);
+      setSetupDeploymentCharges(0);
       setOverrideFinal(false);
       setFinalQuoteValue("");
     }
@@ -458,10 +462,25 @@ export function ProposalFormDialog({
                     <div className="flex justify-between"><span>Deal Value (Excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
                     <div className="flex justify-between"><span>Total Discount</span><span className="font-mono">-{formatINR(totals.totalDiscount)}</span></div>
                     <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
+                    <div className="flex justify-between"><span>Setup &amp; Deployment Charges</span><span className="font-mono">{formatINR(Number(setupDeploymentCharges) || 0)}</span></div>
                     <div className="flex justify-between font-medium"><span>Deal Value (Incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
                   </div>
                 </div>
               )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div className="space-y-2">
+                  <Label>Setup &amp; Deployment Charges</Label>
+                  <NumericInput
+                    className="h-10"
+                    min={0}
+                    emptyOnBlur={0}
+                    value={setupDeploymentCharges}
+                    onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                  />
+                  <p className="text-xs text-muted-foreground">Added to the final amount (default 0).</p>
+                </div>
+              </div>
 
               {canOverride && (
                 <div className="flex items-center gap-4 pt-2">
