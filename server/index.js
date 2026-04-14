@@ -11,8 +11,9 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors());
 // Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+// Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 registerIntegrationProxies(app, { db });
 
 // Debug helpers (intentionally behind an env flag for VPS troubleshooting).

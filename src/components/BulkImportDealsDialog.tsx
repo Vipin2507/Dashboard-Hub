@@ -31,33 +31,46 @@ async function saveDealsToApi(deals: Deal[], meta: { meId: string; meName: strin
   });
 
   const bulkUrl = apiUrl("/api/deals/bulk");
-  const bulkRes = await fetch(bulkUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (bulkRes.ok) return;
-
-  if (bulkRes.status !== 404 && bulkRes.status !== 405) {
-    const msg = await bulkRes.text().catch(() => bulkRes.statusText);
-    throw new Error(msg || `Bulk save failed (${bulkRes.status})`);
+  const chunkSize = 200;
+  const chunks: unknown[][] = [];
+  for (let i = 0; i < payload.length; i += chunkSize) {
+    chunks.push(payload.slice(i, i + chunkSize));
   }
 
-  let failed = 0;
-  let lastErr = "";
-  for (const d of payload) {
-    const r = await fetch(apiUrl("/api/deals"), {
+  for (const chunk of chunks) {
+    const bulkRes = await fetch(bulkUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(d),
+      body: JSON.stringify(chunk),
     });
-    if (!r.ok) {
-      failed += 1;
-      lastErr = (await r.text().catch(() => r.statusText)) || `${r.status}`;
+    if (bulkRes.ok) continue;
+
+    if (bulkRes.status === 413) {
+      throw new Error(
+        "Upload too large (413). The API/proxy is rejecting request size. Reduce rows per import or increase server/proxy body size limits.",
+      );
+    }
+
+    if (bulkRes.status !== 404 && bulkRes.status !== 405) {
+      const msg = await bulkRes.text().catch(() => bulkRes.statusText);
+      throw new Error(msg || `Bulk save failed (${bulkRes.status})`);
+    }
+
+    // Fallback: bulk endpoint not available; use single create for remaining chunk items
+    for (const d of chunk as any[]) {
+      const r = await fetch(apiUrl("/api/deals"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(d),
+      });
+      if (!r.ok) {
+        const lastErr = (await r.text().catch(() => r.statusText)) || `${r.status}`;
+        throw new Error(lastErr || "Could not save deals (single-item API failed).");
+      }
     }
   }
-  if (failed === payload.length) throw new Error(lastErr || "Could not save deals (single-item API also failed).");
-  if (failed > 0) throw new Error(`${payload.length - failed} saved, ${failed} failed. Last error: ${lastErr}`);
+
+  return;
 }
 
 type Props = {
