@@ -36,30 +36,31 @@ jobs:
           target: "/home/buildesk-dashboard/htdocs/dashboard.buildesk.ae/public/"
           strip_components: 1
 
-      # --- BACKEND SYNC & RESTART ---
-      - name: Deploy Backend to VPS
+     - name: Deploy Backend to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # 1. Move to backend folder
             cd /home/buildesk-api/htdocs/api.buildesk.ae
-
-            # 2. Fix the "dubious ownership" error for Git
-            git config --global --add safe.directory /home/buildesk-api/htdocs/api.buildesk.ae
-
-            # 3. Pull latest code (this includes your clean server/db.js)
-            # We use 'reset --hard' to make sure any manual server edits are overwritten by GitHub
+            
+            # 1. Ensure permissions are correct before we even start
+            chown -R buildesk-api:buildesk-api .
+            
+            # 2. Kill the "Lock" files so Git can reset without permission errors
+            rm -f data/app.db* 2>/dev/null || true
+            rm -f server/data/app.db* 2>/dev/null || true
+            
+            # 3. Pull and Reset
             sudo -u buildesk-api git fetch --all
             sudo -u buildesk-api git reset --hard origin/main
-
-            # 4. Install dependencies (Re-compiles better-sqlite3 for the server's Node version)
+            
+            # 4. Install dependencies
             sudo -u buildesk-api npm install
-
-            # 5. Restart the API to apply changes
-            sudo -u buildesk-api pm2 restart buildesk-api --update-env
+            
+            # 5. Smart Restart: Try to restart, but start it if it doesn't exist
+            sudo -u buildesk-api pm2 restart buildesk-api --update-env || sudo -u buildesk-api pm2 start server/index.js --name buildesk-api
 
       # --- FINAL PERMISSIONS ---
       - name: Permissions & Reload Nginx
