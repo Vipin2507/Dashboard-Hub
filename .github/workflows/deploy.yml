@@ -36,7 +36,7 @@ jobs:
           target: "/home/buildesk-dashboard/htdocs/dashboard.buildesk.ae/public/"
           strip_components: 1
 
-     - name: Deploy Backend to VPS
+      - name: Deploy Backend to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -45,14 +45,16 @@ jobs:
           script: |
             cd /home/buildesk-api/htdocs/api.buildesk.ae
             
-            # 1. Ensure permissions are correct before we even start
+            # 1. Fix Git "dubious ownership" and set permissions
+            git config --global --add safe.directory /home/buildesk-api/htdocs/api.buildesk.ae
             chown -R buildesk-api:buildesk-api .
             
-            # 2. Kill the "Lock" files so Git can reset without permission errors
+            # 2. Force delete database files that cause Git Reset to fail
+            # (Git cannot overwrite files that root created if it's running as buildesk-api)
             rm -f data/app.db* 2>/dev/null || true
             rm -f server/data/app.db* 2>/dev/null || true
             
-            # 3. Pull and Reset
+            # 3. Pull and Reset to match GitHub exactly
             sudo -u buildesk-api git fetch --all
             sudo -u buildesk-api git reset --hard origin/main
             
