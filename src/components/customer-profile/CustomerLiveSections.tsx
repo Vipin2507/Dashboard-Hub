@@ -161,108 +161,6 @@ export function CustomerProposalsLiveTable({
   );
 }
 
-export function CustomerDealsLiveTable({ customerId }: { customerId: string }) {
-  const me = useAppStore((s) => s.me);
-  const navigate = useNavigate();
-  const updateStage = useUpdateDealStage();
-  const canUpdate = canEditDeal(me.role);
-
-  const { data = [], isLoading } = useQuery({
-    queryKey: QK.customerDeals(customerId),
-    queryFn: () => api.get<Deal[]>(`/deals?customerId=${encodeURIComponent(customerId)}`),
-    staleTime: 30_000,
-    enabled: !!customerId,
-  });
-
-  const stageOptions = useMemo(() => {
-    const s = new Set([...DEFAULT_STAGES, ...data.map((d) => d.stage)]);
-    return Array.from(s);
-  }, [data]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading deals…
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-xs">Deal #</TableHead>
-            <TableHead className="text-xs">Title</TableHead>
-            <TableHead className="text-xs text-right">Value</TableHead>
-            <TableHead className="text-xs">Stage</TableHead>
-            <TableHead className="text-xs">Status</TableHead>
-            <TableHead className="text-xs">Updated</TableHead>
-            <TableHead className="text-xs">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((d) => (
-            <TableRow key={d.id}>
-              <TableCell className="font-mono text-xs">{d.id}</TableCell>
-              <TableCell className="text-sm">{d.name}</TableCell>
-              <TableCell className="text-right font-mono text-sm">{formatINR(d.value)}</TableCell>
-              <TableCell>
-                {canUpdate && !d.locked ? (
-                  <Select
-                    value={d.stage}
-                    disabled={updateStage.isPending}
-                    onValueChange={(v) =>
-                      updateStage.mutate({
-                        dealId: d.id,
-                        stage: v,
-                        prevDealStatus: normalizeDealStatus(d.dealStatus),
-                      })
-                    }
-                  >
-                    <SelectTrigger className="h-8 w-[140px] text-[10px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {stageOptions.map((s) => (
-                        <SelectItem key={s} value={s} className="text-xs">
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Badge variant="outline" className="text-[10px]">
-                    {d.stage}
-                  </Badge>
-                )}
-              </TableCell>
-              <TableCell>
-                <Badge variant="outline" className="text-[10px]">
-                  {normalizeDealStatus(d.dealStatus)}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">{d.updatedAt?.slice(0, 10) ?? "—"}</TableCell>
-              <TableCell>
-                <Button variant="ghost" size="sm" className="h-7" onClick={() => navigate("/deals")}>
-                  View
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-          {data.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
-                No deals
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
 export function CustomerPaymentsLiveSection({
   customerId,
   onRecordPayment,
@@ -335,7 +233,126 @@ export function CustomerPaymentsLiveSection({
   );
 }
 
-export function CustomerActivityLiveFeed({ customerId }: { customerId: string }) {
+export function CustomerDealsLiveTable({
+  customerId,
+  dealIdAllowlist,
+}: {
+  customerId: string;
+  dealIdAllowlist?: Set<string> | null;
+}) {
+  const me = useAppStore((s) => s.me);
+  const navigate = useNavigate();
+  const updateStage = useUpdateDealStage();
+  const canUpdate = canEditDeal(me.role);
+
+  const { data = [], isLoading } = useQuery({
+    queryKey: QK.customerDeals(customerId),
+    queryFn: () => api.get<Deal[]>(`/deals?customerId=${encodeURIComponent(customerId)}`),
+    staleTime: 30_000,
+    enabled: !!customerId,
+  });
+
+  const filteredDeals = useMemo(() => {
+    if (!dealIdAllowlist || dealIdAllowlist.size === 0) return data;
+    return data.filter((d) => dealIdAllowlist.has(d.id));
+  }, [data, dealIdAllowlist]);
+
+  const stageOptions = useMemo(() => {
+    const s = new Set([...DEFAULT_STAGES, ...filteredDeals.map((d) => d.stage)]);
+    return Array.from(s);
+  }, [filteredDeals]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading deals…
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-md border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="text-xs">Deal #</TableHead>
+            <TableHead className="text-xs">Title</TableHead>
+            <TableHead className="text-xs text-right">Value</TableHead>
+            <TableHead className="text-xs">Stage</TableHead>
+            <TableHead className="text-xs">Status</TableHead>
+            <TableHead className="text-xs">Updated</TableHead>
+            <TableHead className="text-xs">Action</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredDeals.map((d) => (
+            <TableRow key={d.id}>
+              <TableCell className="font-mono text-xs">{d.id}</TableCell>
+              <TableCell className="text-sm">{d.name}</TableCell>
+              <TableCell className="text-right font-mono text-sm">{formatINR(d.value)}</TableCell>
+              <TableCell>
+                {canUpdate && !d.locked ? (
+                  <Select
+                    value={d.stage}
+                    disabled={updateStage.isPending}
+                    onValueChange={(v) =>
+                      updateStage.mutate({
+                        dealId: d.id,
+                        stage: v,
+                        prevDealStatus: normalizeDealStatus(d.dealStatus),
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-8 w-[140px] text-[10px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {stageOptions.map((s) => (
+                        <SelectItem key={s} value={s} className="text-xs">
+                          {s}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Badge variant="outline" className="text-[10px]">
+                    {d.stage}
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" className="text-[10px]">
+                  {normalizeDealStatus(d.dealStatus)}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-xs text-muted-foreground">{d.updatedAt?.slice(0, 10) ?? "—"}</TableCell>
+              <TableCell>
+                <Button variant="ghost" size="sm" className="h-7" onClick={() => navigate("/deals")}>
+                  View
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {filteredDeals.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-6">
+                No deals
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+export function CustomerActivityLiveFeed({
+  customerId,
+  dealIdAllowlist,
+}: {
+  customerId: string;
+  dealIdAllowlist?: Set<string> | null;
+}) {
   const { data: proposals = [], isLoading: lp } = useQuery({
     queryKey: QK.customerProposals(customerId),
     queryFn: () => api.get<Proposal[]>(`/proposals?customerId=${encodeURIComponent(customerId)}`),
@@ -367,7 +384,8 @@ export function CustomerActivityLiveFeed({ customerId }: { customerId: string })
         kind: "proposal",
       });
     }
-    for (const d of deals) {
+    const visibleDeals = !dealIdAllowlist || dealIdAllowlist.size === 0 ? deals : deals.filter((d) => dealIdAllowlist.has(d.id));
+    for (const d of visibleDeals) {
       rows.push({
         id: `d-${d.id}`,
         label: `Deal ${d.id}`,
@@ -388,7 +406,7 @@ export function CustomerActivityLiveFeed({ customerId }: { customerId: string })
     }
     rows.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
     return rows.slice(0, 40);
-  }, [proposals, deals, summary]);
+  }, [proposals, deals, summary, dealIdAllowlist]);
 
   if (lp || ld || ls) {
     return (

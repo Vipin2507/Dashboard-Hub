@@ -32,14 +32,14 @@ export const seedTeams: Team[] = [
 ];
 
 export const seedUsers: User[] = [
-  { id: 'u1', name: 'Mohit Singht (admin)', email: 'mohit.singht@buildesk.com', password: 'admin123', role: 'super_admin', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u2', name: 'Vaibhav Agrawal (Sales Executive)', email: 'vaibhav.agrawal@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u3', name: 'Shubham Behera (Sale Executive)', email: 'shubham.behera@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u4', name: 'Sharad VS (Sale Executive)', email: 'sharad.vs@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u5', name: 'Wasim Mondel (Sale Executive)', email: 'wasim.mondel@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u6', name: 'Dylan David (Sale Executive)', email: 'dylan.david@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u7', name: 'Bhumit Fluria (Sale Executive)', email: 'bhumit.fluria@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
-  { id: 'u8', name: 'Preeti Rai (Pre-sales agent)', email: 'preeti.rai@buildesk.com', password: 'sales123', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u1', name: 'Mohit Singht (admin)', email: 'mohit@cravingcode.in', password: 'buildesk', role: 'super_admin', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u2', name: 'Vaibhav Agrawal (Sales Executive)', email: 'vaibhav@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u3', name: 'Shubham Behera (Sale Executive)', email: 'shubham@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u4', name: 'Sharad VS (Sale Executive)', email: 'sharad@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u5', name: 'Wasim Mondel (Sale Executive)', email: 'wasim@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u6', name: 'Dylan David (Sale Executive)', email: 'dylan@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u7', name: 'Bhumit Fluria (Sale Executive)', email: 'bhumit@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
+  { id: 'u8', name: 'Preeti Rai (Pre-sales agent)', email: 'preeti@cravingcode.in', password: 'buildesk', role: 'sales_rep', teamId: 't1', regionId: 'r2', status: 'active' },
 ];
 
 const defaultAddress = { country: 'India' as const };

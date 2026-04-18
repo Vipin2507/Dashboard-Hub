@@ -1,11 +1,17 @@
 import { AppSidebar } from '@/components/AppSidebar';
+import { MobileShellHeader } from '@/components/MobileShellHeader';
 import { SidebarNavProvider, useSidebarNav } from '@/contexts/SidebarNavContext';
 import { cn } from '@/lib/utils';
 import { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 
 function AppLayoutShell() {
+  const location = useLocation();
   const { sidebarOpen, closeSidebar, isLgUp } = useSidebarNav();
+
+  useEffect(() => {
+    if (!isLgUp) closeSidebar();
+  }, [location.pathname, isLgUp, closeSidebar]);
 
   useEffect(() => {
     if (isLgUp || !sidebarOpen) return;
@@ -54,9 +60,10 @@ function AppLayoutShell() {
       </aside>
 
       {/* Main column — offset by rail width on lg+ */}
-      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1400px] p-4 sm:p-5 lg:p-6">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-64">
+        <MobileShellHeader />
+        <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <div className="mx-auto w-full max-w-[1400px] p-3 sm:p-5 lg:p-6">
             <Outlet />
           </div>
         </main>

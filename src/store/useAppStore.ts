@@ -36,7 +36,13 @@ import {
 } from '@/lib/seed';
 import { apiUrl } from '@/lib/api';
 
+const AUTH_STORAGE_KEY = 'buildesk_auth_user_id';
+
 interface AppState {
+  /** Logged-in account (persisted). Impersonation does not change this. */
+  authUserId: string | null;
+  /** When super_admin uses Switch role/user, the effective `me` user id (not persisted). */
+  effectiveUserId: string | null;
   me: MeContext;
   regions: Region[];
   teams: Team[];
@@ -136,18 +142,56 @@ function meFromUser(u: User): MeContext {
   return { id: u.id, name: u.name, role: u.role, teamId: u.teamId, regionId: u.regionId };
 }
 
+const GUEST_USER_ID = '__guest__';
+
+function guestMe(): MeContext {
+  return { id: GUEST_USER_ID, name: '', role: 'sales_rep', teamId: 't1', regionId: 'r2' };
+}
+
+function readAuthUserId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(AUTH_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistAuthUserId(id: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (id) localStorage.setItem(AUTH_STORAGE_KEY, id);
+    else localStorage.removeItem(AUTH_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const initialUser = seedUsers.find(u => u.id === 'u2')!;
-
 function getInitialState() {
+  const users = structuredClone(seedUsers);
+  let authUserId = readAuthUserId();
+  let me: MeContext = guestMe();
+  if (authUserId) {
+    const logged = users.find((u) => u.id === authUserId && u.status === 'active');
+    if (logged) {
+      me = meFromUser(logged);
+    } else {
+      persistAuthUserId(null);
+      authUserId = null;
+    }
+  }
+
   return {
-    me: meFromUser(initialUser),
+    authUserId,
+    effectiveUserId: null as string | null,
+    me,
     regions: structuredClone(seedRegions),
     teams: structuredClone(seedTeams),
-    users: structuredClone(seedUsers),
+    users,
     customers: structuredClone(seedCustomers),
     proposals: structuredClone(seedProposals),
     deals: structuredClone(seedDeals),
@@ -175,11 +219,35 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setRegions: (regions) => set({ regions }),
   setTeams: (teams) => set({ teams }),
-  setUsers: (users) => set({ users }),
+  setUsers: (users) => {
+    const authUserId = get().authUserId;
+    if (!authUserId) {
+      set({ users });
+      return;
+    }
+    const logged = users.find((u) => u.id === authUserId && u.status === 'active');
+    if (!logged) {
+      persistAuthUserId(null);
+      set({ users, authUserId: null, effectiveUserId: null, me: guestMe() });
+      return;
+    }
+    const prevEff = get().effectiveUserId;
+    let effectiveUserId: string | null = null;
+    let eff = logged;
+    if (logged.role === 'super_admin' && prevEff) {
+      const target = users.find((u) => u.id === prevEff && u.status === 'active');
+      if (target) {
+        eff = target;
+        effectiveUserId = target.id;
+      }
+    }
+    set({ users, me: meFromUser(eff), effectiveUserId });
+  },
   setNotifications: (notifications) => set({ notifications }),
 
   login: (email, password) => {
-    const user = get().users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const normalized = email.toLowerCase().trim();
+    const user = get().users.find((u) => u.email.toLowerCase() === normalized);
     if (!user) {
       throw new Error('User not found');
     }
@@ -189,14 +257,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (user.password !== password) {
       throw new Error('Invalid password');
     }
-    set({ me: meFromUser(user) });
+    persistAuthUserId(user.id);
+    set({ me: meFromUser(user), authUserId: user.id, effectiveUserId: null });
   },
 
   logout: () => {
-    const fallbackUser = seedUsers[0] ?? get().users[0];
-    if (fallbackUser) {
-      set({ me: meFromUser(fallbackUser) });
-    }
+    persistAuthUserId(null);
+    set({ authUserId: null, effectiveUserId: null, me: guestMe() });
   },
 
   registerUser: ({ name, email, password, role, teamId, regionId }) => {
@@ -250,11 +317,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         body: JSON.stringify(user),
       }).catch(() => undefined);
     }
-    const { me } = get();
-    if (me.id === userId && status !== 'active') {
-      const fallbackUser = seedUsers.find(u => u.status === 'active' && u.id !== userId) ?? seedUsers[0];
-      if (fallbackUser) {
-        set({ me: meFromUser(fallbackUser) });
+    const { me, authUserId, effectiveUserId } = get();
+    if (status !== 'active' && userId === authUserId) {
+      persistAuthUserId(null);
+      set({ authUserId: null, effectiveUserId: null, me: guestMe() });
+      return;
+    }
+    if (status !== 'active' && userId === me.id && authUserId && userId !== authUserId) {
+      const logged = get().users.find((u) => u.id === authUserId && u.status === 'active');
+      if (logged) {
+        set({ effectiveUserId: null, me: meFromUser(logged) });
       }
     }
   },
@@ -903,17 +975,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   switchRole: (role) => {
+    const authUserId = get().authUserId;
+    const logged = get().users.find((u) => u.id === authUserId);
+    if (!logged || logged.role !== 'super_admin') return;
     const user = getUserForRole(role, get().users);
-    set({ me: meFromUser(user) });
+    set({
+      me: meFromUser(user),
+      effectiveUserId: user.id === authUserId ? null : user.id,
+    });
   },
 
   switchUser: (userId) => {
+    const authUserId = get().authUserId;
+    const logged = get().users.find((u) => u.id === authUserId);
+    if (!logged || logged.role !== 'super_admin') return;
     const user = get().users.find((u) => u.id === userId);
     if (!user) return;
-    set({ me: meFromUser(user) });
+    set({
+      me: meFromUser(user),
+      effectiveUserId: user.id === authUserId ? null : user.id,
+    });
   },
 
   resetDemo: () => {
+    persistAuthUserId(null);
     set(getInitialState());
   },
 

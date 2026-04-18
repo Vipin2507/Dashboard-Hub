@@ -172,6 +172,7 @@ export default function CustomerProfile() {
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
+  const [productLineFilter, setProductLineFilter] = useState<string>("all");
 
   const canUpdate = can(me.role, "customers", "update");
   const canDelete = can(me.role, "customers", "delete");
@@ -214,6 +215,28 @@ export default function CustomerProfile() {
       .join(", "),
     customer.address?.country,
   ].filter(Boolean);
+
+  const productLineOptions = customer.productLines
+    .map((pl) => ({ id: pl.inventoryItemId, name: pl.itemName }))
+    .filter((x) => x.id && x.name);
+
+  const uniqueProductLineOptions = Array.from(
+    new Map(productLineOptions.map((o) => [o.id, o])).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const filteredProductLines =
+    productLineFilter === "all"
+      ? customer.productLines
+      : customer.productLines.filter((pl) => pl.inventoryItemId === productLineFilter);
+
+  const dealIdAllowlist =
+    productLineFilter === "all"
+      ? null
+      : new Set(
+          filteredProductLines
+            .map((pl) => pl.dealId)
+            .filter((x): x is string => !!x && String(x).trim() !== ""),
+        );
 
   return (
     <>
@@ -350,6 +373,32 @@ export default function CustomerProfile() {
                   })}
                 </div>
                 <div className="p-5">
+                  {uniqueProductLineOptions.length > 0 && (
+                    <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Product line filter applies to deals, invoices, activity, and product line table where applicable.
+                        </p>
+                      </div>
+                      <div className="w-full sm:w-72">
+                        <Label className="sr-only">Product line</Label>
+                        <Select value={productLineFilter} onValueChange={setProductLineFilter}>
+                          <SelectTrigger className="h-9 w-full">
+                            <SelectValue placeholder="All product lines" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All product lines</SelectItem>
+                            {uniqueProductLineOptions.map((o) => (
+                              <SelectItem key={o.id} value={o.id}>
+                                {o.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  )}
 
             <TabsContent value="overview" className="mt-0 space-y-6 flex-1">
               <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
@@ -476,7 +525,7 @@ export default function CustomerProfile() {
                 <AccordionItem value="deals" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Deals</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    <CustomerDealsLiveTable customerId={customer.id} />
+                    <CustomerDealsLiveTable customerId={customer.id} dealIdAllowlist={dealIdAllowlist} />
                   </AccordionContent>
                 </AccordionItem>
 
@@ -510,7 +559,10 @@ export default function CustomerProfile() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {customer.invoices.map((inv) => {
+                        {(dealIdAllowlist
+                          ? customer.invoices.filter((inv) => dealIdAllowlist.has(inv.dealId))
+                          : customer.invoices
+                        ).map((inv) => {
                           const isOverdue =
                             inv.status === "unpaid" &&
                             new Date(inv.dueDate) < new Date();
@@ -534,7 +586,9 @@ export default function CustomerProfile() {
                             </TableRow>
                           );
                         })}
-                        {customer.invoices.length === 0 && (
+                        {(dealIdAllowlist
+                          ? customer.invoices.filter((inv) => dealIdAllowlist.has(inv.dealId)).length === 0
+                          : customer.invoices.length === 0) && (
                           <TableRow>
                             <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-6">
                               No invoices
@@ -577,7 +631,7 @@ export default function CustomerProfile() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {customer.productLines.map((pl) => {
+                  {filteredProductLines.map((pl) => {
                     const renewalDate = pl.renewalDate ? new Date(pl.renewalDate) : null;
                     const expiryDate = pl.expiryDate ? new Date(pl.expiryDate) : null;
                     const now = new Date();
@@ -628,7 +682,7 @@ export default function CustomerProfile() {
                       </TableRow>
                     );
                   })}
-                  {customer.productLines.length === 0 && (
+                  {filteredProductLines.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
                         No product lines
@@ -965,7 +1019,7 @@ export default function CustomerProfile() {
                   </Button>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <CustomerActivityLiveFeed customerId={customer.id} />
+                  <CustomerActivityLiveFeed customerId={customer.id} dealIdAllowlist={dealIdAllowlist} />
                   {customer.activityLog.length > 0 && (
                     <div className="mt-8 space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground uppercase">Local notes</p>

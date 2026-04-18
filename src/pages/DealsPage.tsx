@@ -221,6 +221,7 @@ export default function DealsPage() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [teamFilter, setTeamFilter] = useState("all");
   const [regionFilter, setRegionFilter] = useState("all");
+  const [serviceFilter, setServiceFilter] = useState("all");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
@@ -514,9 +515,19 @@ export default function DealsPage() {
       if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
+      if (serviceFilter !== "all" && String(d.serviceName ?? "").trim() !== serviceFilter) return false;
       return true;
     });
-  }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, customers]);
+  }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter, customers]);
+
+  const serviceOptions = useMemo(() => {
+    const set = new Set<string>();
+    scopedActiveDeals.forEach((d) => {
+      const s = String(d.serviceName ?? "").trim();
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [scopedActiveDeals]);
 
   const totalValue = visible.reduce((s, d) => s + d.value, 0);
 
@@ -816,7 +827,7 @@ export default function DealsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:col-span-8 lg:grid-cols-5">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:col-span-8 lg:grid-cols-6">
                 <Select value={stageFilter} onValueChange={setStageFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All stages" />
@@ -882,6 +893,20 @@ export default function DealsPage() {
                     {regions.map((r) => (
                       <SelectItem key={r.id} value={r.id}>
                         {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={serviceFilter} onValueChange={setServiceFilter}>
+                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
+                    <SelectValue placeholder="All services" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All services</SelectItem>
+                    {serviceOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}
                       </SelectItem>
                     ))}
                   </SelectContent>

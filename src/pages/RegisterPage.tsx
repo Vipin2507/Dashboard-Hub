@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -25,8 +25,13 @@ const DEFAULT_REGION_ID = "r2";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const authUserId = useAppStore((s) => s.authUserId);
   const registerUser = useAppStore(s => s.registerUser);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (authUserId) navigate("/", { replace: true });
+  }, [authUserId, navigate]);
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),

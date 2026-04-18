@@ -142,6 +142,8 @@ export interface AppSidebarProps {
 
 export function AppSidebar({ onClose }: AppSidebarProps) {
   const me = useAppStore((s) => s.me);
+  const loggedInUser = useAppStore((s) => s.users.find((u) => u.id === s.authUserId));
+  const isSuperLoggedIn = loggedInUser?.role === 'super_admin';
   const customers = useAppStore((s) => s.customers);
   const automationLogs = useAppStore((s) => s.automationLogs);
   const navigate = useNavigate();
@@ -257,8 +259,8 @@ export function AppSidebar({ onClose }: AppSidebarProps) {
       </nav>
 
       <div className="flex-shrink-0 space-y-2 border-t border-gray-200 p-3 dark:border-gray-800">
-        <RoleSwitcher />
-        <ResetDemoButton />
+        {isSuperLoggedIn && <RoleSwitcher />}
+        {isSuperLoggedIn && <ResetDemoButton />}
       </div>
     </div>
   );

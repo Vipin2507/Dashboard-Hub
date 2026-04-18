@@ -1,56 +1,39 @@
 import { NotificationBell } from '@/components/NotificationBell';
 import { UserMenu } from '@/components/UserMenu';
-import { useSidebarNav } from '@/contexts/SidebarNavContext';
-import { Menu } from 'lucide-react';
 
 interface TopbarProps {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
-  /** Optional override (defaults to shell context openSidebar) */
-  onMenuClick?: () => void;
 }
 
-export function Topbar({ title, subtitle, actions, onMenuClick }: TopbarProps) {
-  const { sidebarOpen, openSidebar } = useSidebarNav();
-  const handleMenu = onMenuClick ?? openSidebar;
-
+/**
+ * Page title row for `lg+` also shows notifications and account.
+ * Below `lg`, {@link MobileShellHeader} in the app layout provides menu, notifications, and account.
+ */
+export function Topbar({ title, subtitle, actions }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-30">
-      <div className="flex h-14 shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 dark:border-gray-800 dark:bg-gray-900">
-      {/* Hamburger — mobile / tablet only */}
-      <button
-        type="button"
-        onClick={handleMenu}
-        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 lg:hidden"
-        aria-label="Open menu"
-        aria-expanded={sidebarOpen}
-        aria-controls="app-sidebar"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
+    <header className="sticky top-14 z-20 lg:top-0 lg:z-30">
+      <div className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900 sm:gap-3 sm:px-4 sm:py-0 lg:h-14 lg:py-0">
+        <div className="min-w-0 flex-1 basis-[min(100%,12rem)] sm:basis-auto">
+          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg lg:text-xl">{title}</h1>
+          {subtitle && (
+            <p className="mt-0.5 hidden text-sm leading-snug text-muted-foreground sm:line-clamp-2 sm:block">
+              {subtitle}
+            </p>
+          )}
+        </div>
 
-      {/* Brand — mobile only (desktop lives in sidebar) */}
-      <span className="flex-shrink-0 text-base font-bold text-blue-600 lg:hidden">Buildesk</span>
-
-      <div className="min-w-0 flex-1">
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg lg:text-xl">{title}</h1>
-        {subtitle && (
-          <p className="mt-0.5 hidden text-sm leading-snug text-muted-foreground sm:line-clamp-2 sm:block">
-            {subtitle}
-          </p>
-        )}
+        <div className="ml-auto flex flex-shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
+          {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
+          <div className="hidden items-center gap-1 sm:gap-2 lg:flex">
+            <NotificationBell />
+            <UserMenu />
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-shrink-0 items-center gap-1 sm:gap-2">
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
-        <NotificationBell />
-        <UserMenu />
-      </div>
-      </div>
-
-      {/* Spacing below top bar so content isn't cramped */}
-      <div className="h-3 sm:h-4 bg-transparent" />
+      <div className="h-3 bg-transparent sm:h-4" />
     </header>
   );
 }

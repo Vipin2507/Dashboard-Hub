@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/AppLayout";
+import { RequireAuth } from "@/components/RequireAuth";
 import DashboardPage from "@/pages/DashboardPage";
 import DealsPage from "@/pages/DealsPage";
 import Proposals from "@/pages/Proposals";
@@ -67,7 +68,8 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route element={<AppLayout />}>
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/deals" element={<DealsPage />} />
             <Route path="/proposals" element={<Proposals />} />
@@ -82,6 +84,7 @@ const App = () => (
             <Route path="/masters" element={<MastersPage />} />
             <Route path="/automation" element={<Automation />} />
             <Route path="/admin/data-control" element={<DataControlCenterPage />} />
+            </Route>
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
