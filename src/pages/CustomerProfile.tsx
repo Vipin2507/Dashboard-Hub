@@ -78,12 +78,19 @@ import {
   CreditCard,
   Package,
   ArrowLeft,
+  Check,
+  CalendarClock,
+  AlertCircle,
+  Bot,
 } from "lucide-react";
 import type { Customer, CustomerStatus, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import { toast } from "@/components/ui/use-toast";
+import { useCustomerPaymentSummary } from "@/hooks/usePayments";
+import { triggerAutomation } from "@/lib/automationService";
+import { getCustomerBrief } from "@/lib/aiMemoryService";
 
 const STATUS_PILL: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -126,10 +133,302 @@ const PROFILE_TABS: {
   { key: "overview", label: "Overview", icon: Building2 },
   { key: "transactions", label: "Transaction History", icon: CreditCard },
   { key: "productline", label: "Product Line", icon: Package },
+  { key: "support_workflow", label: "Support Workflow", icon: CalendarClock },
   { key: "notes", label: "Notes & Attachments", icon: MessageSquare },
   { key: "tickets", label: "Support Tickets", icon: Ticket },
   { key: "activity", label: "Activity Log", icon: Activity },
 ];
+
+const WORKFLOW_STAGES: Array<{ key: "deal_won" | "onboarding" | "active" | "renewal_due" | "renewed" | "churned"; label: string }> = [
+  { key: "deal_won", label: "Deal Won" },
+  { key: "onboarding", label: "Onboarding" },
+  { key: "active", label: "Active" },
+  { key: "renewal_due", label: "Renewal Due" },
+  { key: "renewed", label: "Renewed" },
+  { key: "churned", label: "Churned" },
+];
+
+function isCompletedStage(stageKey: string, current: string) {
+  const order = WORKFLOW_STAGES.map((s) => s.key);
+  const si = order.indexOf(stageKey as any);
+  const ci = order.indexOf(current as any);
+  if (si === -1 || ci === -1) return false;
+  return si < ci;
+}
+
+function getWorkflowStage(args: {
+  wonDeal: { createdAt?: string | null; dealStatus?: string | null } | null;
+  hasPaymentPlan: boolean;
+  daysToRenewal: number | null;
+}) {
+  const { wonDeal, hasPaymentPlan, daysToRenewal } = args;
+  if (!wonDeal) return "deal_won" as const;
+  if (String(wonDeal.dealStatus ?? "").toLowerCase().includes("lost")) return "churned" as const;
+  if (!hasPaymentPlan) return "onboarding" as const;
+  if (daysToRenewal != null && daysToRenewal <= 90) return "renewal_due" as const;
+  return "active" as const;
+}
+
+function SupportWorkflowTab({
+  customer,
+  customerId,
+  primaryPhone,
+  primaryEmail,
+  activeDeal,
+  assignedToName,
+  onGoPayments,
+  onNewTicket,
+  onGoTickets,
+}: {
+  customer: Customer;
+  customerId: string;
+  primaryPhone?: string | null;
+  primaryEmail?: string | null;
+  activeDeal: { id: string; name: string; ownerUserId: string; dealStatus?: string | null; createdAt?: string | null } | null;
+  assignedToName: string;
+  onGoPayments: () => void;
+  onNewTicket: () => void;
+  onGoTickets: () => void;
+}) {
+  const { data: paymentSummary } = useCustomerPaymentSummary(customerId);
+  const addProposal = useAppStore((s) => s.addProposal);
+  const me = useAppStore((s) => s.me);
+
+  const wonDateIso = activeDeal?.createdAt ?? null;
+  const renewalDate = useMemo(() => {
+    if (!wonDateIso) return null;
+    const d = new Date(wonDateIso);
+    if (Number.isNaN(d.getTime())) return null;
+    const r = new Date(d);
+    r.setFullYear(r.getFullYear() + 1);
+    return r;
+  }, [wonDateIso]);
+
+  const daysToRenewal = useMemo(() => {
+    if (!renewalDate) return null;
+    return Math.ceil((renewalDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  }, [renewalDate]);
+
+  const stage = getWorkflowStage({
+    wonDeal: activeDeal,
+    hasPaymentPlan: (paymentSummary?.plans?.length ?? 0) > 0,
+    daysToRenewal,
+  });
+
+  const total = (paymentSummary?.summary?.totalPaid ?? 0) + (paymentSummary?.summary?.totalPending ?? 0);
+  const pct = total > 0 ? Math.min(100, (Number(paymentSummary?.summary?.totalPaid ?? 0) / total) * 100) : 0;
+
+  const sendPaymentReminder = async () => {
+    await triggerAutomation("invoice_overdue", {
+      customerId,
+      customerName: customer.companyName,
+      customerPhone: primaryPhone ?? undefined,
+      customerEmail: primaryEmail ?? undefined,
+      amountDue: paymentSummary?.summary?.overdueAmount ?? 0,
+      daysOverdue: 1,
+      companyName: "Cravingcode Technologies Pvt. Ltd.",
+    });
+    toast({ title: "Reminder triggered", description: "Automation trigger fired for overdue reminder." });
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-4">Customer Journey</h3>
+        <div className="flex items-center gap-0 overflow-x-auto">
+          {WORKFLOW_STAGES.map((s, i) => (
+            <div key={s.key} className="flex items-center">
+              <div className="flex flex-col items-center">
+                <div
+                  className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0",
+                    stage === s.key
+                      ? "bg-blue-600 text-white ring-4 ring-blue-100 dark:ring-blue-950"
+                      : isCompletedStage(s.key, stage)
+                        ? "bg-emerald-500 text-white"
+                        : "bg-gray-100 dark:bg-gray-800 text-gray-400",
+                  )}
+                >
+                  {isCompletedStage(s.key, stage) ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                </div>
+                <p
+                  className={cn(
+                    "text-xs mt-1.5 text-center whitespace-nowrap",
+                    stage === s.key ? "text-blue-600 font-medium" : "text-gray-400",
+                  )}
+                >
+                  {s.label}
+                </p>
+              </div>
+              {i < WORKFLOW_STAGES.length - 1 && (
+                <div
+                  className={cn(
+                    "w-10 h-0.5 mx-2 mb-5",
+                    isCompletedStage(WORKFLOW_STAGES[i + 1].key, stage)
+                      ? "bg-emerald-400"
+                      : "bg-gray-200 dark:bg-gray-700",
+                  )}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {paymentSummary && (
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Payment Status</h3>
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs rounded-lg" onClick={onGoPayments}>
+              View Details
+            </Button>
+          </div>
+
+          <div className="mb-3">
+            <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+              <span>Collected</span>
+              <span>
+                ₹{Number(paymentSummary.summary.totalPaid ?? 0).toLocaleString("en-IN")} / ₹{Number(total).toLocaleString("en-IN")}
+              </span>
+            </div>
+            <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full">
+              <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+
+          {paymentSummary.summary.overdueCount > 0 && (
+            <div className="flex items-center gap-2 p-2.5 bg-red-50 dark:bg-red-950 rounded-lg border border-red-200 dark:border-red-800">
+              <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
+              <p className="text-xs text-red-700 dark:text-red-300">
+                {paymentSummary.summary.overdueCount} overdue installments — ₹{Number(paymentSummary.summary.overdueAmount ?? 0).toLocaleString("en-IN")}
+              </p>
+              <Button
+                size="sm"
+                className="ml-auto h-6 px-2 text-xs bg-red-600 hover:bg-red-700 text-white rounded-md flex-shrink-0"
+                onClick={sendPaymentReminder}
+              >
+                Send Reminder
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-4 gap-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Support Tickets</h3>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs rounded-lg" onClick={onGoTickets}>
+              View All
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 px-2.5 text-xs rounded-lg" onClick={onNewTicket}>
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              New Ticket
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Open: {customer.supportTickets.filter((t) => t.status === "open").length} · In Progress:{" "}
+          {customer.supportTickets.filter((t) => t.status === "in_progress").length} · Resolved:{" "}
+          {customer.supportTickets.filter((t) => t.status === "resolved").length}
+        </p>
+      </div>
+
+      {renewalDate && (
+        <div
+          className={cn(
+            "rounded-xl p-4 border",
+            daysToRenewal != null && daysToRenewal <= 30
+              ? "bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800"
+              : daysToRenewal != null && daysToRenewal <= 60
+                ? "bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800"
+                : "bg-emerald-50 dark:bg-emerald-950 border-emerald-200 dark:border-emerald-800",
+          )}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CalendarClock className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  Renewal Due: {renewalDate.toLocaleDateString("en-IN")}
+                </p>
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  {daysToRenewal != null && daysToRenewal > 0 ? `${daysToRenewal} days remaining` : "Renewal overdue"}
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 px-3 text-xs rounded-lg"
+              onClick={() => {
+                if (!activeDeal) {
+                  toast({ title: "No won deal", variant: "destructive" });
+                  return;
+                }
+                const id = "p-renew-" + makeId();
+                const year = new Date().getFullYear();
+                const proposalNumber = `PROP-${year}-${String(Date.now()).slice(-4)}`;
+                const lineItems = customer.productLines.map((pl) => {
+                  const qty = Number(pl.qty ?? 1) || 1;
+                  const unitPrice = Number(pl.unitPrice ?? 0) || 0;
+                  const discount = 0;
+                  const taxRate = Number(pl.taxRate ?? 0) || 0;
+                  const lineTotal = qty * unitPrice - discount;
+                  const taxAmount = (lineTotal * taxRate) / 100;
+                  return {
+                    id: "pli-" + makeId(),
+                    inventoryItemId: pl.inventoryItemId,
+                    name: pl.itemName,
+                    sku: pl.sku ?? "",
+                    description: undefined,
+                    qty,
+                    unitPrice,
+                    taxRate,
+                    discount,
+                    lineTotal,
+                    taxAmount,
+                  };
+                });
+                const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
+                const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
+                const grandTotal = subtotal + totalTax;
+                addProposal({
+                  id,
+                  proposalNumber,
+                  title: `Renewal — ${customer.companyName}`,
+                  customerId: customer.id,
+                  customerName: customer.companyName,
+                  assignedTo: activeDeal.ownerUserId ?? me.id,
+                  assignedToName,
+                  regionId: me.regionId,
+                  teamId: me.teamId,
+                  status: "draft",
+                  validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+                  lineItems,
+                  setupDeploymentCharges: 0,
+                  subtotal,
+                  totalDiscount: 0,
+                  totalTax,
+                  grandTotal,
+                  versionHistory: [],
+                  currentVersion: 1,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                  createdBy: me.id,
+                  dealId: activeDeal.id,
+                });
+                toast({ title: "Renewal proposal created", description: proposalNumber });
+              }}
+            >
+              Create Renewal
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatDate(s: string) {
   try {
@@ -151,6 +450,7 @@ export default function CustomerProfile() {
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
   const proposals = useAppStore((s) => s.proposals);
+  const deals = useAppStore((s) => s.deals);
   const users = useAppStore((s) => s.users);
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
@@ -171,6 +471,8 @@ export default function CustomerProfile() {
   const [editingNoteContent, setEditingNoteContent] = useState("");
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [briefLines, setBriefLines] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState("overview");
   const [productLineFilter, setProductLineFilter] = useState<string>("all");
 
@@ -237,6 +539,58 @@ export default function CustomerProfile() {
             .map((pl) => pl.dealId)
             .filter((x): x is string => !!x && String(x).trim() !== ""),
         );
+
+  const dealScope = getScope(me.role, "deals");
+  const visibleDeals = visibleWithScope(dealScope, me, deals);
+  const customerDeals = visibleDeals.filter((d) => d.customerId === customer.id && !d.deletedAt);
+  const wonDeal =
+    customerDeals.find((d) => d.dealStatus === "Closed/Won") ??
+    customerDeals.find((d) => String(d.stage || "").toLowerCase() === "won") ??
+    null;
+
+  useEffect(() => {
+    const key = `AIBriefSeen:v1:${me.id}:${customer.id}`;
+    let seen = false;
+    try {
+      seen = localStorage.getItem(key) === "1";
+    } catch {
+      seen = false;
+    }
+    if (seen) return;
+    void (async () => {
+      const brief = await getCustomerBrief({
+        customerId: customer.id,
+        wonDeal: wonDeal ? { id: wonDeal.id, name: wonDeal.name } : null,
+      }).catch(() => null);
+      if (!brief) return;
+      const lines: string[] = [];
+      if (brief.lastInteraction) {
+        lines.push(
+          `Last: ${new Date(brief.lastInteraction.at).toLocaleString("en-IN")} — ${brief.lastInteraction.summary}`,
+        );
+      }
+      if (brief.delivery?.status) lines.push(`Delivery: ${brief.delivery.dealTitle} — ${brief.delivery.status}`);
+      if (brief.payments) {
+        lines.push(
+          `Payments: collected ₹${brief.payments.collected.toLocaleString("en-IN")}, pending ₹${brief.payments.pending.toLocaleString("en-IN")}`,
+        );
+        if (brief.payments.overdueCount > 0) {
+          lines.push(
+            `Overdue: ${brief.payments.overdueCount} installments (₹${brief.payments.overdueAmount.toLocaleString("en-IN")})`,
+          );
+        }
+      }
+      brief.nextSteps.forEach((s) => lines.push(`Next: ${s}`));
+      brief.risks.forEach((s) => lines.push(`Risk: ${s}`));
+      setBriefLines(lines);
+      setBriefOpen(true);
+      try {
+        localStorage.setItem(key, "1");
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [customer.id, me.id, wonDeal]);
 
   return (
     <>
@@ -734,6 +1088,20 @@ export default function CustomerProfile() {
               )}
             </TabsContent>
 
+            <TabsContent value="support_workflow" className="mt-6 space-y-6">
+              <SupportWorkflowTab
+                customer={customer}
+                customerId={customer.id}
+                primaryPhone={primaryContact?.phone ?? null}
+                primaryEmail={primaryContact?.email ?? null}
+                activeDeal={wonDeal}
+                assignedToName={users.find((u) => u.id === wonDeal?.ownerUserId)?.name ?? me.name}
+                onGoPayments={() => navigate(`/payments?customerId=${encodeURIComponent(customer.id)}`)}
+                onNewTicket={() => setAddTicketOpen(true)}
+                onGoTickets={() => setActiveTab("tickets")}
+              />
+            </TabsContent>
+
             <TabsContent value="notes" className="mt-6 space-y-6">
               <Card className="border border-border overflow-hidden">
                 <CardHeader className="px-6 py-4 border-b border-border">
@@ -1191,6 +1559,32 @@ export default function CustomerProfile() {
               Save
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={briefOpen} onOpenChange={setBriefOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#4B2E83]/10 text-[#4B2E83]">
+                <Bot className="h-4 w-4" />
+              </span>
+              AI Briefing
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {briefLines.length ? (
+              <ul className="space-y-1 text-sm">
+                {briefLines.map((l, idx) => (
+                  <li key={idx} className="text-gray-800 dark:text-gray-200">
+                    - {l}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">No briefing available.</p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>

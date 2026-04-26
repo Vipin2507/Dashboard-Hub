@@ -1,4 +1,5 @@
 import { AppSidebar } from '@/components/AppSidebar';
+import { AIAssistantSidebar } from '@/components/AIAssistantSidebar';
 import { MobileShellHeader } from '@/components/MobileShellHeader';
 import { SidebarNavProvider, useSidebarNav } from '@/contexts/SidebarNavContext';
 import { cn } from '@/lib/utils';
@@ -68,6 +69,7 @@ function AppLayoutShell() {
           </div>
         </main>
       </div>
+      <AIAssistantSidebar />
     </div>
   );
 }

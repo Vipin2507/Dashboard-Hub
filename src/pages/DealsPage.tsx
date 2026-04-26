@@ -28,6 +28,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload } from "lucide-react";
 import type { Deal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
+import { Topbar } from "@/components/Topbar";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -251,10 +252,13 @@ export default function DealsPage() {
   const dealsQuery = useQuery({
     queryKey: [...QK.deals({ role: me.role })],
     queryFn: async () => {
-      const q =
-        me.role === "super_admin"
-          ? "?includeDeleted=1&actorRole=super_admin"
-          : "";
+      const qs = new URLSearchParams();
+      qs.set("actorRole", me.role);
+      qs.set("actorUserId", me.id);
+      qs.set("actorTeamId", me.teamId);
+      qs.set("actorRegionId", me.regionId);
+      if (me.role === "super_admin") qs.set("includeDeleted", "1");
+      const q = `?${qs.toString()}`;
       const res = await fetch(apiUrl(`/api/deals${q}`));
       if (!res.ok) throw new Error("Failed to load deals");
       return (await res.json()) as Deal[];
@@ -346,6 +350,9 @@ export default function DealsPage() {
           createdByUserId: me.id,
           createdByName: me.name,
           actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
         }),
       });
       if (!res.ok) throw new Error("Failed to create deal");
@@ -365,6 +372,9 @@ export default function DealsPage() {
           changedByUserId: me.id,
           changedByName: me.name,
           actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
         }),
       });
       if (!res.ok) {
@@ -400,6 +410,9 @@ export default function DealsPage() {
           changedByUserId: me.id,
           changedByName: me.name,
           actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
         }),
       });
       if (!res.ok) {
@@ -470,6 +483,9 @@ export default function DealsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
           deletedByUserId: me.id,
           deletedByName: me.name,
         }),
@@ -751,53 +767,38 @@ export default function DealsPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 -mx-4 sm:-mx-5 lg:-mx-6 px-4 sm:px-5 lg:px-6 py-6 space-y-5 max-w-[1440px] mx-auto">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight">Deals</h1>
-            <p className="text-sm font-normal text-gray-500 mt-0.5">{visible.length} deals shown</p>
-          </div>
+      <Topbar
+        title="Deals"
+        subtitle={`${visible.length} deals shown`}
+        actions={
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5 gap-0.5">
-              <button
+            <div className="flex items-center rounded-lg border border-border bg-muted p-0.5">
+              <Button
                 type="button"
+                variant={viewMode === "kanban" ? "secondary" : "ghost"}
+                className="h-8 px-3 text-xs"
                 onClick={() => setViewMode("kanban")}
-                className={cn(
-                  "h-7 px-3 rounded-md text-xs font-medium transition-colors",
-                  viewMode === "kanban"
-                    ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600"
-                    : "text-gray-500 dark:text-gray-400",
-                )}
               >
                 Board
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant={viewMode === "list" ? "secondary" : "ghost"}
+                className="h-8 px-3 text-xs"
                 onClick={() => setViewMode("list")}
-                className={cn(
-                  "h-7 px-3 rounded-md text-xs font-medium transition-colors",
-                  viewMode === "list"
-                    ? "bg-white dark:bg-gray-700 shadow-sm text-blue-600"
-                    : "text-gray-500 dark:text-gray-400",
-                )}
               >
                 List
-              </button>
+              </Button>
             </div>
             {canCreate && (
               <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 px-4 text-sm rounded-lg"
-                  onClick={() => setBulkImportOpen(true)}
-                >
+                <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
                   <Upload className="h-4 w-4 mr-1.5" />
                   Bulk import
                 </Button>
                 <Button
-                  className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
+                  type="button"
+                  className="h-9 bg-blue-600 hover:bg-blue-700 text-white"
                   onClick={() => {
                     setSheetDeal(null);
                     setSheetMode("create");
@@ -810,7 +811,10 @@ export default function DealsPage() {
               </>
             )}
           </div>
-        </div>
+        }
+      />
+
+      <div className="space-y-4">
 
         {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
 
@@ -997,7 +1001,7 @@ export default function DealsPage() {
 
         {/* Kanban */}
         {viewMode === "kanban" && (
-          <div className="overflow-x-auto pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6">
+          <div className="overflow-x-auto pb-2">
             <div className="flex gap-4 min-w-max">
               {stageSelectOptions.map((stage) => (
                 <div key={stage} className="w-72 flex-shrink-0">

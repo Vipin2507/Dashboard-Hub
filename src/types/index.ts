@@ -1,4 +1,4 @@
-export type Role = 'super_admin' | 'finance' | 'sales_manager' | 'sales_rep' | 'support';
+export type Role = 'super_admin' | 'finance' | 'sales_manager' | 'sales_rep' | 'support' | 'delivery_manager';
 
 export type Module =
   | 'dashboard'
@@ -6,6 +6,7 @@ export type Module =
   | 'deals'
   | 'customers'
   | 'automation'
+  | 'delivery'
   | 'users'
   | 'teams'
   | 'regions'
@@ -311,6 +312,9 @@ export interface Deal {
   proposalId: string | null;
   /** Deal status: Hot, Cold, Active, Pending, Closed/Won, Closed/Lost */
   dealStatus?: string;
+  /** Delivery assignment */
+  deliveryAssigneeUserId?: string | null;
+  deliveryAssigneeName?: string | null;
   /** Invoice tracker fields (bulk upload template) */
   invoiceStatus?: string | null;
   invoiceDate?: string | null;
@@ -375,4 +379,5 @@ export const ROLE_LABELS: Record<Role, string> = {
   sales_manager: 'Sales Manager',
   sales_rep: 'Sales Rep',
   support: 'Support',
+  delivery_manager: 'Delivery Manager',
 };

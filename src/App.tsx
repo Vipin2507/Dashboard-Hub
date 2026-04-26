@@ -10,13 +10,14 @@ import DealsPage from "@/pages/DealsPage";
 import Proposals from "@/pages/Proposals";
 import Customers from "@/pages/Customers";
 import CustomerProfile from "@/pages/CustomerProfile";
+import DeliveryPage from "@/pages/DeliveryPage";
 import UsersPage from "@/pages/UsersPage";
 import TeamsPage from "@/pages/TeamsPage";
 import RegionsPage from "@/pages/RegionsPage";
 import EmailLogPage from "@/pages/EmailLogPage";
 import MastersPage from "@/pages/MastersPage";
 import Inventory from "@/pages/Inventory";
-import PaymentsPage from "@/pages/PaymentsPage";
+import Payments from "@/pages/Payments";
 import Automation from "@/pages/Automation";
 import DataControlCenterPage from "@/pages/DataControlCenterPage";
 import LoginPage from "@/pages/LoginPage";
@@ -72,6 +73,7 @@ const App = () => (
             <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/deals" element={<DealsPage />} />
+            <Route path="/delivery" element={<DeliveryPage />} />
             <Route path="/proposals" element={<Proposals />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="/customers/:id" element={<CustomerProfile />} />
@@ -80,7 +82,7 @@ const App = () => (
             <Route path="/regions" element={<RegionsPage />} />
             <Route path="/email-log" element={<EmailLogPage />} />
             <Route path="/inventory" element={<Inventory />} />
-            <Route path="/payments" element={<PaymentsPage />} />
+            <Route path="/payments" element={<Payments />} />
             <Route path="/masters" element={<MastersPage />} />
             <Route path="/automation" element={<Automation />} />
             <Route path="/admin/data-control" element={<DataControlCenterPage />} />

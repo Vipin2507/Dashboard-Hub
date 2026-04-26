@@ -22,6 +22,7 @@ import {
   Banknote,
   Database,
   X,
+  Truck,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -51,6 +52,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Customers', module: 'customers', path: '/customers', icon: Building2 },
       { label: 'Proposals', module: 'proposals', path: '/proposals', icon: FileText },
       { label: 'Deals', module: 'deals', path: '/deals', icon: Handshake },
+      { label: 'Delivery', module: 'delivery', path: '/delivery', icon: Truck },
       { label: 'Automation', module: 'automation', path: '/automation', icon: Zap },
       { label: 'Payments', module: 'payments', path: '/payments', icon: Banknote },
       { label: 'Inventory', module: 'inventory', path: '/inventory', icon: Package },
@@ -69,7 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', 'support'];
+const ROLES: Role[] = ['super_admin', 'finance', 'sales_manager', 'sales_rep', 'support', 'delivery_manager'];
 
 function RoleSwitcher() {
   const me = useAppStore((s) => s.me);

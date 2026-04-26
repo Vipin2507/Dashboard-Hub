@@ -19,7 +19,7 @@ A modern sales and license management web application for managing leads, propos
 
 ### Operations
 
-- **Payments** (`/payments`) — Payment **plan catalog**, per-customer **proposal decisions**, assigned **payment plans**, **installment records** (confirm, receipt flags), **history**, **remaining** balances, and **audit** — backed by `server/paymentsApi.js` + SQLite.
+- **Payments** (`/payments`) — Installment-based **plan catalog**, per-deal **payment plans**, **installments**, **overdue**, **history**, **remaining** balances, **confirm** flow (finance/admin), and **audit** — backed by `server/paymentsApi.js` + SQLite.
 - **Inventory** (`/inventory`) — Product/SKU-style inventory CRUD (API + UI), export where permitted by role.
 
 ### Administration
@@ -33,14 +33,14 @@ A modern sales and license management web application for managing leads, propos
 
 ### Automation
 
-- **Automation** (`/automation`) — Templates, execution logs, settings; triggers workflows via **n8n** webhooks; optional **WAHA** for WhatsApp (see [Automation (n8n + WAHA)](#automation-n8n--waha-setup)). Types/helpers in `src/types/automation.ts`, `src/lib/automationService.ts`.
+- **Automation** (`/automation`) — Templates, execution logs, settings; triggers workflows via **n8n** webhooks; optional **WAHA** for WhatsApp (see [Automation (n8n + WAHA)](#automation-n8n--waha-setup)). Also includes a **Rules** tab (local rules + cooldown) via `src/lib/automationRules.ts`.
 
 ### Authentication & RBAC
 
-- **Login** (`/login`) — **Firebase Authentication** phone OTP (see `src/lib/firebase.ts`, `LoginPage.tsx`). Configure Firebase for your project.
+- **Login** (`/login`) — **Email + password** (persisted in `localStorage`). No Firebase/OTP.
 - **Register** (`/register`) — Demo-style registration into the **Zustand** store (email/password + role); used for local/demo user creation flows.
 - **Role-based access** — Sidebar and actions gated by `src/lib/rbac.ts`; deal-specific rules in `src/lib/dealPermissions.ts`.
-- **Role switcher** — Sidebar control to impersonate roles for demos (**Reset Demo** restores seed state).
+- **Role switcher** — Sidebar control to impersonate roles/users is **visible only to Super Admin** (Reset Demo also super-admin only).
 - **Scopes** — Data filtered by SELF / TEAM / REGION / ALL depending on role and module.
 
 ### Backend API (recommended for real use)
@@ -64,7 +64,7 @@ A modern sales and license management web application for managing leads, propos
 | Data fetching   | [TanStack Query](https://tanstack.com/query/latest) |
 | Forms           | [React Hook Form](https://react-hook-form.com/) + [Zod](https://zod.dev/) |
 | Routing         | [React Router v6](https://reactrouter.com/) |
-| Auth (login)    | [Firebase](https://firebase.google.com/) (phone OTP) |
+| Auth (login)    | Email/password (local demo auth) |
 | PDF             | [jsPDF](https://github.com/parallax/jsPDF) + jspdf-autotable |
 | Charts          | [Recharts](https://recharts.org/) |
 | Backend         | [Express](https://expressjs.com/) 5.x |
@@ -109,9 +109,9 @@ buildesk-sales-hub-main/
 │   ├── lib/
 │   │   ├── api.ts             # API base URL helper
 │   │   ├── automationService.ts
+│   │   ├── automationRules.ts # Local rules engine + cooldown (Automation → Rules tab)
 │   │   ├── dealPermissions.ts # Who can edit/delete deals (UI + server rules)
 │   │   ├── dealStatus.ts
-│   │   ├── firebase.ts
 │   │   ├── generateProposalPdf.ts
 │   │   ├── masterData.ts
 │   │   ├── rbac.ts            # Module/action matrix by role
@@ -138,7 +138,7 @@ buildesk-sales-hub-main/
 
 | Path | Page |
 | ---- | ---- |
-| `/login` | Login (Firebase phone OTP) |
+| `/login` | Login (email + password) |
 | `/register` | Register (demo store) |
 | `/` | Dashboard |
 | `/deals` | Deals |
@@ -182,12 +182,16 @@ Base URL: `http://localhost:4000` (or `VITE_API_BASE_URL` / `PORT`).
 
 ### Payments (`server/paymentsApi.js`)
 
-| Area | Examples |
-| ---- | -------- |
-| Catalog | `GET/POST /api/payment-plans/catalog`, `PUT/DELETE /api/payment-plans/catalog/:id` |
-| Customer | `GET /api/payments/customer/:customerId/summary`, `PUT .../proposal-decision`, `PUT .../payment-plan`, `DELETE .../payment-plan`, `POST .../payment` |
-| Records | `PUT /api/payments/record/:id/confirm`, `PUT /api/payments/record/:id`, `PUT .../receipt-sent`, `DELETE /api/payments/record/:id` |
-| Reports | `GET /api/payments/history`, `GET /api/payments/remaining`, `GET /api/payments/audit` |
+Payments has **two generations** of endpoints:
+
+- **v2 (MoM 19/04/2026)** — installment-based (used by `/payments`, Customer Profile → Support Workflow):
+  - **Catalog**: `GET/POST /api/payment-plans/catalog`, `PUT/DELETE /api/payment-plans/catalog/:id`
+  - **Assign plan**: `POST /api/payments/customer/:customerId/assign-plan`
+  - **Customer summary**: `GET /api/payments/customer/:customerId/summary-v2`
+  - **Installments**: `POST /api/payments/installment/:id/pay`, `PUT /api/payments/installment/:id/confirm`
+  - **Reports**: `GET /api/payments/overdue`, `GET /api/payments/history-v2`, `GET /api/payments/remaining-v2`, `GET /api/payments/audit-v2`
+
+- **Legacy (pre MoM)** — older Payment Center tables, kept for backward compatibility on existing installs.
 
 ### Data Control (`server/dataControlApi.js`, super admin)
 
@@ -213,8 +217,8 @@ Synced from `customer_payment_plan` into `customer_subscriptions` for the **Cust
 
 1. **Lead → customer** — Create customer (`/customers`); API `POST /api/customers`; optional bulk `POST /api/customers/bulk`.
 2. **Proposal → approval → deal** — Proposals CRUD + PDF; approved proposal → **Create deal** (`POST /api/deals` with `DEAL-YYYY-####` id); deals scoped by RBAC and `dealPermissions`.
-3. **Payments** — Catalog plans → per-customer payment plan + installments (`paymentsApi`); **Payment Center** and customer profile consume the same APIs.
-4. **Automation** — Templates by trigger; `runAutomationRules()` (dashboard) runs payment-due, proposal follow-ups, deal follow-ups, **subscription renewal** checks (`src/lib/automationService.ts`); WhatsApp via WAHA dev proxy `/waha`, email/SMS via n8n (`n8nWebhookBase` + webhook path in code).
+3. **Payments (v2)** — Catalog plans → assign plan to **deal/customer** → generate **installments** → record/confirm payments → overdue/history/remaining reports.
+4. **Automation** — Templates by trigger plus optional **Rules** engine (`src/lib/automationRules.ts`) with cooldown; WhatsApp via WAHA dev proxy `/waha`, email/SMS via n8n (`n8nWebhookBase` + webhook path in code).
 5. **Data Control** — Super admin bulk edits source tables; subscription tracker reads payment plans separately.
 6. **Renewals** — Tracker lists plans by expiry; reminders use automation + manual sends; mark renewed updates plan + `customer_subscriptions`.
 
@@ -225,8 +229,13 @@ Synced from `customer_payment_plan` into `customer_subscriptions` for the **Cust
 ### Prerequisites
 
 - **Node.js** 18+ and **npm**
-- **Firebase** project (for phone login): configure `src/lib/firebase.ts` with your web app config
 - Optional: **Docker** for running the API container
+
+### Demo credentials (seed)
+
+- **Super Admin**: `mohit@cravingcode.in` / `buildesk`
+- **Sales Rep**: e.g. `vaibhav@cravingcode.in` / `buildesk`
+- All seeded users follow `firstname@cravingcode.in` with default password `buildesk` (until changed in Profile).
 
 ### Install
 

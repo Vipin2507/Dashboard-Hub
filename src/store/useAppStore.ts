@@ -67,7 +67,7 @@ interface AppState {
   logout: () => void;
   registerUser: (payload: { name: string; email: string; password: string; role: Role; teamId: string; regionId: string }) => void;
   updateUserRole: (userId: string, role: Role) => void;
-  updateUserStatus: (userId: string, status: User['status']) => void;
+  updateUserStatus: (userId: string, status: User['status'], opts?: { transferToUserId?: string }) => void;
   updatePassword: (userId: string, oldPassword: string | null, newPassword: string) => void;
 
   // Customers
@@ -305,16 +305,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateUserStatus: (userId, status) => {
+  updateUserStatus: (userId, status, opts) => {
     set(s => ({
       users: s.users.map(u => (u.id === userId ? { ...u, status } : u)),
     }));
     const user = get().users.find(u => u.id === userId);
     if (user) {
+      const payload = { ...user, ...(opts?.transferToUserId ? { transferToUserId: opts.transferToUserId } : {}) };
       void fetch(apiUrl(`/api/users/${userId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user),
+        body: JSON.stringify(payload),
       }).catch(() => undefined);
     }
     const { me, authUserId, effectiveUserId } = get();

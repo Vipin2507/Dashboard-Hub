@@ -2,17 +2,28 @@ import type { Role } from '@/types';
 import type { DealPipelineStatus } from '@/lib/dealStatus';
 import { DEAL_STATUSES } from '@/lib/dealStatus';
 
-/** Super admin: full deal CRUD including soft delete and Closed/Lost. */
+/**
+ * Deals authorization helpers (MoM 19/04/2026).
+ * Note: list scoping is handled via `src/lib/rbac` (getScope/visibleWithScope).
+ */
 export function isDealSuperAdmin(role: Role): boolean {
   return role === 'super_admin';
 }
 
 export function canEditDeal(role: Role): boolean {
-  return role === 'super_admin';
+  return role === 'super_admin' || role === 'sales_manager';
 }
 
 export function canDeleteDeal(role: Role): boolean {
   return role === 'super_admin';
+}
+
+export function canAssignDeal(role: Role): boolean {
+  return role === 'super_admin' || role === 'sales_manager';
+}
+
+export function canChangeDealStage(role: Role): boolean {
+  return role === 'super_admin' || role === 'sales_manager' || role === 'sales_rep';
 }
 
 /** Status options shown in dropdowns for create/edit (non–super admin cannot pick Closed/Lost). */

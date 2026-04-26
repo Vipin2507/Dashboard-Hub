@@ -21,6 +21,7 @@ export const RBAC_POLICY: RBACPolicy = {
     email_log: { scope: 'ALL', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
     payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
+    delivery: { scope: 'ALL', actions: ['view', 'update'] },
     data_control_center: { scope: 'ALL', actions: ['view', 'update', 'export'] },
   },
   finance: {
@@ -32,6 +33,7 @@ export const RBAC_POLICY: RBACPolicy = {
     email_log: { scope: 'ALL', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view', 'export'] },
     payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
+    delivery: { scope: 'ALL', actions: ['view', 'update'] },
   },
   sales_manager: {
     dashboard: { scope: 'TEAM', actions: ['view'] },
@@ -42,6 +44,7 @@ export const RBAC_POLICY: RBACPolicy = {
     automation: { scope: 'TEAM', actions: ['view', 'create', 'update', 'test'] },
     inventory: { scope: 'ALL', actions: ['view', 'create', 'update', 'export'] },
     payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
+    delivery: { scope: 'TEAM', actions: ['view'] },
   },
   sales_rep: {
     dashboard: { scope: 'SELF', actions: ['view'] },
@@ -59,6 +62,13 @@ export const RBAC_POLICY: RBACPolicy = {
     customers: { scope: 'REGION', actions: ['view', 'manage_tickets'] },
     email_log: { scope: 'REGION', actions: ['view'] },
     inventory: { scope: 'ALL', actions: ['view'] },
+    payments: { scope: 'ALL', actions: ['view'] },
+  },
+  delivery_manager: {
+    dashboard: { scope: 'TEAM', actions: ['view'] },
+    deals: { scope: 'TEAM', actions: ['view'] },
+    delivery: { scope: 'TEAM', actions: ['view', 'update'] },
+    customers: { scope: 'TEAM', actions: ['view', 'manage_tickets'] },
     payments: { scope: 'ALL', actions: ['view'] },
   },
 };

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
 import { fetchN8nWebhook, fetchWahaSendText, fetchWahaSessions } from "@/lib/automationEndpoints";
 import { runAutomationRules } from "@/lib/automationService";
+import { loadRulesFromStore, saveRulesToStore, toggleRule, type AutomationRule } from "@/lib/automationRules";
 import { apiUrl } from "@/lib/api";
 import type { AutomationChannel, AutomationLog, AutomationRecipient, AutomationTemplate, AutomationTrigger } from "@/types";
 import { TEMPLATE_VARIABLES } from "@/types";
@@ -117,6 +118,118 @@ function ConnectionStatusPill({ service }: { service: "n8n" | "waha" }) {
   );
 }
 
+function RulesTab({
+  rules,
+  onChange,
+  onToggle,
+}: {
+  rules: AutomationRule[];
+  onChange: (next: AutomationRule[]) => void;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="pt-4 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Define when automations fire automatically (local rules with cooldown).
+        </p>
+        <Button
+          size="sm"
+          className="h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg"
+          onClick={() => {
+            const next: AutomationRule = {
+              id: `r_${Math.random().toString(36).slice(2, 10)}`,
+              name: "New Rule",
+              isActive: true,
+              trigger: "deal_won",
+              conditions: [],
+              actions: [{ type: "send_whatsapp", templateId: "", delayHours: 0 }],
+              cooldownHours: 0,
+            };
+            onChange([next, ...rules]);
+            toast({ title: "Rule added", description: "Toggle is ready. Editing UI will be added next." });
+          }}
+        >
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Add Rule
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {rules.map((rule) => (
+          <div
+            key={rule.id}
+            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{rule.name}</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                    {TRIGGER_LABELS[rule.trigger]}
+                  </span>
+                </div>
+
+                {rule.conditions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    <span className="text-xs text-gray-500">When:</span>
+                    {rule.conditions.map((c, i) => (
+                      <span
+                        key={i}
+                        className="text-xs px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                      >
+                        {c.field} {c.operator} {String(c.value)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-1.5">
+                  <span className="text-xs text-gray-500">Then:</span>
+                  {rule.actions.map((a, i) => (
+                    <span
+                      key={i}
+                      className="text-xs px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"
+                    >
+                      {a.type.replaceAll("_", " ")}
+                      {a.delayHours > 0 ? ` after ${a.delayHours}h` : ""}
+                    </span>
+                  ))}
+                </div>
+
+                {rule.cooldownHours > 0 && (
+                  <p className="text-xs text-gray-400 mt-2">Cooldown: {rule.cooldownHours}h between fires</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Switch checked={rule.isActive} onCheckedChange={() => onToggle(rule.id)} />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 rounded-md"
+                  onClick={() =>
+                    toast({
+                      title: "Editing UI coming next",
+                      description: "Rule editing (trigger/conditions/actions) will be added next.",
+                    })
+                  }
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {rules.length === 0 && (
+          <p className="text-sm text-muted-foreground py-8 text-center">No rules yet.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Automation() {
   const automationTemplates = useAppStore((s) => s.automationTemplates);
   const automationLogs = useAppStore((s) => s.automationLogs);
@@ -126,7 +239,8 @@ export default function Automation() {
   const setAutomationSettings = useAppStore((s) => s.setAutomationSettings);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<AutomationTemplate | null>(null);
-  const [activeTab, setActiveTab] = useState<"Templates" | "Activity Logs" | "Settings">("Templates");
+  const [activeTab, setActiveTab] = useState<"Templates" | "Rules" | "Activity Logs" | "Settings">("Templates");
+  const [rules, setRules] = useState<AutomationRule[]>(() => loadRulesFromStore());
 
   useEffect(() => {
     let mounted = true;
@@ -250,7 +364,7 @@ export default function Automation() {
 
       <div className="border-b border-gray-200 dark:border-gray-800">
         <div className="flex gap-0">
-          {(["Templates", "Activity Logs", "Settings"] as const).map((tab) => (
+          {(["Templates", "Rules", "Activity Logs", "Settings"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -270,6 +384,19 @@ export default function Automation() {
 
       {activeTab === "Templates" && (
         <TemplatesTab onNew={() => setShowAddTemplate(true)} onEdit={(t) => setEditingTemplate(t)} />
+      )}
+      {activeTab === "Rules" && (
+        <RulesTab
+          rules={rules}
+          onChange={(next) => {
+            setRules(next);
+            saveRulesToStore(next);
+          }}
+          onToggle={(id) => {
+            const updated = toggleRule(id);
+            setRules(updated);
+          }}
+        />
       )}
       {activeTab === "Activity Logs" && <LogsTab />}
       {activeTab === "Settings" && <SettingsTab />}

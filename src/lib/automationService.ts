@@ -95,6 +95,30 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
       await fireN8nWebhook(template, resolvedBody, resolvedSubject, context, automationSettings);
     }
   }
+
+  // Rules engine (MoM 19/04/2026) — optional local rules that can fire additional actions.
+  try {
+    const { evaluateAndFire, loadRulesFromStore } = await import('@/lib/automationRules');
+    await evaluateAndFire(trigger, context, loadRulesFromStore());
+  } catch {
+    // ignore
+  }
+}
+
+/** Send a specific template by id (used by Rules actions). */
+export async function sendAutomationTemplateById(templateId: string, context: AutomationContext): Promise<void> {
+  const { automationTemplates, automationSettings } = useAppStore.getState();
+  const template = automationTemplates.find((t) => t.id === templateId);
+  if (!template) return;
+  const resolvedBody = resolveVariables(template.body, context);
+  const resolvedSubject = template.subject ? resolveVariables(template.subject, context) : undefined;
+  if (template.channel === 'in_app') {
+    await sendInAppNotification(template, resolvedBody, context);
+  } else if (template.channel === 'whatsapp') {
+    await fireWhatsAppDirect(template, resolvedBody, context, automationSettings);
+  } else if (template.channel === 'email' || template.channel === 'sms') {
+    await fireN8nWebhook(template, resolvedBody, resolvedSubject, context, automationSettings);
+  }
 }
 
 export interface AutomationContext {

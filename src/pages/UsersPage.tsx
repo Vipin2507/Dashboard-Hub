@@ -12,6 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export default function UsersPage() {
   const me = useAppStore(s => s.me);
@@ -25,6 +35,8 @@ export default function UsersPage() {
 
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
+  const [disableTarget, setDisableTarget] = useState<import('@/types').User | null>(null);
+  const [transferToUserId, setTransferToUserId] = useState<string>('');
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -158,9 +170,14 @@ export default function UsersPage() {
                             <Switch
                               checked={u.status === 'active'}
                               onCheckedChange={(checked) => {
-                                updateUserStatus(u.id, checked ? 'active' : 'disabled');
-                                const user = useAppStore.getState().users.find((x) => x.id === u.id);
-                                if (user) updateUserMutation.mutate(user);
+                                if (checked) {
+                                  updateUserStatus(u.id, 'active');
+                                  const user = useAppStore.getState().users.find((x) => x.id === u.id);
+                                  if (user) updateUserMutation.mutate(user);
+                                  return;
+                                }
+                                setDisableTarget(u);
+                                setTransferToUserId('');
                               }}
                             />
                             <span className="text-[11px] text-muted-foreground">
@@ -202,6 +219,61 @@ export default function UsersPage() {
         </Card>
         <p className="text-xs text-muted-foreground">In V1, only Super Admin can manage users.</p>
       </div>
+
+      <AlertDialog
+        open={!!disableTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDisableTarget(null);
+            setTransferToUserId('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disable user and transfer ownership?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Disabling an employee triggers a transfer workflow. Select the replacement user to receive this user’s active deals and proposals.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Transfer to</p>
+            <Select value={transferToUserId} onValueChange={setTransferToUserId}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Select a replacement user" />
+              </SelectTrigger>
+              <SelectContent>
+                {users
+                  .filter((x) => x.status === 'active' && x.id !== disableTarget?.id)
+                  .map((x) => (
+                    <SelectItem key={x.id} value={x.id} className="text-xs">
+                      {x.name} ({ROLE_LABELS[x.role]})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!disableTarget) return;
+                if (!transferToUserId) return;
+                updateUserStatus(disableTarget.id, 'disabled', { transferToUserId });
+                const user = useAppStore.getState().users.find((x) => x.id === disableTarget.id);
+                if (user) updateUserMutation.mutate(user);
+                setDisableTarget(null);
+                setTransferToUserId('');
+              }}
+              disabled={!transferToUserId}
+            >
+              Disable & Transfer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

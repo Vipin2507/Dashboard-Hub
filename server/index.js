@@ -5,6 +5,8 @@ import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
 import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
 import { registerIntegrationProxies } from "./integrationsProxy.js";
+import { attachInteractionLogger } from "./middleware/interactionLogger.js";
+import { registerDeliveryApi } from "./deliveryApi.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -14,6 +16,7 @@ app.use(cors());
 // Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+app.use(attachInteractionLogger(db));
 registerIntegrationProxies(app, { db });
 
 // Debug helpers (intentionally behind an env flag for VPS troubleshooting).
@@ -57,6 +60,33 @@ function nextDealId() {
 
 function isSuperAdminRole(role) {
   return role === "super_admin";
+}
+
+function normalizeRole(role) {
+  return String(role || "").toLowerCase().replace(/\s+/g, "_");
+}
+
+function canDealAction(role, action) {
+  const r = normalizeRole(role);
+  const permissions = {
+    super_admin: ["view", "create", "edit", "delete", "change_stage", "assign", "export"],
+    finance: ["view", "export"],
+    sales_manager: ["view", "create", "edit", "change_stage", "assign", "export"],
+    sales_rep: ["view", "create", "change_stage"],
+    support: ["view"],
+  };
+  return (permissions[r] ?? []).includes(action);
+}
+
+function dealInScopeFor(role, actor, deal) {
+  const r = normalizeRole(role);
+  if (r === "super_admin" || r === "finance") return true;
+  if (!deal) return false;
+  if (r === "sales_rep") return deal.ownerUserId === actor.userId;
+  if (r === "sales_manager" || r === "support") {
+    return deal.teamId === actor.teamId || deal.regionId === actor.regionId;
+  }
+  return false;
 }
 
 function serializeDealField(v) {
@@ -267,15 +297,58 @@ app.post("/api/users", (req, res) => {
 app.put("/api/users/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
-  const updated = { ...existing, ...(req.body || {}), id: req.params.id };
-  db.prepare(
-    "UPDATE users SET name=@name, email=@email, password=@password, role=@role, teamId=@teamId, regionId=@regionId, status=@status, phone=@phone, joinDate=@joinDate, remarks=@remarks WHERE id=@id"
-  ).run({
-    ...updated,
-    phone: updated.phone ?? null,
-    joinDate: updated.joinDate ?? null,
-    remarks: updated.remarks ?? null,
-  });
+  const incoming = req.body || {};
+  const updated = { ...existing, ...incoming, id: req.params.id };
+
+  const isDeactivating = existing.status === "active" && updated.status === "disabled";
+  const transferToUserId = incoming.transferToUserId ? String(incoming.transferToUserId) : null;
+  if (isDeactivating && !transferToUserId) {
+    return res.status(400).json({ error: "transferToUserId is required when disabling a user" });
+  }
+
+  db.transaction(() => {
+    db.prepare(
+      "UPDATE users SET name=@name, email=@email, password=@password, role=@role, teamId=@teamId, regionId=@regionId, status=@status, phone=@phone, joinDate=@joinDate, remarks=@remarks WHERE id=@id"
+    ).run({
+      ...updated,
+      phone: updated.phone ?? null,
+      joinDate: updated.joinDate ?? null,
+      remarks: updated.remarks ?? null,
+    });
+
+    if (isDeactivating && transferToUserId) {
+      const target = db
+        .prepare("SELECT id, name, status FROM users WHERE id = ?")
+        .get(transferToUserId);
+      if (!target || target.status !== "active") {
+        throw new Error("Invalid transferToUserId (must be an active user)");
+      }
+      // Reassign active customers + non-deleted deals
+      db.prepare("UPDATE deals SET ownerUserId = ? WHERE ownerUserId = ? AND (deletedAt IS NULL OR deletedAt = '')").run(
+        transferToUserId,
+        existing.id,
+      );
+      db.prepare("UPDATE proposals SET assignedTo = ? WHERE assignedTo = ?").run(transferToUserId, existing.id);
+
+      try {
+        req.logInteraction?.({
+          customerId: "system",
+          entityType: "user",
+          entityId: existing.id,
+          channel: "system",
+          direction: "system",
+          summary: `TRANSFER_WORKFLOW: reassigned records from ${existing.id} to ${transferToUserId}`,
+          payloadJson: { fromUserId: existing.id, toUserId: transferToUserId, deals: true, proposals: true },
+          performedBy: "system",
+          performedByName: "System",
+          at: new Date().toISOString(),
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+  })();
+
   res.json(updated);
 });
 
@@ -299,6 +372,22 @@ app.post("/api/notifications", (req, res) => {
   db.prepare(
     'INSERT INTO notifications (id, type, "to", subject, entityId, at) VALUES (@id, @type, @to, @subject, @entityId, @at)'
   ).run(notification);
+  try {
+    req.logInteraction?.({
+      customerId: null,
+      entityType: "notification",
+      entityId: notification.id,
+      channel: "email",
+      direction: "out",
+      summary: `${type}: ${subject}`,
+      payloadJson: notification,
+      performedBy: null,
+      performedByName: "System",
+      at,
+    });
+  } catch {
+    /* ignore */
+  }
   res.status(201).json(notification);
 });
 
@@ -406,6 +495,22 @@ app.post("/api/proposals", (req, res) => {
     INSERT INTO proposals (id, proposalNumber, title, customerId, assignedTo, status, grandTotal, finalQuoteValue, createdAt, updatedAt, data)
     VALUES (@id, @proposalNumber, @title, @customerId, @assignedTo, @status, @grandTotal, @finalQuoteValue, @createdAt, @updatedAt, @data)
   `).run(row);
+  try {
+    req.logInteraction?.({
+      customerId: proposal.customerId,
+      entityType: "proposal",
+      entityId: proposal.id,
+      channel: "proposal",
+      direction: "system",
+      summary: `Proposal created: ${proposal.proposalNumber} — ${proposal.title}`,
+      payloadJson: { proposalNumber: proposal.proposalNumber, status: proposal.status },
+      performedBy: proposal.createdBy || proposal.assignedTo || null,
+      performedByName: proposal.assignedToName || null,
+      at: proposal.createdAt || new Date().toISOString(),
+    });
+  } catch {
+    /* ignore */
+  }
   res.status(201).json(proposal);
 });
 
@@ -440,6 +545,22 @@ app.put("/api/proposals/:id", (req, res) => {
       updatedAt=@updatedAt, data=@data
     WHERE id=@id
   `).run(row);
+  try {
+    req.logInteraction?.({
+      customerId: proposal.customerId,
+      entityType: "proposal",
+      entityId: proposal.id,
+      channel: "proposal",
+      direction: "system",
+      summary: `Proposal updated: ${proposal.proposalNumber} — ${proposal.title}`,
+      payloadJson: { status: proposal.status, grandTotal: proposal.grandTotal, finalQuoteValue: proposal.finalQuoteValue },
+      performedBy: proposal.createdBy || proposal.assignedTo || null,
+      performedByName: proposal.assignedToName || null,
+      at: proposal.updatedAt || new Date().toISOString(),
+    });
+  } catch {
+    /* ignore */
+  }
   res.json(proposal);
 });
 
@@ -450,7 +571,15 @@ app.delete("/api/proposals/:id", (req, res) => {
 });
 
 app.get("/api/deals", (req, res) => {
-  const includeDeleted = req.query.includeDeleted === "1" && req.query.actorRole === "super_admin";
+  const actorRole = normalizeRole(req.query.actorRole);
+  const actor = {
+    userId: req.query.actorUserId ? String(req.query.actorUserId) : null,
+    teamId: req.query.actorTeamId ? String(req.query.actorTeamId) : null,
+    regionId: req.query.actorRegionId ? String(req.query.actorRegionId) : null,
+  };
+  if (!canDealAction(actorRole, "view")) return res.status(403).json({ error: "Forbidden" });
+
+  const includeDeleted = req.query.includeDeleted === "1" && actorRole === "super_admin";
   let rows = (
     includeDeleted
       ? db.prepare("SELECT * FROM deals ORDER BY id DESC").all()
@@ -466,6 +595,7 @@ app.get("/api/deals", (req, res) => {
     const sl = String(stage).toLowerCase();
     rows = rows.filter((d) => String(d.stage).toLowerCase() === sl);
   }
+  rows = rows.filter((d) => dealInScopeFor(actorRole, actor, d));
   res.json(rows);
 });
 
@@ -503,11 +633,31 @@ app.post("/api/deals", (req, res) => {
     createdByUserId,
     createdByName,
     actorRole,
+    actorUserId,
+    actorTeamId,
+    actorRegionId,
   } = req.body || {};
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  if (!canDealAction(normRole, "create")) {
+    return res.status(403).json({ error: "Your role cannot create deals" });
+  }
   if (!name || !customerId || !ownerUserId || !teamId || !regionId || !stage) {
     return res
       .status(400)
       .json({ error: "name, customerId, ownerUserId, teamId, regionId and stage are required" });
+  }
+  if (normRole === "sales_rep" && actor.userId && String(ownerUserId) !== actor.userId) {
+    return res.status(403).json({ error: "Sales rep can only create deals assigned to self" });
+  }
+  if ((normRole === "sales_manager" || normRole === "support") && actor.teamId && actor.regionId) {
+    if (String(teamId) !== actor.teamId && String(regionId) !== actor.regionId) {
+      return res.status(403).json({ error: "Out of scope" });
+    }
   }
   const numVal = Number(value);
   if (!Number.isFinite(numVal) || numVal <= 0) {
@@ -696,9 +846,20 @@ app.put("/api/deals/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   if (existing.deletedAt) return res.status(410).json({ error: "Deal has been deleted" });
 
-  const { actorRole, changedByUserId, changedByName } = req.body || {};
-  if (!isSuperAdminRole(actorRole)) {
-    return res.status(403).json({ error: "Only super admin can update deals" });
+  const { actorRole, actorUserId, actorTeamId, actorRegionId, changedByUserId, changedByName } = req.body || {};
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  const canAny =
+    canDealAction(normRole, "edit") ||
+    canDealAction(normRole, "change_stage") ||
+    canDealAction(normRole, "assign");
+  if (!canAny) return res.status(403).json({ error: "Forbidden" });
+  if (!dealInScopeFor(normRole, actor, toDealResponse(existing))) {
+    return res.status(403).json({ error: "Out of scope" });
   }
 
   const {
@@ -729,7 +890,30 @@ app.put("/api/deals/:id", (req, res) => {
     lossReason,
     contactPhone,
     remarks,
+    deliveryAssigneeUserId,
+    deliveryAssigneeName,
   } = req.body || {};
+
+  if (normRole === "sales_rep") {
+    const allowedKeys = new Set([
+      "actorRole",
+      "actorUserId",
+      "actorTeamId",
+      "actorRegionId",
+      "changedByUserId",
+      "changedByName",
+      "stage",
+    ]);
+    for (const k of Object.keys(req.body || {})) {
+      if (!allowedKeys.has(k)) {
+        return res.status(403).json({ error: "Sales rep can only change stage" });
+      }
+    }
+  }
+
+  if (normRole === "finance" || normRole === "support") {
+    return res.status(403).json({ error: "Read-only role" });
+  }
 
   const prevStatus = existing.dealStatus || "Active";
   const mergedStatus = dealStatus !== undefined ? dealStatus : prevStatus;
@@ -792,7 +976,9 @@ app.put("/api/deals/:id", (req, res) => {
       balanceAmount=@balanceAmount, amountPaid=@amountPaid, serviceName=@serviceName,
       dealSource=@dealSource, expectedCloseDate=@expectedCloseDate,
       priority=@priority, lastActivityAt=@lastActivityAt, nextFollowUpDate=@nextFollowUpDate, lossReason=@lossReason,
-      contactPhone=@contactPhone, remarks=@remarks, updatedAt=@updatedAt
+      contactPhone=@contactPhone, remarks=@remarks,
+      deliveryAssigneeUserId=@deliveryAssigneeUserId, deliveryAssigneeName=@deliveryAssigneeName,
+      updatedAt=@updatedAt
     WHERE id=@id
   `).run({
     ...deal,
@@ -831,12 +1017,21 @@ app.get("/api/deals/:id/audit", (req, res) => {
 app.delete("/api/deals/:id", (req, res) => {
   let body = req.body;
   if (!body || typeof body !== "object") body = {};
-  const { actorRole, deletedByUserId, deletedByName } = body;
-  if (!isSuperAdminRole(actorRole)) {
-    return res.status(403).json({ error: "Only super admin can delete deals" });
+  const { actorRole, actorUserId, actorTeamId, actorRegionId, deletedByUserId, deletedByName } = body;
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  if (!canDealAction(normRole, "delete")) {
+    return res.status(403).json({ error: "Your role cannot delete deals" });
   }
   const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
+  if (!dealInScopeFor(normRole, actor, toDealResponse(existing))) {
+    return res.status(403).json({ error: "Out of scope" });
+  }
   if (existing.deletedAt) return res.json({ ok: true });
   const now = new Date().toISOString();
   db.prepare(
@@ -1185,6 +1380,7 @@ app.delete("/api/inventory/:id", (req, res) => {
 });
 
 registerPaymentsApi(app, db);
+registerDeliveryApi(app, db);
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
 

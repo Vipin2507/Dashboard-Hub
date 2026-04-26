@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ElementType } from 'react';
 import { Topbar } from '@/components/Topbar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Switch } from '@/components/ui/switch';
 import { useAppStore } from '@/store/useAppStore';
 import { formatINR } from '@/lib/rbac';
 import { runAutomationRules } from '@/lib/automationService';
@@ -39,7 +41,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -136,6 +138,14 @@ function DashboardKpiCard({
 
 export default function DashboardPage() {
   const me = useAppStore((s) => s.me);
+  const guidanceKey = `GuidanceMode:v1:${me.id || 'guest'}`;
+  const [guidanceMode, setGuidanceMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(guidanceKey) === '1';
+    } catch {
+      return false;
+    }
+  });
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
@@ -466,6 +476,22 @@ export default function DashboardPage() {
       <Topbar
         title="Buildesk License Management"
         subtitle="Welcome back! Here's what's happening with your license management workflows."
+        actions={
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Guidance</span>
+            <Switch
+              checked={guidanceMode}
+              onCheckedChange={(v) => {
+                setGuidanceMode(v);
+                try {
+                  localStorage.setItem(guidanceKey, v ? '1' : '0');
+                } catch {
+                  /* ignore */
+                }
+              }}
+            />
+          </div>
+        }
       />
       <div className="space-y-4 sm:space-y-6">
         <Card className="bg-card border border-border">
@@ -697,7 +723,7 @@ export default function DashboardPage() {
                         axisLine={false}
                         tickLine={false}
                       />
-                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <RechartsTooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                       <Bar
                         dataKey="count"
                         name="Count"
@@ -786,7 +812,7 @@ export default function DashboardPage() {
                         <Cell key={index} fill={donutColors[index % donutColors.length]} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                    <RechartsTooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
@@ -802,9 +828,22 @@ export default function DashboardPage() {
             <CardContent className="p-0">
               <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
                 <h3 className="font-semibold text-foreground">Recent Proposals</h3>
-                <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
-                  View All
-                </Button>
+                {guidanceMode ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
+                        View All
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Go here to create proposals, update status, and send follow-ups.
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
+                    View All
+                  </Button>
+                )}
               </div>
               {recentProposals.length > 0 ? (
                 <Table>

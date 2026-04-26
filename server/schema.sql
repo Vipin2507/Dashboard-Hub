@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS deals (
   locked INTEGER NOT NULL DEFAULT 0,
   proposalId TEXT,
   dealStatus TEXT NOT NULL DEFAULT 'Active',
+  deliveryStatus TEXT,
+  deliveryUpdatedAt TEXT,
+  deliveryFinalApprovedBy TEXT,
+  deliveryFinalApprovedAt TEXT,
+  deliveryAssigneeUserId TEXT,
+  deliveryAssigneeName TEXT,
   invoiceStatus TEXT,
   invoiceDate TEXT,
   invoiceNumber TEXT,
@@ -137,6 +143,41 @@ CREATE TABLE IF NOT EXISTS deals (
   deletedByUserId TEXT,
   deletedByName TEXT
 );
+
+-- Delivery management (post-sales) — logs state transitions on a deal.
+CREATE TABLE IF NOT EXISTS delivery_logs (
+  id TEXT PRIMARY KEY,
+  dealId TEXT NOT NULL,
+  customerId TEXT NOT NULL,
+  fromStatus TEXT,
+  toStatus TEXT NOT NULL,
+  notes TEXT,
+  performedBy TEXT,
+  performedByName TEXT,
+  at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_logs_dealId ON delivery_logs (dealId);
+CREATE INDEX IF NOT EXISTS idx_delivery_logs_customerId ON delivery_logs (customerId);
+CREATE INDEX IF NOT EXISTS idx_delivery_logs_at ON delivery_logs (at);
+
+-- Central interaction history (AI memory layer) — immutable event log for continuity.
+CREATE TABLE IF NOT EXISTS central_history_db (
+  id TEXT PRIMARY KEY,
+  customerId TEXT NOT NULL,
+  entityType TEXT NOT NULL,
+  entityId TEXT NOT NULL,
+  channel TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  summary TEXT,
+  payloadJson TEXT,
+  performedBy TEXT,
+  performedByName TEXT,
+  at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_central_history_customer_at ON central_history_db (customerId, at);
+CREATE INDEX IF NOT EXISTS idx_central_history_entity ON central_history_db (entityType, entityId, at);
 
 CREATE TABLE IF NOT EXISTS deal_audit (
   id TEXT PRIMARY KEY,
@@ -188,7 +229,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_at ON notifications(at);
 
 CREATE INDEX IF NOT EXISTS idx_masters_type ON masters(type);
 
-CREATE TABLE IF NOT EXISTS payment_plan_catalog (
+-- Legacy catalog table (pre MoM 19/04/2026). Kept for existing UI/components until fully migrated.
+CREATE TABLE IF NOT EXISTS payment_plan_catalog_legacy (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   defaultBillingCycle TEXT NOT NULL DEFAULT 'yearly',
@@ -196,6 +238,87 @@ CREATE TABLE IF NOT EXISTS payment_plan_catalog (
   suggestedInstallments INTEGER,
   createdAt TEXT NOT NULL
 );
+
+-- Payments (MoM 19/04/2026) — installment-based plans
+CREATE TABLE IF NOT EXISTS payment_plan_catalog (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  installments INTEGER NOT NULL DEFAULT 1,
+  -- JSON: [{ label, percentage, due_days_after_start }]
+  schedule TEXT NOT NULL DEFAULT '[]',
+  is_active INTEGER DEFAULT 1,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS customer_payment_plans (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  proposal_id TEXT REFERENCES proposals(id),
+  plan_catalog_id TEXT REFERENCES payment_plan_catalog(id),
+  plan_name TEXT NOT NULL,
+  total_amount REAL NOT NULL,
+  paid_amount REAL DEFAULT 0,
+  remaining_amount REAL NOT NULL,
+  status TEXT DEFAULT 'active',
+  -- 'active' | 'completed' | 'overdue' | 'cancelled'
+  start_date TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS payment_installments (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL
+    REFERENCES customer_payment_plans(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  deal_id TEXT NOT NULL REFERENCES deals(id),
+  label TEXT NOT NULL,
+  amount REAL NOT NULL,
+  percentage REAL,
+  due_date TEXT NOT NULL,
+  paid_date TEXT,
+  paid_amount REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  -- 'pending' | 'paid' | 'overdue' | 'partial'
+  payment_mode TEXT,
+  transaction_reference TEXT,
+  receipt_number TEXT,
+  receipt_sent INTEGER DEFAULT 0,
+  notes TEXT,
+  confirmed_by TEXT REFERENCES users(id),
+  confirmed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Payments audit log (MoM 19/04/2026)
+CREATE TABLE IF NOT EXISTS payment_audit (
+  id TEXT PRIMARY KEY,
+  installment_id TEXT REFERENCES payment_installments(id),
+  plan_id TEXT REFERENCES customer_payment_plans(id),
+  customer_id TEXT REFERENCES customers(id),
+  action TEXT NOT NULL,
+  performed_by TEXT REFERENCES users(id),
+  performed_by_name TEXT,
+  old_value TEXT,
+  new_value TEXT,
+  notes TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_installments_customer
+  ON payment_installments(customer_id);
+CREATE INDEX IF NOT EXISTS idx_installments_status
+  ON payment_installments(status);
+CREATE INDEX IF NOT EXISTS idx_installments_due_date
+  ON payment_installments(due_date);
+CREATE INDEX IF NOT EXISTS idx_plans_deal
+  ON customer_payment_plans(deal_id);
 
 CREATE TABLE IF NOT EXISTS receipt_sequence (
   year INTEGER PRIMARY KEY,
@@ -271,7 +394,8 @@ CREATE INDEX IF NOT EXISTS idx_cpr_customer ON customer_payment_record (customer
 CREATE INDEX IF NOT EXISTS idx_cpr_plan ON customer_payment_record (planId);
 CREATE INDEX IF NOT EXISTS idx_cpr_date ON customer_payment_record (paymentDate);
 
-CREATE TABLE IF NOT EXISTS payment_audit (
+-- Legacy payment audit table (pre MoM 19/04/2026).
+CREATE TABLE IF NOT EXISTS payment_audit_legacy (
   id TEXT PRIMARY KEY,
   entityType TEXT NOT NULL,
   entityId TEXT NOT NULL,
@@ -283,8 +407,8 @@ CREATE TABLE IF NOT EXISTS payment_audit (
   at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_payment_audit_customer ON payment_audit (customerId);
-CREATE INDEX IF NOT EXISTS idx_payment_audit_at ON payment_audit (at);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_customer ON payment_audit_legacy (customerId);
+CREATE INDEX IF NOT EXISTS idx_payment_audit_at ON payment_audit_legacy (at);
 
 CREATE TABLE IF NOT EXISTS data_control_audit (
   id TEXT PRIMARY KEY,

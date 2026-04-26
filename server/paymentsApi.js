@@ -14,6 +14,15 @@ function parseJsonSafe(raw, fallback = null) {
   }
 }
 
+function isoDateOnly(d) {
+  if (!d) return null;
+  try {
+    return new Date(d).toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
 function addBillingCycle(isoDate, cycle) {
   const d = new Date(isoDate + "T12:00:00");
   if (Number.isNaN(d.getTime())) return isoDate;
@@ -37,7 +46,7 @@ export function registerPaymentsApi(app, db, helpers = {}) {
 
   function audit(customerId, entityType, entityId, action, detail, userId, userName) {
     db.prepare(
-      `INSERT INTO payment_audit (id, entityType, entityId, customerId, action, detailJson, userId, userName, at)
+      `INSERT INTO payment_audit_legacy (id, entityType, entityId, customerId, action, detailJson, userId, userName, at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       "pa" + makeId(),
@@ -52,64 +61,407 @@ export function registerPaymentsApi(app, db, helpers = {}) {
     );
   }
 
+  // ── PLAN CATALOG (MoM 19/04/2026) ──────────────────────────────────────────
+
+  app.get("/api/payments/catalog", (_req, res) => {
+    const plans = db.prepare("SELECT * FROM payment_plan_catalog ORDER BY name").all();
+    res.json(
+      plans.map((p) => ({
+        ...p,
+        schedule: parseJsonSafe(p.schedule || "[]", []),
+        isActive: !!p.is_active,
+      })),
+    );
+  });
+
+  // Aliases used by frontend
   app.get("/api/payment-plans/catalog", (_req, res) => {
-    const rows = db.prepare("SELECT * FROM payment_plan_catalog ORDER BY name").all();
-    res.json(rows);
+    const plans = db.prepare("SELECT * FROM payment_plan_catalog ORDER BY name").all();
+    res.json(
+      plans.map((p) => ({
+        ...p,
+        schedule: parseJsonSafe(p.schedule || "[]", []),
+        isActive: !!p.is_active,
+      })),
+    );
+  });
+
+  app.post("/api/payments/catalog", (req, res) => {
+    const { name, description, schedule, userId } = req.body || {};
+    if (!name) return res.status(400).json({ error: "name required" });
+    const planId = "ppc" + makeId();
+    const sched = Array.isArray(schedule) ? schedule : [];
+    db.prepare(
+      `INSERT INTO payment_plan_catalog
+       (id, name, description, installments, schedule, is_active, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))`,
+    ).run(planId, String(name).trim(), description ?? null, sched.length || 1, JSON.stringify(sched), userId ?? null);
+    const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(planId);
+    res.status(201).json({
+      ...row,
+      schedule: parseJsonSafe(row.schedule || "[]", []),
+      isActive: !!row.is_active,
+    });
   });
 
   app.post("/api/payment-plans/catalog", (req, res) => {
-    const { name, defaultBillingCycle, defaultGraceDays, suggestedInstallments } = req.body || {};
+    const { name, description, schedule, userId } = req.body || {};
     if (!name) return res.status(400).json({ error: "name required" });
-    const row = {
-      id: "ppc" + makeId(),
-      name: String(name).trim(),
-      defaultBillingCycle: defaultBillingCycle || "yearly",
-      defaultGraceDays: Number(defaultGraceDays) || 5,
-      suggestedInstallments: suggestedInstallments != null ? Number(suggestedInstallments) : null,
-      createdAt: new Date().toISOString(),
-    };
+    const planId = "ppc" + makeId();
+    const sched = Array.isArray(schedule) ? schedule : [];
     db.prepare(
-      `INSERT INTO payment_plan_catalog (id, name, defaultBillingCycle, defaultGraceDays, suggestedInstallments, createdAt)
-       VALUES (@id, @name, @defaultBillingCycle, @defaultGraceDays, @suggestedInstallments, @createdAt)`
-    ).run(row);
-    res.status(201).json(row);
+      `INSERT INTO payment_plan_catalog
+       (id, name, description, installments, schedule, is_active, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))`,
+    ).run(planId, String(name).trim(), description ?? null, sched.length || 1, JSON.stringify(sched), userId ?? null);
+    const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(planId);
+    res.status(201).json({
+      ...row,
+      schedule: parseJsonSafe(row.schedule || "[]", []),
+      isActive: !!row.is_active,
+    });
   });
 
-  app.put("/api/payment-plans/catalog/:id", (req, res) => {
+  app.put("/api/payments/catalog/:id", (req, res) => {
+    const { name, description, schedule } = req.body || {};
     const id = req.params.id;
     const existing = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Not found" });
-    const { name, defaultBillingCycle, defaultGraceDays, suggestedInstallments } = req.body || {};
-    const row = {
-      ...existing,
-      name: name != null ? String(name).trim() : existing.name,
-      defaultBillingCycle: defaultBillingCycle ?? existing.defaultBillingCycle,
-      defaultGraceDays: defaultGraceDays != null ? Number(defaultGraceDays) : existing.defaultGraceDays,
-      suggestedInstallments:
-        suggestedInstallments !== undefined
-          ? suggestedInstallments === null
-            ? null
-            : Number(suggestedInstallments)
-          : existing.suggestedInstallments,
-    };
+    const sched = Array.isArray(schedule) ? schedule : parseJsonSafe(existing.schedule || "[]", []);
     db.prepare(
-      `UPDATE payment_plan_catalog SET name=?, defaultBillingCycle=?, defaultGraceDays=?, suggestedInstallments=?
-       WHERE id=?`
-    ).run(row.name, row.defaultBillingCycle, row.defaultGraceDays, row.suggestedInstallments, id);
-    res.json(db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id));
+      `UPDATE payment_plan_catalog SET
+        name = ?,
+        description = ?,
+        schedule = ?,
+        installments = ?,
+        updated_at = datetime('now')
+      WHERE id = ?`,
+    ).run(
+      name != null ? String(name).trim() : existing.name,
+      description !== undefined ? description : existing.description,
+      JSON.stringify(sched),
+      sched.length || 1,
+      id,
+    );
+    const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id);
+    res.json({ ...row, schedule: parseJsonSafe(row.schedule || "[]", []), isActive: !!row.is_active });
+  });
+
+  app.put("/api/payment-plans/catalog/:id", (req, res) => {
+    const { name, description, schedule } = req.body || {};
+    const id = req.params.id;
+    const existing = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    const sched = Array.isArray(schedule) ? schedule : parseJsonSafe(existing.schedule || "[]", []);
+    db.prepare(
+      `UPDATE payment_plan_catalog SET
+        name = ?,
+        description = ?,
+        schedule = ?,
+        installments = ?,
+        updated_at = datetime('now')
+      WHERE id = ?`,
+    ).run(
+      name != null ? String(name).trim() : existing.name,
+      description !== undefined ? description : existing.description,
+      JSON.stringify(sched),
+      sched.length || 1,
+      id,
+    );
+    const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id);
+    res.json({ ...row, schedule: parseJsonSafe(row.schedule || "[]", []), isActive: !!row.is_active });
+  });
+
+  app.delete("/api/payments/catalog/:id", (req, res) => {
+    const id = req.params.id;
+    const existing = db.prepare("SELECT id FROM payment_plan_catalog WHERE id = ?").get(id);
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    const inUse = db.prepare("SELECT COUNT(*) AS c FROM customer_payment_plans WHERE plan_catalog_id = ?").get(id).c;
+    if (inUse > 0) return res.status(400).json({ error: "Plan template is assigned to deals; remove those plans first" });
+    db.prepare("DELETE FROM payment_plan_catalog WHERE id = ?").run(id);
+    res.json({ ok: true });
   });
 
   app.delete("/api/payment-plans/catalog/:id", (req, res) => {
     const id = req.params.id;
     const existing = db.prepare("SELECT id FROM payment_plan_catalog WHERE id = ?").get(id);
     if (!existing) return res.status(404).json({ error: "Not found" });
-    const inUse = db.prepare("SELECT COUNT(*) AS c FROM customer_payment_plan WHERE catalogPlanId = ?").get(id).c;
-    if (inUse > 0) {
-      return res.status(400).json({ error: "Plan template is assigned to customers; remove those plans first" });
-    }
+    const inUse = db.prepare("SELECT COUNT(*) AS c FROM customer_payment_plans WHERE plan_catalog_id = ?").get(id).c;
+    if (inUse > 0) return res.status(400).json({ error: "Plan template is assigned to deals; remove those plans first" });
     db.prepare("DELETE FROM payment_plan_catalog WHERE id = ?").run(id);
     res.json({ ok: true });
   });
+
+  // ── CUSTOMER PAYMENT PLANS (MoM 19/04/2026) ────────────────────────────────
+
+  app.get("/api/payments/customer/:customerId/summary-v2", (req, res) => {
+    const { customerId } = req.params;
+    const plans = db
+      .prepare(
+        `SELECT cpp.*, d.name as deal_title, d.stage as deal_stage
+         FROM customer_payment_plans cpp
+         LEFT JOIN deals d ON d.id = cpp.deal_id
+         WHERE cpp.customer_id = ?
+         ORDER BY cpp.created_at DESC`,
+      )
+      .all(customerId);
+
+    const installments = db
+      .prepare(`SELECT * FROM payment_installments WHERE customer_id = ? ORDER BY due_date ASC`)
+      .all(customerId);
+
+    const totalPaid = installments
+      .filter((i) => i.status === "paid")
+      .reduce((s, i) => s + Number(i.paid_amount ?? 0), 0);
+
+    const totalPending = installments
+      .filter((i) => i.status === "pending")
+      .reduce((s, i) => s + Number(i.amount ?? 0), 0);
+
+    const overdue = installments.filter((i) => i.status === "pending" && new Date(i.due_date) < new Date());
+
+    res.json({
+      plans: plans.map((p) => ({
+        ...p,
+        installments: installments.filter((i) => i.plan_id === p.id),
+      })),
+      summary: {
+        totalPaid,
+        totalPending,
+        overdueCount: overdue.length,
+        overdueAmount: overdue.reduce((s, i) => s + Number(i.amount ?? 0), 0),
+      },
+    });
+  });
+
+  app.post("/api/payments/customer/:customerId/assign-plan", (req, res) => {
+    const { customerId } = req.params;
+    const { dealId, proposalId, planCatalogId, planName, totalAmount, startDate, userId, userName } = req.body || {};
+    if (!dealId) return res.status(400).json({ error: "dealId required" });
+    if (!planCatalogId) return res.status(400).json({ error: "planCatalogId required" });
+    if (!planName) return res.status(400).json({ error: "planName required" });
+    const total = Number(totalAmount ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return res.status(400).json({ error: "totalAmount must be > 0" });
+    const start = isoDateOnly(startDate) ?? isoDateOnly(new Date().toISOString());
+    if (!start) return res.status(400).json({ error: "startDate invalid" });
+
+    const catalog = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(planCatalogId);
+    if (!catalog) return res.status(404).json({ error: "Catalog plan not found" });
+    const schedule = parseJsonSafe(catalog.schedule || "[]", []);
+
+    const planId = "cpp" + makeId();
+    db.prepare(
+      `INSERT INTO customer_payment_plans (
+        id, customer_id, deal_id, proposal_id, plan_catalog_id,
+        plan_name, total_amount, paid_amount, remaining_amount,
+        status, start_date, created_by, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,0,?, 'active',?,?, datetime('now'), datetime('now'))`,
+    ).run(planId, customerId, dealId, proposalId ?? null, planCatalogId, String(planName).trim(), total, total, start, userId ?? null);
+
+    const stmt = db.prepare(
+      `INSERT INTO payment_installments (
+        id, plan_id, customer_id, deal_id, label, amount, percentage, due_date, status, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?, 'pending', datetime('now'), datetime('now'))`,
+    );
+
+    const base = new Date(start + "T12:00:00");
+    schedule.forEach((item) => {
+      const due = new Date(base);
+      due.setDate(due.getDate() + Number(item.due_days_after_start ?? 0));
+      const pct = Number(item.percentage ?? 0);
+      const amt = (total * pct) / 100;
+      stmt.run(
+        "pi" + makeId(),
+        planId,
+        customerId,
+        dealId,
+        String(item.label ?? "Installment"),
+        amt,
+        pct,
+        due.toISOString().slice(0, 10),
+      );
+    });
+
+    db.prepare(
+      `INSERT INTO payment_audit (id, plan_id, customer_id, action, performed_by, performed_by_name, new_value, created_at)
+       VALUES (?, ?, ?, 'created', ?, ?, ?, datetime('now'))`,
+    ).run("pa" + makeId(), planId, customerId, userId ?? null, userName ?? null, JSON.stringify({ planName, totalAmount: total, startDate: start }));
+
+    res.status(201).json({
+      plan: db.prepare("SELECT * FROM customer_payment_plans WHERE id = ?").get(planId),
+      installments: db.prepare("SELECT * FROM payment_installments WHERE plan_id = ? ORDER BY due_date ASC").all(planId),
+    });
+  });
+
+  app.post("/api/payments/installment/:id/pay", (req, res) => {
+    const { id } = req.params;
+    const { paidAmount, paidDate, paymentMode, transactionReference, notes, userId, userName } = req.body || {};
+    const inst = db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id);
+    if (!inst) return res.status(404).json({ error: "Not found" });
+    const paid = Number(paidAmount ?? 0);
+    if (!Number.isFinite(paid) || paid <= 0) return res.status(400).json({ error: "paidAmount must be > 0" });
+    const payDate = isoDateOnly(paidDate) ?? isoDateOnly(new Date().toISOString());
+    const receiptNumber = `RCP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+    const before = { ...inst };
+    const status = paid >= Number(inst.amount ?? 0) ? "paid" : "partial";
+    db.prepare(
+      `UPDATE payment_installments SET
+        paid_amount = ?,
+        paid_date = ?,
+        payment_mode = ?,
+        transaction_reference = ?,
+        receipt_number = ?,
+        notes = ?,
+        status = ?,
+        updated_at = datetime('now')
+      WHERE id = ?`,
+    ).run(paid, payDate, paymentMode ?? null, transactionReference ?? null, receiptNumber, notes ?? null, status, id);
+
+    // recompute plan totals
+    const planId = inst.plan_id;
+    const plan = db.prepare("SELECT * FROM customer_payment_plans WHERE id = ?").get(planId);
+    const planInst = db.prepare("SELECT * FROM payment_installments WHERE plan_id = ?").all(planId);
+    const totalPaid = planInst.reduce((s, r) => s + Number(r.paid_amount ?? 0), 0);
+    const remaining = Math.max(0, Number(plan.total_amount ?? 0) - totalPaid);
+    const planStatus = remaining <= 0 ? "completed" : "active";
+    db.prepare(
+      `UPDATE customer_payment_plans SET paid_amount=?, remaining_amount=?, status=?, updated_at=datetime('now') WHERE id=?`,
+    ).run(totalPaid, remaining, planStatus, planId);
+
+    const after = db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id);
+    db.prepare(
+      `INSERT INTO payment_audit (
+        id, installment_id, plan_id, customer_id, action,
+        performed_by, performed_by_name, old_value, new_value, notes, created_at
+      ) VALUES (?,?,?,?, 'paid', ?, ?, ?, ?, ?, datetime('now'))`,
+    ).run(
+      "pa" + makeId(),
+      id,
+      planId,
+      inst.customer_id,
+      userId ?? null,
+      userName ?? null,
+      JSON.stringify(before),
+      JSON.stringify(after),
+      `Paid ₹${paid} via ${paymentMode ?? "other"}`,
+    );
+
+    res.json({ installment: after, receiptNumber });
+  });
+
+  app.put("/api/payments/installment/:id/confirm", (req, res) => {
+    const { id } = req.params;
+    const { userId, userName } = req.body || {};
+    const inst = db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id);
+    if (!inst) return res.status(404).json({ error: "Not found" });
+    db.prepare(
+      `UPDATE payment_installments SET confirmed_by=?, confirmed_at=datetime('now'), updated_at=datetime('now') WHERE id=?`,
+    ).run(userId ?? null, id);
+    db.prepare(
+      `INSERT INTO payment_audit (id, installment_id, plan_id, customer_id, action, performed_by, performed_by_name, created_at)
+       VALUES (?,?,?,?, 'confirmed', ?, ?, datetime('now'))`,
+    ).run("pa" + makeId(), id, inst.plan_id, inst.customer_id, userId ?? null, userName ?? null);
+    res.json(db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id));
+  });
+
+  app.get("/api/payments/overdue", (_req, res) => {
+    const rows = db
+      .prepare(
+        `SELECT pi.*, c.name as company_name, c.id as customer_id, d.name as deal_title
+         FROM payment_installments pi
+         LEFT JOIN customers c ON c.id = pi.customer_id
+         LEFT JOIN deals d ON d.id = pi.deal_id
+         WHERE pi.status = 'pending' AND pi.due_date < date('now')
+         ORDER BY pi.due_date ASC`,
+      )
+      .all();
+    res.json(rows);
+  });
+
+  app.get("/api/payments/history-v2", (req, res) => {
+    const { customerId, dealId, from, to, status } = req.query || {};
+    let where = "1=1";
+    const params = [];
+    if (customerId) {
+      where += " AND pi.customer_id = ?";
+      params.push(customerId);
+    }
+    if (dealId) {
+      where += " AND pi.deal_id = ?";
+      params.push(dealId);
+    }
+    if (from) {
+      where += " AND pi.due_date >= ?";
+      params.push(from);
+    }
+    if (to) {
+      where += " AND pi.due_date <= ?";
+      params.push(to);
+    }
+    if (status) {
+      where += " AND pi.status = ?";
+      params.push(status);
+    }
+    const rows = db
+      .prepare(
+        `SELECT pi.*, c.name as company_name, d.name as deal_title
+         FROM payment_installments pi
+         LEFT JOIN customers c ON c.id = pi.customer_id
+         LEFT JOIN deals d ON d.id = pi.deal_id
+         WHERE ${where}
+         ORDER BY pi.due_date DESC`,
+      )
+      .all(...params);
+    res.json(rows);
+  });
+
+  app.get("/api/payments/audit-v2", (req, res) => {
+    const { customerId, planId } = req.query || {};
+    let where = "1=1";
+    const params = [];
+    if (customerId) {
+      where += " AND customer_id = ?";
+      params.push(customerId);
+    }
+    if (planId) {
+      where += " AND plan_id = ?";
+      params.push(planId);
+    }
+    const rows = db
+      .prepare(`SELECT * FROM payment_audit WHERE ${where} ORDER BY created_at DESC LIMIT 100`)
+      .all(...params);
+    res.json(rows);
+  });
+
+  app.get("/api/payments/remaining-v2", (_req, res) => {
+    const rows = db
+      .prepare(
+        `SELECT
+           cpp.id as plan_id,
+           cpp.plan_name,
+           cpp.total_amount,
+           cpp.paid_amount,
+           cpp.remaining_amount,
+           cpp.status,
+           c.id as customer_id,
+           c.name as company_name,
+           d.name as deal_title,
+           COUNT(CASE WHEN pi.status = 'pending' AND pi.due_date < date('now') THEN 1 END) as overdue_count,
+           MIN(CASE WHEN pi.status = 'pending' THEN pi.due_date END) as next_due_date
+         FROM customer_payment_plans cpp
+         LEFT JOIN customers c ON c.id = cpp.customer_id
+         LEFT JOIN deals d ON d.id = cpp.deal_id
+         LEFT JOIN payment_installments pi ON pi.plan_id = cpp.id
+         WHERE cpp.remaining_amount > 0
+         GROUP BY cpp.id
+         ORDER BY next_due_date ASC`,
+      )
+      .all();
+    res.json(rows);
+  });
+
+  // Keep legacy endpoints intact below.
 
   app.get("/api/payments/customer/:customerId/summary", (req, res) => {
     const { customerId } = req.params;

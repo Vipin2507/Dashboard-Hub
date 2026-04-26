@@ -24,6 +24,12 @@ function migrateDealSchema() {
   const names = new Set(cols.map((c) => c.name));
   const add = (sql) => db.exec(sql);
   if (!names.has("dealStatus")) add("ALTER TABLE deals ADD COLUMN dealStatus TEXT DEFAULT 'Active'");
+  if (!names.has("deliveryStatus")) add("ALTER TABLE deals ADD COLUMN deliveryStatus TEXT");
+  if (!names.has("deliveryUpdatedAt")) add("ALTER TABLE deals ADD COLUMN deliveryUpdatedAt TEXT");
+  if (!names.has("deliveryFinalApprovedBy")) add("ALTER TABLE deals ADD COLUMN deliveryFinalApprovedBy TEXT");
+  if (!names.has("deliveryFinalApprovedAt")) add("ALTER TABLE deals ADD COLUMN deliveryFinalApprovedAt TEXT");
+  if (!names.has("deliveryAssigneeUserId")) add("ALTER TABLE deals ADD COLUMN deliveryAssigneeUserId TEXT");
+  if (!names.has("deliveryAssigneeName")) add("ALTER TABLE deals ADD COLUMN deliveryAssigneeName TEXT");
   if (!names.has("invoiceStatus")) add("ALTER TABLE deals ADD COLUMN invoiceStatus TEXT");
   if (!names.has("invoiceDate")) add("ALTER TABLE deals ADD COLUMN invoiceDate TEXT");
   if (!names.has("invoiceNumber")) add("ALTER TABLE deals ADD COLUMN invoiceNumber TEXT");
@@ -63,6 +69,141 @@ function migrateDealSchema() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_dealStatus ON deals(dealStatus)`);
 }
 migrateDealSchema();
+
+function migrateDeliveryAndHistorySchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_logs (
+      id TEXT PRIMARY KEY,
+      dealId TEXT NOT NULL,
+      customerId TEXT NOT NULL,
+      fromStatus TEXT,
+      toStatus TEXT NOT NULL,
+      notes TEXT,
+      performedBy TEXT,
+      performedByName TEXT,
+      at TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_delivery_logs_dealId ON delivery_logs (dealId)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_delivery_logs_customerId ON delivery_logs (customerId)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_delivery_logs_at ON delivery_logs (at)`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS central_history_db (
+      id TEXT PRIMARY KEY,
+      customerId TEXT NOT NULL,
+      entityType TEXT NOT NULL,
+      entityId TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      summary TEXT,
+      payloadJson TEXT,
+      performedBy TEXT,
+      performedByName TEXT,
+      at TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_central_history_customer_at ON central_history_db (customerId, at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_central_history_entity ON central_history_db (entityType, entityId, at)`);
+}
+migrateDeliveryAndHistorySchema();
+
+/** Install payments v2 tables (MoM 19/04/2026) without losing legacy tables. */
+function migratePaymentsSchema() {
+  // If the legacy tables already exist with the old names, rename them so we can create the new v2 tables
+  // with the names required by the MoM spec.
+  const hasTable = (name) =>
+    !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(name);
+
+  const renameIfNeeded = (from, to) => {
+    if (!hasTable(from) || hasTable(to)) return;
+    db.exec(`ALTER TABLE ${from} RENAME TO ${to}`);
+  };
+
+  renameIfNeeded("payment_plan_catalog", "payment_plan_catalog_legacy");
+  renameIfNeeded("payment_audit", "payment_audit_legacy");
+
+  // Create v2 tables if missing (schema.sql has them for fresh installs, but old DBs need this after rename).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_plan_catalog (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      installments INTEGER NOT NULL DEFAULT 1,
+      schedule TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER DEFAULT 1,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS customer_payment_plans (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      proposal_id TEXT REFERENCES proposals(id),
+      plan_catalog_id TEXT REFERENCES payment_plan_catalog(id),
+      plan_name TEXT NOT NULL,
+      total_amount REAL NOT NULL,
+      paid_amount REAL DEFAULT 0,
+      remaining_amount REAL NOT NULL,
+      status TEXT DEFAULT 'active',
+      start_date TEXT NOT NULL,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_installments (
+      id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL REFERENCES customer_payment_plans(id) ON DELETE CASCADE,
+      customer_id TEXT NOT NULL REFERENCES customers(id),
+      deal_id TEXT NOT NULL REFERENCES deals(id),
+      label TEXT NOT NULL,
+      amount REAL NOT NULL,
+      percentage REAL,
+      due_date TEXT NOT NULL,
+      paid_date TEXT,
+      paid_amount REAL DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      payment_mode TEXT,
+      transaction_reference TEXT,
+      receipt_number TEXT,
+      receipt_sent INTEGER DEFAULT 0,
+      notes TEXT,
+      confirmed_by TEXT REFERENCES users(id),
+      confirmed_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_audit (
+      id TEXT PRIMARY KEY,
+      installment_id TEXT REFERENCES payment_installments(id),
+      plan_id TEXT REFERENCES customer_payment_plans(id),
+      customer_id TEXT REFERENCES customers(id),
+      action TEXT NOT NULL,
+      performed_by TEXT REFERENCES users(id),
+      performed_by_name TEXT,
+      old_value TEXT,
+      new_value TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_installments_customer ON payment_installments(customer_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_installments_status ON payment_installments(status)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_installments_due_date ON payment_installments(due_date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_plans_deal ON customer_payment_plans(deal_id)`);
+}
+migratePaymentsSchema();
 
 function migrateDataControlColumns() {
   const addCol = (table, col, sqlType) => {
@@ -622,10 +763,10 @@ function seedIfEmpty() {
     db.transaction((rows) => rows.forEach((r) => stmt.run(r)))(seedNotifications);
   }
 
-  const ppcCount = db.prepare("SELECT COUNT(*) AS c FROM payment_plan_catalog").get().c;
+  const ppcCount = db.prepare("SELECT COUNT(*) AS c FROM payment_plan_catalog_legacy").get().c;
   if (ppcCount === 0) {
     const stmt = db.prepare(
-      `INSERT INTO payment_plan_catalog (id, name, defaultBillingCycle, defaultGraceDays, suggestedInstallments, createdAt)
+      `INSERT INTO payment_plan_catalog_legacy (id, name, defaultBillingCycle, defaultGraceDays, suggestedInstallments, createdAt)
        VALUES (@id, @name, @defaultBillingCycle, @defaultGraceDays, @suggestedInstallments, @createdAt)`
     );
     db.transaction((rows) => rows.forEach((r) => stmt.run(r)))(seedPaymentPlanCatalog);
