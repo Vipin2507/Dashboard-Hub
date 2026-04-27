@@ -25,6 +25,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { TagsInput } from "@/components/ui/tags-input";
 function FormSection({ title }: { title: string }) {
   return (
     <div className="col-span-1 sm:col-span-2 flex items-center gap-3 pt-1">
@@ -85,13 +86,20 @@ const INDIAN_STATES = [
 
 const schema = z.object({
   companyName: z.string().min(1, "Company name is required"),
+  customerName: z
+    .string()
+    .optional()
+    .refine(
+      (v) => !v || /^[A-Za-z][A-Za-z\s.'-]*$/.test(v.trim()),
+      "Customer name must be text only",
+    ),
   industry: z.string().optional(),
   website: z
     .string()
     .optional()
     .refine((v) => !v || /^https?:\/\/.+/.test(v), "Enter a valid URL"),
   status: z.enum(["active", "inactive", "lead", "churned", "blacklisted"]),
-  tags: z.string().optional(),
+  tags: z.array(z.string()).optional(),
   line1: z.string().optional(),
   line2: z.string().optional(),
   city: z.string().min(1, "City is required"),
@@ -112,7 +120,6 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => !v || /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(v), "Invalid PAN (10 characters)"),
-  contactName: z.string().min(1, "Contact name is required"),
   contactDesignation: z.string().optional(),
   contactEmail: z.string().min(1, "Email is required").email("Invalid email"),
   contactPhone: z
@@ -138,11 +145,33 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+const DEFAULT_TAG_SUGGESTIONS = [
+  "VIP",
+  "New Customer",
+  "Hot Lead",
+  "Follow Up",
+  "Enterprise",
+  "SMB",
+  "Renewal",
+  "At Risk",
+];
+
+function normalizeExistingTags(input: unknown): string[] {
+  if (Array.isArray(input)) return input.map((t) => String(t)).filter(Boolean);
+  if (typeof input === "string") {
+    return input
+      .split(/[,;]/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
 interface CustomerFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingCustomer: Customer | null;
-  onSaved: () => void;
+  onSaved: (customer: Customer, mode: "create" | "update") => void;
   onPersist?: (customer: Customer, mode: "create" | "update") => Promise<void> | void;
 }
 
@@ -163,15 +192,19 @@ export function CustomerFormDialog({
   const updateContact = useAppStore((s) => s.updateContact);
   const appendActivityLog = useAppStore((s) => s.appendActivityLog);
 
+  const tagSuggestions = Array.from(
+    new Set([...DEFAULT_TAG_SUGGESTIONS, ...customers.flatMap((c) => normalizeExistingTags((c as Customer).tags))]),
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       companyName: "",
+      customerName: "",
       industry: "",
       website: "",
       status: "lead",
-      tags: "",
+      tags: [],
       line1: "",
       line2: "",
       city: "",
@@ -180,7 +213,6 @@ export function CustomerFormDialog({
       country: "India",
       gstin: "",
       pan: "",
-      contactName: "",
       contactDesignation: "",
       contactEmail: "",
       contactPhone: "",
@@ -201,11 +233,12 @@ export function CustomerFormDialog({
       const primary =
         editingCustomer.contacts.find((c) => c.isPrimary) ?? editingCustomer.contacts[0];
       form.reset({
-        companyName: editingCustomer.companyName,
+        companyName: editingCustomer.companyName ?? "",
+        customerName: editingCustomer.customerName ?? "",
         industry: editingCustomer.industry ?? "",
         website: editingCustomer.website ?? "",
         status: editingCustomer.status,
-        tags: editingCustomer.tags.join(", "),
+        tags: normalizeExistingTags((editingCustomer as Customer).tags),
         line1: editingCustomer.address?.line1 ?? "",
         line2: editingCustomer.address?.line2 ?? "",
         city: editingCustomer.address?.city ?? "",
@@ -214,7 +247,6 @@ export function CustomerFormDialog({
         country: "India",
         gstin: editingCustomer.gstin ?? "",
         pan: editingCustomer.pan ?? "",
-        contactName: primary?.name ?? "",
         contactDesignation: primary?.designation ?? "",
         contactEmail: primary?.email ?? "",
         contactPhone: primary?.phone?.replace(/\D/g, "").slice(-10) ?? "",
@@ -225,10 +257,11 @@ export function CustomerFormDialog({
     } else {
       form.reset({
         companyName: "",
+        customerName: "",
         industry: "",
         website: "",
         status: "lead",
-        tags: "",
+        tags: [],
         line1: "",
         line2: "",
         city: "",
@@ -237,7 +270,6 @@ export function CustomerFormDialog({
         country: "India",
         gstin: "",
         pan: "",
-        contactName: "",
         contactDesignation: "",
         contactEmail: "",
         contactPhone: "",
@@ -266,14 +298,12 @@ export function CustomerFormDialog({
   };
 
   const onSubmit = async (values: FormValues) => {
-    const tags = [
-      ...(editingCustomer?.tags ?? []),
-      ...values.tags
-        ?.split(/[,;]/)
-        .map((t) => t.trim())
-        .filter(Boolean) ?? [],
-    ];
-    const uniqueTags = Array.from(new Set(tags));
+    const uniqueTags = Array.from(
+      new Set(normalizeExistingTags(values.tags).map((t) => t.trim()).filter(Boolean)),
+    );
+    const companyName = values.companyName.trim();
+    const customerName = (values.customerName ?? "").trim();
+    const safeCustomerName = customerName || companyName;
 
     const address = {
       line1: values.line1 || undefined,
@@ -291,7 +321,8 @@ export function CustomerFormDialog({
       const primary =
         editingCustomer.contacts.find((c) => c.isPrimary) ?? editingCustomer.contacts[0];
       const updates: Partial<Customer> = {
-        companyName: values.companyName,
+        companyName,
+        customerName: customerName || undefined,
         industry: values.industry || undefined,
         website: values.website || undefined,
         status: values.status as CustomerStatus,
@@ -308,7 +339,7 @@ export function CustomerFormDialog({
       updateCustomer(editingCustomer.id, updates);
       if (primary) {
         updateContact(editingCustomer.id, primary.id, {
-          name: values.contactName,
+          name: safeCustomerName,
           designation: values.contactDesignation || undefined,
           email: values.contactEmail,
           phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
@@ -322,7 +353,7 @@ export function CustomerFormDialog({
               c.id === primary.id
                 ? {
                     ...c,
-                    name: values.contactName,
+                    name: safeCustomerName,
                     designation: values.contactDesignation || undefined,
                     email: values.contactEmail,
                     phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
@@ -333,12 +364,13 @@ export function CustomerFormDialog({
         updatedAt: new Date().toISOString(),
       };
       await onPersist?.(updatedCustomer, "update");
-      toast({ title: "Customer updated", description: `${values.companyName} has been updated.` });
+      toast({ title: "Customer updated", description: `${companyName} has been updated.` });
+      onSaved(updatedCustomer, "update");
     } else {
       const contactId = "cc-" + makeId();
       const contact: CustomerContact = {
         id: contactId,
-        name: values.contactName,
+        name: safeCustomerName,
         designation: values.contactDesignation || undefined,
         email: values.contactEmail,
         phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
@@ -348,7 +380,8 @@ export function CustomerFormDialog({
       const newCustomer: Customer = {
         id: "c" + makeId(),
         customerNumber,
-        companyName: values.companyName,
+        companyName,
+        customerName: customerName || undefined,
         status: values.status as CustomerStatus,
         industry: values.industry || undefined,
         website: values.website || undefined,
@@ -389,9 +422,9 @@ export function CustomerFormDialog({
         entityType: "contact",
         entityId: newCustomer.id,
       });
-      toast({ title: "Customer created", description: `${values.companyName} has been added.` });
+      toast({ title: "Customer created", description: `${companyName} has been added.` });
+      onSaved(newCustomer, "create");
     }
-    onSaved();
     onOpenChange(false);
   };
 
@@ -416,7 +449,20 @@ export function CustomerFormDialog({
                     <FormItem className="space-y-1.5">
                       <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Company Name *</FormLabel>
                       <FormControl>
-                        <Input className="h-10 text-sm" placeholder="Acme Pvt Ltd" {...field} />
+                        <Input className="h-10 text-sm" placeholder="Paridhi Group" {...field} />
+                      </FormControl>
+                      <FormMessage className="text-xs" />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerName"
+                  render={({ field }) => (
+                    <FormItem className="space-y-1.5">
+                      <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Customer Name</FormLabel>
+                      <FormControl>
+                        <Input className="h-10 text-sm" placeholder="Vaibhav Agrawal (optional)" {...field} />
                       </FormControl>
                       <FormMessage className="text-xs" />
                     </FormItem>
@@ -481,11 +527,12 @@ export function CustomerFormDialog({
                       <FormItem className="space-y-1.5">
                         <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Tags</FormLabel>
                         <FormControl>
-                          <Input
-                            className="h-10 text-sm"
-                            placeholder="Type and press Enter to add (comma-separated)"
-                            value={field.value ?? ""}
-                            onChange={field.onChange}
+                          <TagsInput
+                            value={normalizeExistingTags(field.value)}
+                            onValueChange={(next) => field.onChange(next)}
+                            suggestions={tagSuggestions}
+                            placeholder="Type to search or add…"
+                            aria-invalid={!!form.formState.errors.tags}
                           />
                         </FormControl>
                         <FormMessage className="text-xs" />
@@ -615,19 +662,12 @@ export function CustomerFormDialog({
                 />
 
                 <FormSection title="Primary Contact" />
-                <FormField
-                  control={form.control}
-                  name="contactName"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Name *</FormLabel>
-                      <FormControl>
-                        <Input className="h-10 text-sm" placeholder="Full name" {...field} />
-                      </FormControl>
-                      <FormMessage className="text-xs" />
-                    </FormItem>
-                  )}
-                />
+                <div className="space-y-1.5">
+                  <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Name</FormLabel>
+                  <div className="h-10 rounded-md border border-input bg-muted/40 px-3 text-sm flex items-center text-gray-700 dark:text-gray-200">
+                    {form.watch("customerName") || form.watch("companyName") || "—"}
+                  </div>
+                </div>
                 <FormField
                   control={form.control}
                   name="contactDesignation"

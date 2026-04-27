@@ -298,7 +298,7 @@ export function useUpdateDealStage() {
           dealTitle: deal.name,
           dealValue: deal.value,
           customerId: deal.customerId,
-          customerName: customer?.companyName,
+          customerName: customer?.customerName ?? customer?.companyName,
           customerPhone: primary?.phone,
           customerEmail: primary?.email,
           salesRepId: rep?.id,
@@ -308,7 +308,7 @@ export function useUpdateDealStage() {
         useAppStore.getState().pushNotification({
           type: "INTERNAL_EMAIL",
           to: "finance@buildesk.com",
-          subject: `Deal won — set up payment for ${customer?.companyName ?? deal.name}`,
+          subject: `Deal won — set up payment for ${customer?.companyName || customer?.customerName || deal.name}`,
           entityId: deal.id,
         });
         toast({
@@ -321,7 +321,7 @@ export function useUpdateDealStage() {
           dealTitle: deal.name,
           dealValue: deal.value,
           customerId: deal.customerId,
-          customerName: customer?.companyName,
+          customerName: customer?.customerName ?? customer?.companyName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           lossReason: deal.lossReason ?? "",

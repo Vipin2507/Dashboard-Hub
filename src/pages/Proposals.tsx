@@ -6,6 +6,7 @@ import { getScope, visibleWithScope, can } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectTrigger,
@@ -38,6 +39,10 @@ import {
   Download,
   MoreHorizontal,
   RefreshCw,
+  Copy,
+  Link2,
+  MessageSquarePlus,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +56,14 @@ import { SendProposalDialog } from "@/components/SendProposalDialog";
 import { CreateDealDialog } from "@/components/CreateDealDialog";
 import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -76,6 +89,7 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "draft", label: "Draft" },
   { value: "sent", label: "Sent" },
+  { value: "shared", label: "Shared" },
   { value: "approval_pending", label: "Approval Pending" },
   { value: "approved", label: "Approved" },
   { value: "negotiation", label: "Negotiation" },
@@ -88,6 +102,7 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
 const STATUS_BADGE: Record<ProposalStatus, string> = {
   draft: "bg-muted text-muted-foreground",
   sent: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
+  shared: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
   approval_pending: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
   approved: "bg-green-500/15 text-green-700 dark:text-green-300",
   negotiation: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
@@ -103,6 +118,7 @@ const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = [
   "all",
   "draft",
   "sent",
+  "shared",
   "approval_pending",
   "approved",
   "negotiation",
@@ -256,6 +272,7 @@ export default function Proposals() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
+  const [suspectWonOnly, setSuspectWonOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
@@ -276,6 +293,10 @@ export default function Proposals() {
   const [createDealId, setCreateDealId] = useState<string | null>(null);
   const [deleteProposal, setDeleteProposal] = useState<Proposal | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [noteForId, setNoteForId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [deliveryAssignId, setDeliveryAssignId] = useState<string | null>(null);
+  const [deliveryAssigneeId, setDeliveryAssigneeId] = useState<string>("");
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -338,8 +359,63 @@ export default function Proposals() {
   const canExport = can(me.role, "proposals", "export");
   const canOverride = can(me.role, "proposals", "override_final_value");
 
+  const canMenu = {
+    view: true,
+    edit: me.role === "super_admin" || me.role === "sales_manager",
+    duplicate: me.role === "super_admin" || me.role === "sales_manager",
+    status: me.role === "super_admin" || me.role === "sales_manager",
+    sendEmail: me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep",
+    copyLink: me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep",
+    download: me.role !== "support",
+    addNote: me.role !== "finance",
+    assignDelivery: me.role === "super_admin",
+    delete: me.role === "super_admin",
+  };
+
+  const nextStatuses = (status: ProposalStatus) => {
+    if (status === "won") return [] as ProposalStatus[];
+    if (status === "shared") return ["sent", "cold", "rejected"];
+    if (status === "sent") return ["approved", "negotiation", "cold", "rejected"];
+    if (status === "approved") return ["won", "negotiation", "rejected"];
+    return [] as ProposalStatus[];
+  };
+
+  const makeNextProposalNumber = () => {
+    const year = new Date().getFullYear();
+    const prefix = `PROP-${year}-`;
+    const existing = proposals.filter((p) => p.proposalNumber.startsWith(prefix));
+    const max = existing.reduce((m, p) => {
+      const num = parseInt(p.proposalNumber.slice(prefix.length), 10);
+      return Number.isNaN(num) ? m : Math.max(m, num);
+    }, 0);
+    return `${prefix}${String(max + 1).padStart(4, "0")}`;
+  };
+
+  const duplicateProposal = async (p: Proposal) => {
+    const now = new Date().toISOString();
+    const copy: Proposal = {
+      ...p,
+      id: "p" + Math.random().toString(36).slice(2, 10),
+      proposalNumber: makeNextProposalNumber(),
+      title: `${p.title} (Copy)`,
+      status: "shared",
+      dealId: undefined,
+      approvedBy: undefined,
+      approvedAt: undefined,
+      sentAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: me.id,
+    };
+    useAppStore.getState().addProposal(copy);
+    toast({ title: "Duplicated", description: `${copy.proposalNumber} created as Shared.` });
+    await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+  };
+
   const stateCustomerId = (location.state as { customerId?: string; detailId?: string } | null)?.customerId;
   const stateDetailId = (location.state as { customerId?: string; detailId?: string } | null)?.detailId;
+  const stateEditId = (location.state as { editId?: string } | null)?.editId;
+  const detailFromQuery = searchParams.get("detailId");
   const [initialCustomerIdForForm, setInitialCustomerIdForForm] = useState<string | undefined>(undefined);
   useEffect(() => {
     if (stateCustomerId && canCreate) {
@@ -349,12 +425,24 @@ export default function Proposals() {
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [stateCustomerId, canCreate, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (stateEditId) {
+      setEditingId(stateEditId);
+      setFormOpen(true);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [stateEditId, navigate, location.pathname]);
   useEffect(() => {
     if (stateDetailId) {
       setDetailId(stateDetailId);
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [stateDetailId, navigate, location.pathname]);
+
+  useEffect(() => {
+    if (detailFromQuery) setDetailId(detailFromQuery);
+  }, [detailFromQuery]);
   useEffect(() => {
     if (statusFromUrl && PROPOSAL_STATUS_VALUES.includes(statusFromUrl as ProposalStatus | "all")) {
       setStatusFilter(statusFromUrl as ProposalStatus | "all");
@@ -380,6 +468,15 @@ export default function Proposals() {
       );
     }
     if (statusFilter !== "all") list = list.filter((p) => p.status === statusFilter);
+    if (suspectWonOnly) {
+      list = list.filter((p) => {
+        if (p.status !== "won") return false;
+        const created = new Date(p.createdAt).getTime();
+        const updated = new Date(p.updatedAt || p.createdAt).getTime();
+        if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
+        return Math.abs(updated - created) <= 60_000;
+      });
+    }
     if (dateFrom) list = list.filter((p) => p.createdAt >= dateFrom + "T00:00:00");
     if (dateTo) list = list.filter((p) => p.createdAt <= dateTo + "T23:59:59");
     if (assignedToFilter !== "all") list = list.filter((p) => p.assignedTo === assignedToFilter);
@@ -389,7 +486,7 @@ export default function Proposals() {
     else if (sortBy === "value") list = [...list].sort((a, b) => (b.finalQuoteValue ?? b.grandTotal) - (a.finalQuoteValue ?? a.grandTotal));
     else if (sortBy === "customer") list = [...list].sort((a, b) => a.customerName.localeCompare(b.customerName));
     return list;
-  }, [visible, search, statusFilter, dateFrom, dateTo, assignedToFilter, teamQueryFilter, regionQueryFilter, sortBy, users]);
+  }, [visible, search, statusFilter, suspectWonOnly, dateFrom, dateTo, assignedToFilter, teamQueryFilter, regionQueryFilter, sortBy, users]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -430,9 +527,23 @@ export default function Proposals() {
   }, [visible]);
 
   const handleExportCsv = () => {
-    const headers = ["Proposal #", "Title", "Customer", "Assigned To", "Grand Total", "Status", "Valid Until"];
+    const headers = ["Proposal #", "Title", "Company Name", "Customer Name", "Assigned To", "Grand Total", "Status", "Valid Until"];
     const rows = filtered.map((p) =>
-      [p.proposalNumber, p.title, p.customerName, p.assignedToName, p.finalQuoteValue ?? p.grandTotal, p.status, p.validUntil].join(",")
+      (() => {
+        const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+        const companyName = cust?.companyName || cust?.customerName || p.customerName || "Company";
+        const customerName = cust?.customerName || p.customerName || "";
+        return [
+          p.proposalNumber,
+          p.title,
+          companyName,
+          customerName,
+          p.assignedToName,
+          p.finalQuoteValue ?? p.grandTotal,
+          p.status,
+          p.validUntil,
+        ].join(",");
+      })()
     );
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -584,6 +695,22 @@ export default function Proposals() {
                   {o.label}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setSuspectWonOnly((v) => !v);
+                  setPage(1);
+                }}
+                className={cn(
+                  "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
+                  suspectWonOnly
+                    ? "bg-orange-600 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
+                )}
+                title="Flags proposals marked Won within 1 minute of creation"
+              >
+                Possibly incorrect Won
+              </button>
             </div>
 
             {/* Other filters */}
@@ -636,7 +763,7 @@ export default function Proposals() {
                 <SelectContent>
                   <SelectItem value="date">Date (newest)</SelectItem>
                   <SelectItem value="value">Value</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
+                  <SelectItem value="customer">Company</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -691,7 +818,7 @@ export default function Proposals() {
                         Proposal
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Customer
+                        Company
                       </th>
                       <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 sm:table-cell dark:text-gray-400">
                         Value
@@ -732,9 +859,18 @@ export default function Proposals() {
                               className="text-left text-sm font-medium text-gray-800 hover:underline dark:text-gray-200"
                               onClick={() => navigate(`/customers/${p.customerId}`)}
                             >
-                              {p.customerName}
+                              {(() => {
+                                const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+                                return cust?.companyName || cust?.customerName || p.customerName || "Company";
+                              })()}
                             </button>
-                            <p className="mt-0.5 text-xs text-gray-400">{p.assignedToName}</p>
+                            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                              {(() => {
+                                const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+                                return cust?.customerName || p.customerName || cust?.companyName || "Customer";
+                              })()}
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-gray-400">({p.assignedToName})</p>
                           </div>
                         </td>
                         <td className="hidden px-4 py-4 text-right sm:table-cell">
@@ -860,75 +996,136 @@ export default function Proposals() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 w-7 rounded-md p-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
+                                  title="More actions"
                                 >
                                   <MoreHorizontal className="h-3.5 w-3.5" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-44">
-                                {canEditProposal(p) && (
+                              <DropdownMenuContent
+                                align="start"
+                                sideOffset={6}
+                                className="min-w-[220px]"
+                              >
+                                {/* Group 1 — View & Edit */}
+                                <DropdownMenuItem className="cursor-pointer" onClick={() => setDetailId(p.id)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Proposal
+                                </DropdownMenuItem>
+                                {canMenu.edit && canEditProposal(p) && (
                                   <DropdownMenuItem
+                                    className="cursor-pointer"
                                     onClick={() => {
                                       setEditingId(p.id);
                                       setFormOpen(true);
                                     }}
                                   >
-                                    <Pencil className="mr-2 h-3.5 w-3.5" />
-                                    Edit
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit Proposal
                                   </DropdownMenuItem>
                                 )}
-                                {p.status === "sent" && canActOnOutcome(p) && (
+                                {canMenu.duplicate && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => void duplicateProposal(p)}>
+                                    <Copy className="mr-2 h-4 w-4" />
+                                    Duplicate
+                                  </DropdownMenuItem>
+                                )}
+
+                                {/* Group 2 — Status Change */}
+                                {canMenu.status && nextStatuses(p.status).length > 0 && (
                                   <>
+                                    <DropdownMenuSeparator />
+                                    {nextStatuses(p.status).map((st) => (
+                                      <DropdownMenuItem
+                                        key={st}
+                                        className="cursor-pointer"
+                                        onClick={() => {
+                                          updateProposal(p.id, { status: st });
+                                          void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                                          toast({
+                                            title: "Status updated",
+                                            description: `${p.proposalNumber} → ${st.replace(/_/g, " ")}`,
+                                          });
+                                        }}
+                                      >
+                                        {st === "sent" ? <Send className="mr-2 h-4 w-4" /> : null}
+                                        {st === "approved" ? <FileText className="mr-2 h-4 w-4" /> : null}
+                                        {st === "won" ? <Trophy className="mr-2 h-4 w-4" /> : null}
+                                        {st === "cold" ? <Snowflake className="mr-2 h-4 w-4" /> : null}
+                                        {st === "rejected" ? <X className="mr-2 h-4 w-4" /> : null}
+                                        {st === "negotiation" ? <Handshake className="mr-2 h-4 w-4" /> : null}
+                                        Mark as {st.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase())}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </>
+                                )}
+
+                                {/* Group 3 — Actions */}
+                                <DropdownMenuSeparator />
+                                {canMenu.sendEmail && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Send via Email
+                                  </DropdownMenuItem>
+                                )}
+                                {canMenu.copyLink && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={async () => {
+                                      const url = `${window.location.origin}/proposals?detailId=${encodeURIComponent(p.id)}`;
+                                      await navigator.clipboard.writeText(url);
+                                      toast({ title: "Link copied", description: url });
+                                    }}
+                                  >
+                                    <Link2 className="mr-2 h-4 w-4" />
+                                    Copy Proposal Link
+                                  </DropdownMenuItem>
+                                )}
+                                {canMenu.download && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleDownloadPdf(p)}>
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Download PDF
+                                  </DropdownMenuItem>
+                                )}
+                                {canMenu.addNote && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={() => {
+                                      setNoteForId(p.id);
+                                      setNoteDraft("");
+                                    }}
+                                  >
+                                    <MessageSquarePlus className="mr-2 h-4 w-4" />
+                                    Add Note
+                                  </DropdownMenuItem>
+                                )}
+
+                                {/* Group 4 — Delivery */}
+                                {canMenu.assignDelivery && p.status === "won" && (
+                                  <>
+                                    <DropdownMenuSeparator />
                                     <DropdownMenuItem
+                                      className="cursor-pointer"
                                       onClick={() => {
-                                        setEditingId(p.id);
-                                        setFormOpen(true);
+                                        setDeliveryAssignId(p.id);
+                                        setDeliveryAssigneeId("");
                                       }}
                                     >
-                                      <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                                      Revise
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="text-orange-600 focus:text-orange-600" onClick={() => markCold(p.id)}>
-                                      <Snowflake className="mr-2 h-3.5 w-3.5" />
-                                      Mark Cold
+                                      <Truck className="mr-2 h-4 w-4" />
+                                      Assign Delivery Agent
                                     </DropdownMenuItem>
                                   </>
                                 )}
-                                {canReject && p.status === "approval_pending" && (
-                                  <DropdownMenuItem className="text-amber-700" onClick={() => setRejectId(p.id)}>
-                                    <X className="mr-2 h-3.5 w-3.5" />
-                                    Reject
-                                  </DropdownMenuItem>
-                                )}
-                                {canActOnOutcome(p) && p.status !== "negotiation" && p.status !== "sent" && (
-                                  <DropdownMenuItem onClick={() => markNegotiation(p.id)}>
-                                    <Handshake className="mr-2 h-3.5 w-3.5" />
-                                    Negotiation
-                                  </DropdownMenuItem>
-                                )}
-                                {canActOnOutcome(p) && !["won", "sent"].includes(p.status) && p.status !== "negotiation" && (
-                                  <DropdownMenuItem onClick={() => markWon(p.id)}>
-                                    <Trophy className="mr-2 h-3.5 w-3.5" />
-                                    Mark Won
-                                  </DropdownMenuItem>
-                                )}
-                                {canSend && (p.status === "negotiation" || p.status === "draft") && (
-                                  <DropdownMenuItem onClick={() => setSendId(p.id)}>
-                                    <Send className="mr-2 h-3.5 w-3.5" />
-                                    Send
-                                  </DropdownMenuItem>
-                                )}
-                                {(canApprove || me.role === "super_admin") && p.status === "approved" && !p.dealId && (
-                                  <DropdownMenuItem onClick={() => setCreateDealId(p.id)}>
-                                    <FileText className="mr-2 h-3.5 w-3.5" />
-                                    Create Deal
-                                  </DropdownMenuItem>
-                                )}
-                                {canDelete && p.status === "draft" && (
+
+                                {/* Group 5 — Danger zone */}
+                                {canMenu.delete && (
                                   <>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setDeleteProposal(p)}>
-                                      <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                      Delete
+                                    <DropdownMenuItem
+                                      className="cursor-pointer text-red-600 focus:text-red-600"
+                                      onClick={() => setDeleteProposal(p)}
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete Proposal
                                     </DropdownMenuItem>
                                   </>
                                 )}
@@ -998,6 +1195,89 @@ export default function Proposals() {
       {rejectId && <RejectProposalDialog proposalId={rejectId} onClose={() => setRejectId(null)} />}
       {sendId && <SendProposalDialog proposalId={sendId} onClose={() => setSendId(null)} />}
       {createDealId && <CreateDealDialog proposalId={createDealId} onClose={() => setCreateDealId(null)} />}
+
+      <Dialog open={!!noteForId} onOpenChange={(o) => !o && (setNoteForId(null), setNoteDraft(""))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add note</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-2">
+            <Textarea
+              placeholder="Type a note..."
+              value={noteDraft}
+              onChange={(e) => setNoteDraft(e.target.value)}
+              rows={4}
+            />
+            <p className="text-xs text-muted-foreground">This will be appended to the proposal’s internal notes.</p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => (setNoteForId(null), setNoteDraft(""))}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const id = noteForId;
+                if (!id) return;
+                const p = proposals.find((x) => x.id === id);
+                if (!p) return;
+                const prefix = p.notes ? `${p.notes}\n` : "";
+                const entry = `• ${new Date().toLocaleString("en-IN")}: ${noteDraft.trim()}`;
+                updateProposal(id, { notes: `${prefix}${entry}` });
+                toast({ title: "Note added" });
+                setNoteForId(null);
+                setNoteDraft("");
+              }}
+              disabled={!noteDraft.trim()}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deliveryAssignId} onOpenChange={(o) => !o && (setDeliveryAssignId(null), setDeliveryAssigneeId(""))}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Assign delivery agent</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-sm text-muted-foreground">Select a delivery agent to assign to this won proposal.</p>
+            <Select value={deliveryAssigneeId} onValueChange={setDeliveryAssigneeId}>
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="Select delivery agent" />
+              </SelectTrigger>
+              <SelectContent>
+                {users
+                  .filter((u) => u.role === "delivery_manager" || u.role === "support")
+                  .map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => (setDeliveryAssignId(null), setDeliveryAssigneeId(""))}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!deliveryAssigneeId}
+              onClick={() => {
+                const pid = deliveryAssignId;
+                if (!pid) return;
+                const u = users.find((x) => x.id === deliveryAssigneeId);
+                updateProposal(pid, { deliveryAssigneeUserId: deliveryAssigneeId, deliveryAssigneeName: u?.name ?? "" } as any);
+                toast({ title: "Assigned", description: u?.name ?? "" });
+                setDeliveryAssignId(null);
+                setDeliveryAssigneeId("");
+              }}
+            >
+              Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteProposal} onOpenChange={(open) => !open && setDeleteProposal(null)}>
         <AlertDialogContent>

@@ -26,6 +26,7 @@ import { useAppStore } from "@/store/useAppStore";
 const STATUS_BADGE: Record<ProposalStatus, string> = {
   draft: "bg-muted text-muted-foreground",
   sent: "bg-blue-500/15 text-blue-700",
+  shared: "bg-sky-500/15 text-sky-700",
   approval_pending: "bg-amber-500/15 text-amber-700",
   approved: "bg-green-500/15 text-green-700",
   negotiation: "bg-indigo-500/15 text-indigo-700",

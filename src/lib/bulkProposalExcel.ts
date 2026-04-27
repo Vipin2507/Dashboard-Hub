@@ -231,14 +231,15 @@ type ApiCustomer = {
 
 function mapStageToStatus(raw: string): ProposalStatus {
   const s = raw.trim().toLowerCase();
-  if (!s) return "draft";
+  if (!s) return "shared";
   if (s.includes("deal")) return "deal_created";
   if (s.includes("reject")) return "rejected";
   if (s.includes("approv") && !s.includes("pending")) return "approved";
   if (s.includes("pending") || s.includes("approval")) return "approval_pending";
-  if (s.includes("sent") || s.includes("shared")) return "sent";
+  if (s.includes("shared")) return "shared";
+  if (s.includes("sent")) return "sent";
   if (s.includes("draft")) return "draft";
-  return "sent";
+  return "shared";
 }
 
 function parseExcelDate(raw: string): string | undefined {

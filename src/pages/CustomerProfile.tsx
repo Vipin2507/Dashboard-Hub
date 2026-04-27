@@ -221,7 +221,7 @@ function SupportWorkflowTab({
   const sendPaymentReminder = async () => {
     await triggerAutomation("invoice_overdue", {
       customerId,
-      customerName: customer.companyName,
+      customerName: customer.customerName,
       customerPhone: primaryPhone ?? undefined,
       customerEmail: primaryEmail ?? undefined,
       amountDue: paymentSummary?.summary?.overdueAmount ?? 0,
@@ -396,9 +396,9 @@ function SupportWorkflowTab({
                 addProposal({
                   id,
                   proposalNumber,
-                  title: `Renewal — ${customer.companyName}`,
+                  title: `Renewal — ${customer.companyName || customer.customerName}`,
                   customerId: customer.id,
-                  customerName: customer.companyName,
+                  customerName: customer.customerName,
                   assignedTo: activeDeal.ownerUserId ?? me.id,
                   assignedToName,
                   regionId: me.regionId,
@@ -595,15 +595,24 @@ export default function CustomerProfile() {
   return (
     <>
       <div className="mx-auto w-full max-w-page space-y-4">
-        <Button
-          type="button"
-          variant="ghost"
-          className="-ml-2 h-8 gap-1.5 px-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-          onClick={() => navigate("/customers")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Customers
-        </Button>
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            className="-ml-2 h-8 gap-1.5 px-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+            onClick={() => navigate("/customers")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Customers
+          </Button>
+          <Button
+            className="h-9 shrink-0 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+            onClick={() => navigate("/proposals", { state: { customerId: customer.id } })}
+          >
+            <Plus className="mr-1.5 h-4 w-4 shrink-0" />
+            Create Proposal
+          </Button>
+        </div>
 
         <div className="flex flex-col gap-5 lg:flex-row">
           <aside className="w-full flex-shrink-0 space-y-4 lg:w-72 lg:sticky lg:top-4 lg:self-start">
@@ -623,9 +632,12 @@ export default function CustomerProfile() {
                 </span>
               </div>
               <h2 className="mb-0.5 text-base font-semibold leading-snug text-gray-900 dark:text-gray-100">
-                {customer.companyName}
+                {customer.companyName || customer.customerName}
               </h2>
               <p className="font-mono text-xs text-gray-400">{customer.customerNumber}</p>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                {customer.customerName || customer.companyName}
+              </p>
               {customer.industry && <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{customer.industry}</p>}
             </div>
 
@@ -674,7 +686,7 @@ export default function CustomerProfile() {
               <Button
                 size="sm"
                 className="h-8 flex-1 rounded-lg bg-blue-600 text-xs text-white hover:bg-blue-700"
-                onClick={() => navigate(`/proposals?customer=${customer.id}`)}
+                onClick={() => navigate("/proposals", { state: { customerId: customer.id } })}
               >
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 Proposal
@@ -1426,7 +1438,7 @@ export default function CustomerProfile() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete customer?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove {customer.companyName} and all related data. This action cannot be undone.
+              This will permanently remove {customer.companyName || customer.customerName} and all related data. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

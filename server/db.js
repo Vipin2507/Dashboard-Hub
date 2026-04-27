@@ -18,6 +18,30 @@ db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 db.exec(fs.readFileSync(schemaPath, "utf8"));
 
+/** Add customer tags column on existing DBs (CREATE TABLE already has it for new installs). */
+function migrateCustomerTagsSchema() {
+  const cols = db.prepare("PRAGMA table_info(customers)").all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("tags")) {
+    db.exec(`ALTER TABLE customers ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`);
+  }
+  db.prepare("UPDATE customers SET tags = '[]' WHERE tags IS NULL OR tags = ''").run();
+}
+migrateCustomerTagsSchema();
+
+/** Add customerName/companyName columns on existing DBs (CREATE TABLE already has them for new installs). */
+function migrateCustomerNameSchema() {
+  const cols = db.prepare("PRAGMA table_info(customers)").all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("customerName")) db.exec(`ALTER TABLE customers ADD COLUMN customerName TEXT`);
+  if (!names.has("companyName")) db.exec(`ALTER TABLE customers ADD COLUMN companyName TEXT`);
+  // Keep legacy `name` usable by setting it if missing.
+  db.prepare(
+    "UPDATE customers SET name = COALESCE(NULLIF(name, ''), NULLIF(companyName, ''), NULLIF(customerName, ''), name) WHERE name IS NULL OR name = ''",
+  ).run();
+}
+migrateCustomerNameSchema();
+
 /** Add deal columns on existing DBs (CREATE TABLE already has them for new installs). */
 function migrateDealSchema() {
   const cols = db.prepare("PRAGMA table_info(deals)").all();

@@ -132,6 +132,15 @@ export function BulkImportProposalsDialog({
         defaultRegionId,
       });
 
+      const wonCount = proposals.filter((p) => p.status === "won").length;
+      if (wonCount > 0) {
+        toast({
+          title: "Check proposal statuses",
+          description:
+            `${wonCount} imported row(s) have status “Won”. Are you sure? Won is usually set after negotiation.`,
+        });
+      }
+
       if (errors.length && !proposals.length) {
         toast({
           title: "Import failed",
@@ -161,6 +170,8 @@ export function BulkImportProposalsDialog({
           id: string;
           leadId?: string;
           name: string;
+          customerName?: string | null;
+          companyName?: string | null;
           state?: string | null;
           gstin?: string | null;
           regionId: string;
@@ -172,6 +183,7 @@ export function BulkImportProposalsDialog({
           salesExecutive?: string | null;
           accountManager?: string | null;
           deliveryExecutive?: string | null;
+          tags?: string | string[] | null;
         };
 
         const toUiCustomer = (row: ApiCustomer): Customer => {
@@ -181,10 +193,14 @@ export function BulkImportProposalsDialog({
             users.find((u) => u.regionId === row.regionId && u.role === "sales_rep") ??
             users[0];
           const nowIso = row.createdAt ?? new Date().toISOString();
+          const customerName = (row.customerName ?? "").trim();
+          const companyName = (row.companyName ?? "").trim();
+          const fallback = (companyName || customerName || row.name || "Company").trim();
           return {
             id: row.id,
             customerNumber: row.leadId ?? `CUST-${row.id.slice(-4).toUpperCase()}`,
-            companyName: row.name,
+            companyName: companyName || (customerName ? "" : (row.name ?? "").trim()) || fallback,
+            customerName: customerName || undefined,
             status: (row.status as CustomerStatus) ?? "active",
             gstin: row.gstin ?? undefined,
             pan: undefined,
@@ -198,7 +214,7 @@ export function BulkImportProposalsDialog({
             contacts: [
               {
                 id: `ct-${row.id}`,
-                name: row.name,
+                name: customerName || fallback,
                 email: row.email ?? undefined,
                 phone: row.primaryPhone ?? undefined,
                 isPrimary: true,

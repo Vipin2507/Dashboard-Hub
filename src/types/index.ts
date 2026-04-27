@@ -166,7 +166,10 @@ export interface CustomerActivityLog {
 export interface Customer {
   id: string;
   customerNumber: string;
+  /** Business/organization name (required in UI). */
   companyName: string;
+  /** Person's full name (optional). */
+  customerName?: string;
   status: CustomerStatus;
   gstin?: string;
   pan?: string;
@@ -227,6 +230,7 @@ export interface InventoryItem {
 export type ProposalStatus =
   | 'draft'
   | 'sent'
+  | 'shared'
   | 'approval_pending'
   | 'approved'
   | 'negotiation'

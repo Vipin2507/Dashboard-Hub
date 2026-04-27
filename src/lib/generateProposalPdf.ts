@@ -154,8 +154,32 @@ function getServiceLabel(_item: ProposalLineItem): string {
   return "12 Months";
 }
 
-function lineAmountExTax(item: ProposalLineItem): number {
-  return item.unitPrice * item.qty;
+function baseAmount(item: ProposalLineItem): number {
+  return (Number(item.unitPrice) || 0) * (Number(item.qty) || 0);
+}
+
+function discountAmount(item: ProposalLineItem): number {
+  const base = baseAmount(item);
+  const disc = Number(item.discount) || 0;
+  return base * (disc / 100);
+}
+
+function taxableAmount(item: ProposalLineItem): number {
+  // Prefer persisted computed lineTotal (post-discount, pre-tax) to match frontend.
+  const lineTotal = (item as unknown as { lineTotal?: number }).lineTotal;
+  if (typeof lineTotal === "number" && Number.isFinite(lineTotal)) return lineTotal;
+  return baseAmount(item) - discountAmount(item);
+}
+
+function gstAmount(item: ProposalLineItem): number {
+  const ta = (item as unknown as { taxAmount?: number }).taxAmount;
+  if (typeof ta === "number" && Number.isFinite(ta)) return ta;
+  const rate = Number(item.taxRate) || 0;
+  return taxableAmount(item) * (rate / 100);
+}
+
+function lineTotalInclGst(item: ProposalLineItem): number {
+  return taxableAmount(item) + gstAmount(item);
 }
 
 function renderParagraph(
@@ -520,7 +544,7 @@ function renderCommercialSection(
     globalOffset + idx + 1,
     item.name + (item.description ? `\n${item.description}` : ""),
     getServiceLabel(item),
-    formatINR(Math.round(lineAmountExTax(item))),
+    formatINR(Math.round(taxableAmount(item))),
   ]);
 
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
@@ -534,22 +558,37 @@ function renderCommercialSection(
   }
 
   if (chunkIndex === totalChunks - 1) {
-    tableBody.push([
-      {
-        content: "Total",
-        colSpan: 3,
-        styles: { halign: "right", fontStyle: "bold", fontSize: FONT.tableBody },
-      },
-      {
-        content: formatINRTotal(Math.round(totalToShow)),
-        styles: {
-          halign: "right",
-          fontStyle: "bold",
-          textColor: [0, 0, 0],
-          fontSize: 10,
-        },
-      },
-    ]);
+    // Summary rows (match frontend totals)
+    const baseSum = proposal.lineItems.reduce((s, li) => s + baseAmount(li), 0);
+    const discSum = proposal.lineItems.reduce((s, li) => s + discountAmount(li), 0);
+    const taxableSum = proposal.lineItems.reduce((s, li) => s + taxableAmount(li), 0);
+    const gstSum = proposal.lineItems.reduce((s, li) => s + gstAmount(li), 0);
+    const grandComputed = taxableSum + gstSum + setupCharges;
+
+    const grandFromProposal =
+      (typeof (proposal as unknown as { grandTotal?: number }).grandTotal === "number"
+        ? (proposal as unknown as { grandTotal?: number }).grandTotal
+        : undefined) ?? grandComputed;
+
+    const finalToShow =
+      (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandFromProposal;
+
+    const pushSummary = (label: string, value: number) => {
+      tableBody.push([
+        { content: label, colSpan: 3, styles: { halign: "right", fontStyle: "bold", fontSize: FONT.tableBody } },
+        { content: formatINRTotal(Math.round(value)), styles: { halign: "right", fontStyle: "bold", fontSize: 10 } },
+      ]);
+    };
+
+    pushSummary("Subtotal", baseSum);
+    pushSummary("Discount", -discSum);
+    pushSummary("Taxable Amount", taxableSum);
+    pushSummary("GST Total", gstSum);
+    if (setupCharges > 0) pushSummary("Setup & Deployment Charges", setupCharges);
+    pushSummary("Grand Total (Incl. GST)", grandFromProposal);
+    if ((proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue != null) {
+      pushSummary("Final Quote Value", finalToShow);
+    }
   }
 
   autoTable(doc, {
@@ -923,10 +962,14 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
   doc.addPage();
 
   const chunks = chunkLineItems(proposal.lineItems, ROWS_PER_COMMERCIAL_PAGE);
-  const displayTotal = proposal.lineItems.reduce((sum, item) => sum + lineAmountExTax(item), 0);
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
-  const computedTotal = displayTotal + setupCharges;
-  const totalToShow = proposal.finalQuoteValue ?? computedTotal;
+  const computedGrand =
+    proposal.lineItems.reduce((sum, item) => sum + lineTotalInclGst(item), 0) + setupCharges;
+  const grandFromProposal =
+    (typeof (proposal as unknown as { grandTotal?: number }).grandTotal === "number"
+      ? (proposal as unknown as { grandTotal?: number }).grandTotal
+      : undefined) ?? computedGrand;
+  const totalToShow = (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandFromProposal;
 
   chunks.forEach((chunk, idx) => {
     if (idx > 0) doc.addPage();

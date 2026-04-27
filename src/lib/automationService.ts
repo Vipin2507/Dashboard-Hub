@@ -495,7 +495,7 @@ export function checkAndTriggerPaymentDue(): void {
           if (state.paymentDueRuns[key] === todayIso) return;
           void triggerAutomation("payment_due", {
             customerId: customer.id,
-            customerName: customer.companyName,
+            customerName: customer.customerName ?? customer.companyName,
             invoiceId: inv.id,
             invoiceNumber: inv.invoiceNumber,
             amountDue: inv.totalAmount,
@@ -513,7 +513,7 @@ export function checkAndTriggerPaymentDue(): void {
           if (state.invoiceOverdueRuns[key] === todayIso) return;
           void triggerAutomation("invoice_overdue", {
             customerId: customer.id,
-            customerName: customer.companyName,
+            customerName: customer.customerName ?? customer.companyName,
             invoiceId: inv.id,
             invoiceNumber: inv.invoiceNumber,
             amountDue: inv.totalAmount,
@@ -579,7 +579,7 @@ export function checkAndTriggerProposalFollowUps(): void {
           validUntil: proposal.validUntil,
           daysSinceSent,
           customerId: customer?.id,
-          customerName: customer?.companyName,
+            customerName: customer?.customerName ?? customer?.companyName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
         });
@@ -657,7 +657,7 @@ export function checkInstallmentPaymentReminders(
 
     const baseCtx = {
       customerId: row.customerId,
-      customerName: customer?.companyName ?? row.customerName ?? "Customer",
+    customerName: customer?.customerName ?? row.customerName ?? customer?.companyName ?? "Customer",
       customerPhone: primary?.phone,
       customerEmail: primary?.email,
       invoiceNumber: row.planName ? `${row.planName} · installment` : "Installment",
@@ -728,7 +728,7 @@ export function checkDealFollowUpReminders(
       dealValue: deal.value,
       nextFollowUpDate: new Date(fu + "T12:00:00").toLocaleDateString("en-IN"),
       customerId: deal.customerId,
-      customerName: customer?.companyName,
+      customerName: customer?.customerName ?? customer?.companyName,
       customerPhone: primary?.phone,
       customerEmail: primary?.email,
       salesRepId: rep?.id,

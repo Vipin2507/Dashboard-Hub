@@ -199,7 +199,7 @@ export function useDashboardData() {
     }).length;
 
     const activeProposals = proposalList.filter((p) =>
-      ["sent", "approval_pending", "approved", "negotiation", "won"].includes(p.status),
+      ["sent", "shared", "approval_pending", "approved", "negotiation", "won"].includes(p.status),
     ).length;
     const pendingApprovals = proposalList.filter((p) => p.status === "approval_pending").length;
     const totalProposalValue = proposalList.reduce((s, p) => s + (p.grandTotal ?? 0), 0);

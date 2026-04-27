@@ -101,7 +101,7 @@ export default function CustomersPage() {
   const pageSize = 50;
 
   const [companyName, setCompanyName] = useState('');
-  const [contactName, setContactName] = useState('');
+  const [customerName, setCustomerName] = useState('');
   const [email, setEmail] = useState('');
   const [primaryPhone, setPrimaryPhone] = useState('');
   const [city, setCity] = useState('');
@@ -447,11 +447,11 @@ export default function CustomersPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Company Name *</Label>
-              <Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Acme Corporation" />
+              <Input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="Paridhi Group" />
             </div>
             <div className="space-y-2">
-              <Label>Contact Name *</Label>
-              <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="John Smith" />
+              <Label>Customer Name</Label>
+              <Input value={customerName} onChange={e => setCustomerName(e.target.value)} placeholder="Vaibhav Agrawal (optional)" />
             </div>
             <div className="space-y-2">
               <Label>Email Address *</Label>
@@ -519,9 +519,11 @@ export default function CustomersPage() {
                 if (!companyName || !regionId) return;
                 const chosenSalesExecId = me.role === 'sales_rep' ? me.id : salesExecId;
                 const chosenSalesExecName =
-                  users.find(u => u.id === chosenSalesExecId)?.name ?? (contactName || undefined);
+                  users.find(u => u.id === chosenSalesExecId)?.name ?? undefined;
                 addCustomerMutation.mutate({
-                  name: companyName,
+                  name: companyName || customerName,
+                  customerName: customerName || null,
+                  companyName: companyName || null,
                   state: city || 'Unknown',
                   gstin: gst || null,
                   regionId,
@@ -532,7 +534,7 @@ export default function CustomersPage() {
                   salesExecutive: chosenSalesExecName,
                 });
                 setCompanyName('');
-                setContactName('');
+                setCustomerName('');
                 setEmail('');
                 setPrimaryPhone('');
                 setCity('');

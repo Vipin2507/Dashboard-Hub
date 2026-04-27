@@ -151,7 +151,7 @@ function toProposalRow(proposal) {
     title: proposal.title,
     customerId: proposal.customerId,
     assignedTo: proposal.assignedTo,
-    status: proposal.status,
+    status: proposal.status || "shared",
     grandTotal: Number(proposal.grandTotal) || 0,
     finalQuoteValue:
       proposal.finalQuoteValue == null ? null : Number(proposal.finalQuoteValue),
@@ -403,13 +403,48 @@ app.get("/api/customers/:id", (req, res) => {
 });
 
 app.post("/api/customers", (req, res) => {
-  const { name, state, gstin, regionId, leadId, city, email, primaryPhone, status, salesExecutive, accountManager, deliveryExecutive, remarks } = req.body || {};
+  const {
+    name,
+    customerName,
+    companyName,
+    state,
+    gstin,
+    regionId,
+    leadId,
+    city,
+    email,
+    primaryPhone,
+    status,
+    salesExecutive,
+    accountManager,
+    deliveryExecutive,
+    remarks,
+    tags,
+    tag,
+  } = req.body || {};
   if (!name || !regionId) return res.status(400).json({ error: "name and regionId are required" });
+
+  const normalizedTags = (() => {
+    const fromArray = Array.isArray(tags) ? tags : [];
+    const fromSingle = typeof tags === "string" ? [tags] : typeof tag === "string" ? [tag] : [];
+    const merged = [...fromArray, ...fromSingle]
+      .flatMap((t) => String(t).split(/[,;]/))
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return Array.from(new Set(merged.map((t) => t.toLowerCase()))).map((lower) => {
+      // Preserve original casing from first occurrence
+      const found = merged.find((x) => x.toLowerCase() === lower);
+      return found ?? lower;
+    });
+  })();
 
   const customer = {
     id: req.body?.id || "c" + makeId(),
     leadId: leadId || `L-${makeId()}`,
-    name,
+    // Legacy: store best display name
+    name: companyName || customerName || name,
+    customerName: customerName || (companyName ? name : name) || null,
+    companyName: companyName ?? null,
     state: state || "Unknown",
     gstin: gstin ?? null,
     regionId,
@@ -422,11 +457,12 @@ app.post("/api/customers", (req, res) => {
     accountManager: accountManager || null,
     deliveryExecutive: deliveryExecutive || null,
     remarks: remarks ?? null,
+    tags: JSON.stringify(normalizedTags),
   };
 
   db.prepare(`
-    INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks)
-    VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks)
+    INSERT INTO customers (id, leadId, name, customerName, companyName, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks, tags)
+    VALUES (@id, @leadId, @name, @customerName, @companyName, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks, @tags)
   `).run(customer);
 
   res.status(201).json(customer);
@@ -1153,6 +1189,8 @@ app.put("/api/customers/:id", (req, res) => {
 
   const {
     name,
+    customerName,
+    companyName,
     state,
     gstin,
     regionId,
@@ -1165,11 +1203,29 @@ app.put("/api/customers/:id", (req, res) => {
     accountManager,
     deliveryExecutive,
     remarks,
+    tags,
+    tag,
   } = req.body || {};
+
+  const normalizedTags = (() => {
+    if (tags === undefined && tag === undefined) return undefined;
+    const fromArray = Array.isArray(tags) ? tags : [];
+    const fromSingle = typeof tags === "string" ? [tags] : typeof tag === "string" ? [tag] : [];
+    const merged = [...fromArray, ...fromSingle]
+      .flatMap((t) => String(t).split(/[,;]/))
+      .map((t) => t.trim())
+      .filter(Boolean);
+    return Array.from(new Set(merged.map((t) => t.toLowerCase()))).map((lower) => {
+      const found = merged.find((x) => x.toLowerCase() === lower);
+      return found ?? lower;
+    });
+  })();
 
   const updated = {
     ...existing,
     ...(name !== undefined && { name }),
+    ...(customerName !== undefined && { customerName }),
+    ...(companyName !== undefined && { companyName }),
     ...(state !== undefined && { state }),
     ...(gstin !== undefined && { gstin }),
     ...(regionId !== undefined && { regionId }),
@@ -1182,13 +1238,21 @@ app.put("/api/customers/:id", (req, res) => {
     ...(accountManager !== undefined && { accountManager }),
     ...(deliveryExecutive !== undefined && { deliveryExecutive }),
     ...(remarks !== undefined && { remarks }),
+    ...(normalizedTags !== undefined && { tags: JSON.stringify(normalizedTags) }),
   };
+
+  // Keep legacy `name` in sync as best display name
+  if (customerName !== undefined || companyName !== undefined) {
+    const cn = customerName !== undefined ? customerName : updated.customerName;
+    const co = companyName !== undefined ? companyName : updated.companyName;
+    updated.name = co || cn || updated.name;
+  }
 
   db.prepare(`
     UPDATE customers SET
-      leadId=@leadId, name=@name, state=@state, gstin=@gstin, regionId=@regionId, city=@city,
+      leadId=@leadId, name=@name, customerName=@customerName, companyName=@companyName, state=@state, gstin=@gstin, regionId=@regionId, city=@city,
       email=@email, primaryPhone=@primaryPhone, status=@status, salesExecutive=@salesExecutive,
-      accountManager=@accountManager, deliveryExecutive=@deliveryExecutive, remarks=@remarks
+      accountManager=@accountManager, deliveryExecutive=@deliveryExecutive, remarks=@remarks, tags=@tags
     WHERE id=@id
   `).run(updated);
 

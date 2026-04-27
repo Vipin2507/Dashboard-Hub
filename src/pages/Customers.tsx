@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
   Select,
   SelectTrigger,
@@ -97,6 +98,8 @@ export default function Customers() {
     id: string;
     leadId?: string;
     name: string;
+    customerName?: string | null;
+    companyName?: string | null;
     state?: string | null;
     gstin?: string | null;
     regionId: string;
@@ -108,6 +111,28 @@ export default function Customers() {
     salesExecutive?: string | null;
     accountManager?: string | null;
     deliveryExecutive?: string | null;
+    tags?: string | string[] | null;
+  };
+
+  const normalizeTags = (input: unknown): string[] => {
+    if (Array.isArray(input)) return input.map((t) => String(t)).filter(Boolean);
+    if (typeof input === "string") {
+      const s = input.trim();
+      if (!s) return [];
+      if (s.startsWith("[")) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed.map((t) => String(t)).filter(Boolean);
+        } catch {
+          // fall through
+        }
+      }
+      return s
+        .split(/[,;]/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+    }
+    return [];
   };
 
   const toUiCustomer = (row: ApiCustomer): Customer => {
@@ -117,10 +142,14 @@ export default function Customers() {
       users.find((u) => u.regionId === row.regionId && u.role === "sales_rep") ??
       users[0];
     const nowIso = row.createdAt ?? new Date().toISOString();
+    const person = (row.customerName ?? "").trim();
+    const company = (row.companyName ?? "").trim();
+    const fallback = (company || person || row.name || "Customer").trim();
     return {
       id: row.id,
       customerNumber: row.leadId ?? `CUST-${row.id.slice(-4).toUpperCase()}`,
-      companyName: row.name,
+      customerName: person || (company ? "" : (row.name ?? "").trim()) || fallback,
+      companyName: company || (person ? "" : (row.name ?? "").trim()) || "",
       status: (row.status as CustomerStatus) ?? "active",
       gstin: row.gstin ?? undefined,
       pan: undefined,
@@ -134,7 +163,7 @@ export default function Customers() {
       contacts: [
         {
           id: `ct-${row.id}`,
-          name: row.name,
+          name: person || fallback,
           email: row.email ?? undefined,
           phone: row.primaryPhone ?? undefined,
           isPrimary: true,
@@ -145,7 +174,7 @@ export default function Customers() {
       teamId: assignedUser?.teamId ?? users[0]?.teamId ?? "t1",
       assignedTo: assignedUser?.id ?? users[0]?.id ?? me.id,
       assignedToName: assignedUser?.name ?? row.salesExecutive ?? "Unassigned",
-      tags: [],
+      tags: normalizeTags(row.tags),
       notes: [],
       attachments: [],
       productLines: [],
@@ -165,10 +194,13 @@ export default function Customers() {
 
   const toApiPayload = (customer: Customer) => {
     const primary = customer.contacts.find((c) => c.isPrimary) ?? customer.contacts[0];
+    const displayName = (customer.companyName || customer.customerName || customer.customerNumber).trim();
     return {
       id: customer.id,
       leadId: customer.customerNumber,
-      name: customer.companyName,
+      name: displayName,
+      customerName: customer.customerName,
+      companyName: customer.companyName || null,
       state: customer.address?.state ?? null,
       gstin: customer.gstin ?? null,
       regionId: customer.regionId,
@@ -179,6 +211,7 @@ export default function Customers() {
       salesExecutive: users.find((u) => u.id === customer.assignedTo)?.name ?? customer.assignedToName ?? null,
       accountManager: null,
       deliveryExecutive: null,
+      tags: customer.tags ?? [],
     };
   };
 
@@ -244,6 +277,8 @@ export default function Customers() {
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [createSuccessOpen, setCreateSuccessOpen] = useState(false);
+  const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const [customerModuleTab, setCustomerModuleTab] = useState<"directory" | "renewals">("directory");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
@@ -289,7 +324,8 @@ export default function Customers() {
     if (q) {
       list = list.filter(
         (c) =>
-          c.companyName.toLowerCase().includes(q) ||
+          (c.companyName || "").toLowerCase().includes(q) ||
+          (c.customerName || "").toLowerCase().includes(q) ||
           c.customerNumber.toLowerCase().includes(q) ||
           (c.gstin?.toLowerCase().includes(q) ?? false) ||
           (c.address?.city?.toLowerCase().includes(q) ?? false)
@@ -347,7 +383,8 @@ export default function Customers() {
   const handleExportCsv = () => {
     const headers = [
       "Customer #",
-      "Company",
+      "Company Name",
+      "Customer Name",
       "Primary Contact",
       "City",
       "Assigned To",
@@ -360,7 +397,8 @@ export default function Customers() {
       const pc = primaryContact(c);
       return [
         c.customerNumber,
-        c.companyName,
+        c.companyName || c.customerName,
+        c.customerName || "",
         pc ? `${pc.name} (${pc.email})` : "",
         c.address?.city ?? "",
         c.assignedToName,
@@ -385,7 +423,7 @@ export default function Customers() {
       onError: (e: Error) =>
         toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
     });
-    toast({ title: "Customer deleted", description: `${c.companyName} has been removed.` });
+    toast({ title: "Customer deleted", description: `${c.companyName || c.customerName} has been removed.` });
     setDeleteTarget(null);
   };
 
@@ -593,6 +631,21 @@ export default function Customers() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <SearchableSelect
+                      value={tagsFilter}
+                      onValueChange={(v) => {
+                        setTagsFilter(v === "__all__" ? "" : v);
+                        setPage(1);
+                      }}
+                      options={[
+                        { value: "__all__", label: "All tags" },
+                        ...allTags.map((t) => ({ value: t, label: t })),
+                      ]}
+                      placeholder="All tags"
+                      searchPlaceholder="Search tags…"
+                      emptyText="No tags found."
+                      triggerClassName="h-9 text-sm w-full sm:w-40"
+                    />
                     {canExport && (
                       <Button variant="outline" size="sm" className="h-9" onClick={handleExportCsv}>
                         <FileDown className="mr-1.5 h-4 w-4" /> Export
@@ -661,11 +714,12 @@ export default function Customers() {
                                   <td className="px-4 py-3.5">
                                     <div>
                                       <p className="text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">
-                                        {c.companyName}
+                                        {c.companyName || c.customerName}
                                       </p>
-                                      {c.industry && (
-                                        <p className="mt-0.5 text-xs text-gray-400">{c.industry}</p>
-                                      )}
+                                      <p className="mt-0.5 text-xs text-gray-400">
+                                        {c.customerName || c.companyName}
+                                      </p>
+                                      {c.industry && <p className="mt-0.5 text-xs text-gray-400">{c.industry}</p>}
                                     </div>
                                   </td>
                                   <td className="hidden px-4 py-3.5 md:table-cell">
@@ -781,8 +835,11 @@ export default function Customers() {
                       <div className="mb-3 flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
                           <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {c.companyName}
+                            {c.companyName || c.customerName}
                           </h3>
+                          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">
+                            {c.customerName || c.companyName}
+                          </p>
                           <p className="mt-0.5 font-mono text-xs text-gray-400">{c.customerNumber}</p>
                         </div>
                         <span
@@ -886,11 +943,54 @@ export default function Customers() {
           }
           await updateCustomerMutation.mutateAsync(customer);
         }}
-        onSaved={() => {
+        onSaved={(customer, mode) => {
           setFormOpen(false);
           setEditingCustomer(null);
+          if (mode === "create") {
+            setCreatedCustomerId(customer.id);
+            setCreateSuccessOpen(true);
+          }
         }}
       />
+
+      <AlertDialog
+        open={createSuccessOpen}
+        onOpenChange={(open) => {
+          setCreateSuccessOpen(open);
+          if (!open) setCreatedCustomerId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Customer added successfully!</AlertDialogTitle>
+            <AlertDialogDescription>
+              You can go back to the customer list or create a proposal for this customer now.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel
+              className="w-full sm:w-auto"
+              onClick={() => {
+                setCreateSuccessOpen(false);
+                setCreatedCustomerId(null);
+              }}
+            >
+              Go to Customer List
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => {
+                const cid = createdCustomerId;
+                setCreateSuccessOpen(false);
+                setCreatedCustomerId(null);
+                if (cid) navigate("/proposals", { state: { customerId: cid } });
+              }}
+            >
+              + Create Proposal
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <BulkImportCustomersDialog
         open={bulkImportOpen}

@@ -3,7 +3,12 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY,
   leadId TEXT NOT NULL,
+  -- Legacy display name (kept for backward compatibility). New UI should use customerName/companyName.
   name TEXT NOT NULL,
+  -- Person's full name (required in UI)
+  customerName TEXT,
+  -- Business/organization name (optional)
+  companyName TEXT,
   state TEXT,
   gstin TEXT,
   regionId TEXT NOT NULL,
@@ -15,7 +20,9 @@ CREATE TABLE IF NOT EXISTS customers (
   salesExecutive TEXT,
   accountManager TEXT,
   deliveryExecutive TEXT,
-  remarks TEXT
+  remarks TEXT,
+  -- JSON string: ["VIP","Renewal"]
+  tags TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS regions (

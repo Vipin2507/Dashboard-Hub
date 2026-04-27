@@ -83,7 +83,10 @@ export function ProposalFormDialog({
   };
 
   const [title, setTitle] = useState("");
+  const [isTitleAuto, setIsTitleAuto] = useState(true);
+  const [titleAutoCreatedAt, setTitleAutoCreatedAt] = useState<Date | null>(null);
   const [customerId, setCustomerId] = useState("");
+  const [status, setStatus] = useState<Proposal["status"]>("shared");
   const [assignedTo, setAssignedTo] = useState("");
   const [validUntil, setValidUntil] = useState(defaultValidUntil());
   const [customerNotes, setCustomerNotes] = useState("");
@@ -107,10 +110,51 @@ export function ProposalFormDialog({
     return { subtotal, totalDiscount, totalTax, grandTotal };
   }, [lineItems, setupDeploymentCharges]);
 
-  const customerOptions = useMemo(
-    () => customers.map((c) => ({ value: c.id, label: c.companyName })),
-    [customers],
-  );
+  const monthYear = useMemo(() => {
+    const d = titleAutoCreatedAt ?? new Date();
+    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }, [titleAutoCreatedAt]);
+
+  const computeAutoTitleBase = () => {
+    const customer = customers.find((c) => c.id === customerId);
+    const primaryContactName =
+      customer?.contacts?.find((c) => c.isPrimary)?.name ?? customer?.contacts?.[0]?.name ?? "";
+    const companyOrCustomerName = (customer?.companyName ?? primaryContactName ?? "").trim() || "Customer";
+    const serviceOrProduct =
+      (lineItems.find((li) => li.name && li.name.trim())?.name ?? "").trim() || "Proposal";
+    return `${companyOrCustomerName} – ${serviceOrProduct} – ${monthYear}`;
+  };
+
+  const makeUniqueTitle = (base: string) => {
+    const existing = new Set(
+      proposals
+        .filter((p) => p.id !== editingProposal?.id)
+        .map((p) => (p.title ?? "").trim())
+        .filter(Boolean),
+    );
+    if (!existing.has(base)) return base;
+    let n = 2;
+    // Avoid infinite loop; realistic titles will settle quickly.
+    while (n < 10_000) {
+      const next = `${base} (${n})`;
+      if (!existing.has(next)) return next;
+      n++;
+    }
+    return `${base} (${Date.now()})`;
+  };
+
+  const autoTitle = useMemo(() => {
+    const base = computeAutoTitleBase();
+    return makeUniqueTitle(base);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId, lineItems, monthYear, proposals, editingProposal?.id]);
+
+  const customerOptions = useMemo(() => {
+    return customers.map((c) => ({
+      value: c.id,
+      label: c.companyName || c.customerName || c.customerNumber,
+    }));
+  }, [customers]);
   const userOptions = useMemo(() => users.map((u) => ({ value: u.id, label: u.name })), [users]);
 
   const activeInventory = useMemo(() => inventoryItems.filter((it) => it.isActive), [inventoryItems]);
@@ -198,12 +242,12 @@ export function ProposalFormDialog({
       proposalNumber: editingProposal?.proposalNumber ?? getNextProposalNumber(),
       title,
       customerId,
-      customerName: customer?.companyName ?? "",
+      customerName: customer?.customerName ?? "",
       assignedTo: assignedTo || me.id,
       assignedToName: assignedUser?.name ?? users.find((u) => u.id === (assignedTo || me.id))?.name ?? "",
       regionId: editingProposal?.regionId ?? me.regionId,
       teamId: editingProposal?.teamId ?? me.teamId,
-      status: editingProposal?.status ?? "draft",
+      status: editingProposal?.status ?? status ?? "shared",
       validUntil,
       lineItems,
       setupDeploymentCharges: Number(setupDeploymentCharges) || 0,
@@ -231,8 +275,8 @@ export function ProposalFormDialog({
     }
     const payload = buildProposal();
     if (editingProposal) {
-      updateProposal(editingProposal.id, { ...payload, status: "draft" });
-      toast({ title: "Proposal updated", description: `${payload.proposalNumber} saved as draft.` });
+      updateProposal(editingProposal.id, payload);
+      toast({ title: "Proposal updated", description: `${payload.proposalNumber} saved.` });
     } else {
       const id = "p" + makeId();
       const now = new Date().toISOString();
@@ -242,7 +286,7 @@ export function ProposalFormDialog({
         createdAt: now,
         updatedAt: now,
       } as Proposal);
-      toast({ title: "Proposal created", description: `${payload.proposalNumber} saved as draft.` });
+      toast({ title: "Proposal created", description: `${payload.proposalNumber} saved as ${payload.status}.` });
     }
     invalidateProposalQueries();
     onSaved();
@@ -301,7 +345,10 @@ export function ProposalFormDialog({
     if (!open) return;
     if (editingProposal) {
       setTitle(editingProposal.title);
+      setIsTitleAuto(false);
+      setTitleAutoCreatedAt(null);
       setCustomerId(editingProposal.customerId);
+      setStatus(editingProposal.status ?? "shared");
       setAssignedTo(editingProposal.assignedTo);
       setValidUntil(editingProposal.validUntil);
       setCustomerNotes(editingProposal.customerNotes ?? "");
@@ -311,8 +358,11 @@ export function ProposalFormDialog({
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
     } else {
-      setTitle("");
+      const createdAt = new Date();
+      setTitleAutoCreatedAt(createdAt);
+      setIsTitleAuto(true);
       setCustomerId(initialCustomerId ?? "");
+      setStatus("shared");
       setAssignedTo(me.id);
       setValidUntil(defaultValidUntil());
       setCustomerNotes("");
@@ -323,6 +373,13 @@ export function ProposalFormDialog({
       setFinalQuoteValue("");
     }
   }, [open, editingProposal?.id, initialCustomerId]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (editingProposal) return;
+    if (!isTitleAuto) return;
+    setTitle(autoTitle);
+  }, [open, editingProposal?.id, isTitleAuto, autoTitle]);
 
   return (
     <>
@@ -335,8 +392,29 @@ export function ProposalFormDialog({
           <DialogBody className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Lead Name / Proposal Title *</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lead name or proposal title" />
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Lead Name / Proposal Title *</Label>
+                  {!editingProposal && !isTitleAuto ? (
+                    <button
+                      type="button"
+                      className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                      onClick={() => {
+                        setIsTitleAuto(true);
+                        setTitle(autoTitle);
+                      }}
+                    >
+                      ↺ Reset to auto
+                    </button>
+                  ) : null}
+                </div>
+                <Input
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (!editingProposal && isTitleAuto) setIsTitleAuto(false);
+                  }}
+                  placeholder="Lead name or proposal title"
+                />
               </div>
               <div className="space-y-2">
                 <Label>Company Name *</Label>
@@ -345,6 +423,27 @@ export function ProposalFormDialog({
                   onValueChange={setCustomerId}
                   options={customerOptions}
                   placeholder="Select company"
+                  triggerClassName="h-10 text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <SearchableSelect
+                  value={status}
+                  onValueChange={(v) => setStatus(v as Proposal["status"])}
+                  options={[
+                    { value: "draft", label: "Draft" },
+                    { value: "sent", label: "Sent" },
+                    { value: "shared", label: "Shared" },
+                    { value: "approval_pending", label: "Approval Pending" },
+                    { value: "approved", label: "Approved" },
+                    { value: "negotiation", label: "Negotiation" },
+                    { value: "won", label: "Won" },
+                    { value: "rejected", label: "Rejected" },
+                    { value: "cold", label: "Cold" },
+                    { value: "deal_created", label: "Deal Created" },
+                  ]}
+                  placeholder="Shared"
                   triggerClassName="h-10 text-sm"
                 />
               </div>

@@ -449,7 +449,7 @@ export default function DealsPage() {
           dealTitle: data.name,
           dealValue: data.value,
           customerId: data.customerId,
-          customerName: customer?.companyName,
+          customerName: customer?.customerName,
           customerPhone: primary?.phone,
           customerEmail: primary?.email,
           salesRepId: rep?.id,
@@ -465,7 +465,7 @@ export default function DealsPage() {
           dealTitle: data.name,
           dealValue: data.value,
           customerId: data.customerId,
-          customerName: customer?.companyName,
+          customerName: customer?.customerName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           lossReason: data.lossReason ?? "",
@@ -513,7 +513,7 @@ export default function DealsPage() {
     const q = search.trim().toLowerCase();
     return scopedActiveDeals.filter((d) => {
       if (q) {
-        const customerName = customers.find((c) => c.id === d.customerId)?.companyName ?? "";
+        const customerName = customers.find((c) => c.id === d.customerId)?.customerName ?? "";
         const inv = String(d.invoiceNumber ?? "").toLowerCase();
         const svc = String(d.serviceName ?? "").toLowerCase();
         if (
@@ -658,7 +658,7 @@ export default function DealsPage() {
             dealTitle: saved.name,
             dealValue: saved.value,
             customerId: saved.customerId,
-            customerName: customer?.companyName,
+            customerName: customer?.customerName,
             customerPhone: primary?.phone,
             customerEmail: primary?.email,
             salesRepId: rep?.id,
@@ -672,7 +672,7 @@ export default function DealsPage() {
             dealTitle: saved.name,
             dealValue: saved.value,
             customerId: saved.customerId,
-            customerName: customer?.companyName,
+            customerName: customer?.customerName,
             salesRepId: rep?.id,
             salesRepName: rep?.name,
             lossReason: saved.lossReason ?? "",
@@ -699,7 +699,7 @@ export default function DealsPage() {
           dealTitle: saved.name,
           dealValue: saved.value,
           customerId: saved.customerId,
-          customerName: customer?.companyName,
+          customerName: customer?.customerName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           companyName: "Cravingcode Technologies Pvt. Ltd.",
@@ -1021,7 +1021,9 @@ export default function DealsPage() {
                     {visible
                       .filter((d) => d.stage === stage)
                       .map((deal) => {
-                        const cust = customers.find((c) => c.id === deal.customerId)?.companyName ?? "—";
+                        const custObj = customers.find((c) => c.id === deal.customerId);
+                        const comp = custObj?.companyName || custObj?.customerName || "—";
+                        const cust = custObj?.customerName || custObj?.companyName || "—";
                         const ownerName = users.find((u) => u.id === deal.ownerUserId)?.name ?? "";
                         return (
                           <div
@@ -1045,7 +1047,8 @@ export default function DealsPage() {
                                 ₹{(deal.value ?? 0).toLocaleString("en-IN")}
                               </span>
                             </div>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 line-clamp-1">{cust}</p>
+                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 mb-0.5 line-clamp-1">{comp}</p>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 line-clamp-1">{cust}</p>
                             <div className="flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
@@ -1121,7 +1124,9 @@ export default function DealsPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {visible.map((deal) => {
-                    const cust = customers.find((c) => c.id === deal.customerId)?.companyName ?? "—";
+                    const custObj = customers.find((c) => c.id === deal.customerId);
+                    const comp = custObj?.companyName || custObj?.customerName || "—";
+                    const cust = custObj?.customerName || custObj?.companyName || "—";
                     return (
                       <tr
                         key={deal.id}
@@ -1150,10 +1155,16 @@ export default function DealsPage() {
                               className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 text-left"
                               onClick={() => navigate(`/customers/${deal.customerId}`)}
                             >
-                              {cust}
+                              <div className="leading-tight">
+                                <div className="text-sm font-medium">{comp}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{cust}</div>
+                              </div>
                             </button>
                           ) : (
-                            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{cust}</p>
+                            <div className="leading-tight">
+                              <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{comp}</div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">{cust}</div>
+                            </div>
                           )}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm font-semibold text-gray-900 dark:text-gray-100">

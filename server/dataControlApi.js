@@ -727,8 +727,8 @@ export function registerDataControlApi(app, db, helpers = {}) {
 
   function importCustomers(rows, userId, userName) {
     const insert = db.prepare(`
-      INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks)
-      VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks)
+      INSERT INTO customers (id, leadId, name, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks, tags)
+      VALUES (@id, @leadId, @name, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks, @tags)
     `);
     let created = 0;
     const rowErrors = [];
@@ -761,6 +761,7 @@ export function registerDataControlApi(app, db, helpers = {}) {
           accountManager: null,
           deliveryExecutive: null,
           remarks: raw.remarks != null && String(raw.remarks).trim() ? String(raw.remarks).trim() : null,
+          tags: "[]",
         };
         insert.run(row);
         auditInsert("bulk_import", "customer_management", "customer", id, null, null, null, { index }, userId, userName);
