@@ -988,14 +988,28 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
     });
   };
 
-  const onSubmit = (values: FormValues) => {
+  const onSubmit = async (values: FormValues) => {
     const now = new Date().toISOString();
     if (template) {
-      updateAutomationTemplate(template.id, {
+      const next = {
+        ...template,
         ...values,
         subject: values.channel === "email" ? values.subject : undefined,
-      });
-      toast({ title: "Template updated" });
+        updatedAt: now,
+      } satisfies AutomationTemplate;
+      try {
+        const res = await fetch(apiUrl(`/api/automation/templates/${encodeURIComponent(template.id)}`), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(next),
+        });
+        if (!res.ok) throw new Error((await res.text().catch(() => "")) || `HTTP ${res.status}`);
+        updateAutomationTemplate(template.id, next);
+        toast({ title: "Template updated" });
+      } catch (e) {
+        toast({ title: "Failed to save template", description: String(e), variant: "destructive" });
+        return;
+      }
     } else {
       const newTemplate: AutomationTemplate = {
         id: `tpl-${crypto.randomUUID().slice(0, 8)}`,
@@ -1012,8 +1026,19 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         createdAt: now,
         updatedAt: now,
       };
-      addAutomationTemplate(newTemplate);
-      toast({ title: "Template created" });
+      try {
+        const res = await fetch(apiUrl("/api/automation/templates"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newTemplate),
+        });
+        if (!res.ok) throw new Error((await res.text().catch(() => "")) || `HTTP ${res.status}`);
+        addAutomationTemplate(newTemplate);
+        toast({ title: "Template created" });
+      } catch (e) {
+        toast({ title: "Failed to create template", description: String(e), variant: "destructive" });
+        return;
+      }
     }
     onClose();
   };

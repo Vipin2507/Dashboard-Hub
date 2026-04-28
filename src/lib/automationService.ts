@@ -11,6 +11,24 @@ import type {
 } from "@/types";
 
 const RULE_STATE_KEY = "buildesk_automation_rule_state_v1";
+const TEMPLATE_REFRESH_TTL_MS = 15_000;
+let lastTemplateRefreshAt = 0;
+
+async function refreshTemplatesIfStale(): Promise<void> {
+  const now = Date.now();
+  if (now - lastTemplateRefreshAt < TEMPLATE_REFRESH_TTL_MS) return;
+  lastTemplateRefreshAt = now;
+  try {
+    const res = await fetch(apiUrl("/api/automation/templates"));
+    if (!res.ok) return;
+    const items = (await res.json()) as AutomationTemplate[];
+    if (Array.isArray(items) && items.length > 0) {
+      useAppStore.setState({ automationTemplates: items });
+    }
+  } catch {
+    // ignore offline API
+  }
+}
 
 type RuleState = {
   followUpRuns: Record<string, number>;
@@ -79,6 +97,9 @@ function updateAutomationLog(logId: string, updates: Partial<AutomationLog>): vo
 // Call this from anywhere in the app when a triggerable event occurs.
 // e.g. triggerAutomation('proposal_sent', { proposalId: 'p-001' })
 export async function triggerAutomation(trigger: AutomationTrigger, context: AutomationContext): Promise<void> {
+  // Ensure we don't use stale templates (common when templates are edited in backend/other tab
+  // and the user sends immediately without visiting the Automation page).
+  await refreshTemplatesIfStale();
   const { automationTemplates, automationSettings } = useAppStore.getState();
 
   const templates = automationTemplates.filter((t) => t.trigger === trigger && t.isActive);
