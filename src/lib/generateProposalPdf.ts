@@ -5,6 +5,11 @@ import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images
 
 // Brand blue (hex #176CEC)
 const BLUE = [23, 108, 236] as const;
+// Proposal accent blue (hex #2196F3) — requested for commercial/terms/table header.
+const PROPOSAL_BLUE = [33, 150, 243] as const;
+const WHITE = [255, 255, 255] as const;
+// Light blue for "Grand Total" row (hex #E3F2FD)
+const GRAND_TOTAL_FILL = [227, 242, 253] as const;
 const PAGE_W = 210;
 const PAGE_H = 297;
 
@@ -345,7 +350,7 @@ function renderVersionPage(
   const versionData =
     proposal.versionHistory?.map((v) => {
       const user = users.find((u) => u.id === v.createdBy);
-      const userName = user ? `Mr. ${user.name}` : v.createdBy;
+      const userName = user ? `Mr. ${cleanName(user.name)}` : cleanName(String(v.createdBy ?? ""));
       const comment = DEFAULT_VERSION_COMMENT;
       return [
         Number(v.version ?? 1).toFixed(1),
@@ -357,7 +362,7 @@ function renderVersionPage(
       [
         Number(proposal.currentVersion || 1).toFixed(1),
         formatProposalDate(proposal.createdAt),
-        `Mr. ${proposal.assignedToName}`,
+        `Mr. ${cleanName(proposal.assignedToName)}`,
         DEFAULT_VERSION_COMMENT,
       ],
     ];
@@ -494,7 +499,8 @@ function renderCoverLetterPage(
   doc.setTextColor(40, 40, 40);
   doc.text("Yours Truly,", L.marginLeft, signatureY);
   doc.setFont("helvetica", "bold");
-  doc.text(cleanName(proposal.assignedToName), L.marginLeft, signatureY + 10);
+  // Add two blank lines between sign-off and name.
+  doc.text(cleanName(proposal.assignedToName), L.marginLeft, signatureY + 17);
 
   addPageNumber(doc, pageNum);
 }
@@ -523,11 +529,11 @@ function renderCommercialSection(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.commercialTitle);
-  doc.setTextColor(0, 0, 0);
+  doc.setTextColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
   const commercialY = L.contentStartY + 6;
   doc.text("Commercial", L.marginLeft, commercialY);
 
-  doc.setDrawColor(0, 0, 0);
+  doc.setDrawColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
   doc.setLineWidth(0.5);
   const comW = doc.getTextWidth("Commercial");
   doc.line(L.marginLeft, commercialY + 1.5, L.marginLeft + comW, commercialY + 1.5);
@@ -574,22 +580,40 @@ function renderCommercialSection(
     const finalToShow =
       (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandFromProposal;
 
+    let grandTotalRowIndex: number | null = null;
     const pushSummary = (label: string, value: number) => {
+      const isGrand = label.toLowerCase().includes("grand total");
+      const fill = isGrand ? GRAND_TOTAL_FILL : WHITE;
+      const fontStyle = isGrand ? "bold" : "normal";
+      const valueToShow = label.toLowerCase() === "discount" ? Math.abs(value) : value;
       tableBody.push([
         {
           content: label,
           colSpan: 3,
-          styles: { halign: "left", fontStyle: "bold", fontSize: FONT.tableBody },
+          styles: {
+            halign: "center",
+            fontStyle,
+            fontSize: FONT.tableBody,
+            fillColor: fill,
+            textColor: [0, 0, 0],
+          },
         },
         {
-          content: formatINRTotal(Math.round(value)),
-          styles: { halign: "left", fontStyle: "bold", fontSize: 10 },
+          content: formatINRTotal(Math.round(valueToShow)),
+          styles: {
+            halign: "right",
+            fontStyle,
+            fontSize: 10,
+            fillColor: fill,
+            textColor: [0, 0, 0],
+          },
         },
       ]);
+      if (isGrand) grandTotalRowIndex = tableBody.length - 1;
     };
 
     pushSummary("Subtotal", baseSum);
-    pushSummary("Discount", -discSum);
+    pushSummary("Discount", discSum);
     pushSummary("Taxable Amount", taxableSum);
     pushSummary("GST Total", gstSum);
     if (setupCharges > 0) pushSummary("Setup & Deployment Charges", setupCharges);
@@ -601,7 +625,7 @@ function renderCommercialSection(
 
   autoTable(doc, {
     startY: tableStart,
-    head: [["Sr. No.", "Description", "Service", "Annual License Cost (in INR)"]],
+    head: [["Sr. No.", "Description", "Service", "Annual Cost (INR)"]],
     body: tableBody as never,
     theme: "grid",
     tableLineColor: [0, 0, 0],
@@ -616,7 +640,7 @@ function renderCommercialSection(
       valign: "middle",
     },
     headStyles: {
-      fillColor: [BLUE[0], BLUE[1], BLUE[2]],
+      fillColor: [PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]],
       textColor: [255, 255, 255],
       fontStyle: "bold",
       fontSize: 10,
@@ -631,8 +655,9 @@ function renderCommercialSection(
       lineColor: [0, 0, 0],
       lineWidth: 0.35,
       cellPadding: { top: 3.5, bottom: 3.5, left: 3, right: 3 },
+      fillColor: [WHITE[0], WHITE[1], WHITE[2]],
     },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    alternateRowStyles: { fillColor: [WHITE[0], WHITE[1], WHITE[2]] },
     columnStyles: {
       0: { halign: "center", cellWidth: L.comColSr },
       1: { halign: "left", cellWidth: L.comColDesc, fontSize: 10.5 },
@@ -640,24 +665,6 @@ function renderCommercialSection(
       3: { halign: "right", cellWidth: L.comColCost },
     },
     margin: { left: L.marginLeft, right: L.marginRight },
-    didParseCell: (data) => {
-      const body = tableBody as { colSpan?: number }[][];
-      const lastRow = body[body.length - 1];
-      if (
-        data.row.index === body.length - 1 &&
-        Array.isArray(lastRow) &&
-        lastRow[0] &&
-        typeof lastRow[0] === "object" &&
-        "colSpan" in (lastRow[0] as object)
-      ) {
-        data.cell.styles.fillColor = [235, 244, 252];
-        data.cell.styles.fontStyle = "bold";
-        if (data.column.index === 3) {
-          data.cell.styles.textColor = [0, 0, 0];
-          data.cell.styles.fontSize = 10;
-        }
-      }
-    },
   });
 
   const isLastCommercialPage = chunkIndex === totalChunks - 1;
@@ -677,67 +684,71 @@ function renderCommercialSection(
   // Terms should start immediately after the product table (or NOTE), not on a separate page.
   if (isLastCommercialPage) {
     const terms = getTermsForProposal(proposal);
-    const lineHeight = 5.2;
-    const itemGap = 2.5;
-    const fontSize = 9.5;
+    const footerLimitY = 276;
 
-    const renderTermsHeading = (y: number, contd: boolean) => {
+    const chooseLayout = () => {
+      const candidates = [
+        { fontSize: 9.5, lineHeight: 5.1, itemGap: 2.0, titleGap: 8 },
+        { fontSize: 9.0, lineHeight: 4.9, itemGap: 1.6, titleGap: 7 },
+        { fontSize: 8.6, lineHeight: 4.7, itemGap: 1.4, titleGap: 6 },
+      ];
+      const estimate = (c: (typeof candidates)[number], startY: number) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(c.fontSize);
+        let h = 0;
+        // Title line + gap to bullets
+        h += c.titleGap + 2;
+        for (const item of terms) {
+          const lines = doc.splitTextToSize(`• ${item}`, L.contentWidth - 4);
+          const linesCount = Math.max(1, lines.length);
+          h += linesCount * c.lineHeight + c.itemGap;
+        }
+        return startY + h;
+      };
+
+      const titleY = afterY + 6;
+      for (const c of candidates) {
+        if (estimate(c, titleY) <= footerLimitY) return { ...c, titleY };
+      }
+      return { ...candidates[candidates.length - 1], titleY };
+    };
+
+    const layout = chooseLayout();
+
+    const renderTermsHeading = (y: number) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(FONT.termsTitle);
-      doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-      doc.text("Terms &", L.marginLeft, y);
-      const termsAmpW = doc.getTextWidth("Terms &");
-      doc.setTextColor(0, 0, 0);
-      doc.text(contd ? " Conditions (contd.)" : " Conditions", L.marginLeft + termsAmpW, y);
+      doc.setTextColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
+      doc.text("Terms & Conditions", L.marginLeft, y);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(fontSize);
+      doc.setFontSize(layout.fontSize);
       doc.setTextColor(40, 40, 40);
-      return y + 10;
+      return y + layout.titleGap;
     };
 
-    const newTermsPage = (contd: boolean) => {
-      addPageNumber(doc, currentPageNum);
-      currentPageNum += 1;
-      doc.addPage();
-      addPageHeader(doc);
-      return renderTermsHeading(L.contentStartY, contd);
-    };
-
-    // Ensure there is enough space for the title + at least one bullet line.
-    const titleY = afterY + 10;
-    const minNeeded = 10 /* title */ + 10 /* title gap */ + lineHeight + itemGap;
-    let y = titleY;
-    let contd = false;
-    if (y + minNeeded > L.footerBreakY) {
-      y = newTermsPage(false);
-    } else {
-      y = renderTermsHeading(y, false);
-    }
+    let y = renderTermsHeading(layout.titleY);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(fontSize);
+    doc.setFontSize(layout.fontSize);
     doc.setTextColor(40, 40, 40);
 
-    // Paginate bullets so they never get clipped.
+    // Render all points on this page (no continuation page).
     for (const item of terms) {
       const firstLine = `• ${item}`;
       const lines = doc.splitTextToSize(firstLine, L.contentWidth - 4);
-      const itemHeight = Math.max(1, lines.length) * lineHeight + itemGap;
-      if (y + itemHeight > L.footerBreakY) {
-        contd = true;
-        y = newTermsPage(contd);
-      }
+      const itemHeight = Math.max(1, lines.length) * layout.lineHeight + layout.itemGap;
+      if (y + itemHeight > footerLimitY) break;
 
       if (lines.length) {
         doc.text(lines[0], L.marginLeft, y);
         if (lines.length > 1) {
           for (let i = 1; i < lines.length; i++) {
-            y += lineHeight;
+            y += layout.lineHeight;
             doc.text(lines[i], L.marginLeft + 3, y);
           }
         }
       }
-      y += lineHeight + itemGap;
+      y += layout.lineHeight + layout.itemGap;
     }
   }
 
