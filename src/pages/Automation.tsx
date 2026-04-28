@@ -255,11 +255,71 @@ export default function Automation() {
 
         if (tplRes.ok) {
           const serverTemplates = (await tplRes.json()) as AutomationTemplate[];
+          const localTemplates = automationTemplates;
+
+          const isNewerOrEqual = (a?: string, b?: string) => {
+            const da = a ? new Date(a).getTime() : 0;
+            const db = b ? new Date(b).getTime() : 0;
+            return da >= db;
+          };
+
+          const differs = (a: AutomationTemplate, b: AutomationTemplate) => {
+            return (
+              a.name !== b.name ||
+              a.trigger !== b.trigger ||
+              a.channel !== b.channel ||
+              a.isActive !== b.isActive ||
+              (a.delayHours ?? 0) !== (b.delayHours ?? 0) ||
+              (a.repeatEveryHours ?? 0) !== (b.repeatEveryHours ?? 0) ||
+              (a.maxRepeats ?? 0) !== (b.maxRepeats ?? 0) ||
+              (a.subject ?? "") !== (b.subject ?? "") ||
+              a.body !== b.body ||
+              JSON.stringify(a.recipients ?? []) !== JSON.stringify(b.recipients ?? [])
+            );
+          };
+
           if (serverTemplates.length > 0) {
-            setAutomationTemplates(serverTemplates);
-          } else if (automationTemplates.length > 0) {
+            // If local defaults (seed) are newer/different, sync them to server so
+            // "old templates" in sqlite don't keep winning after updates.
+            const serverById = new Map(serverTemplates.map((t) => [t.id, t]));
+            const mergedById = new Map(serverTemplates.map((t) => [t.id, t]));
+
+            const syncTasks: Promise<unknown>[] = [];
+            for (const local of localTemplates) {
+              const server = serverById.get(local.id);
+              if (!server) {
+                mergedById.set(local.id, local);
+                syncTasks.push(
+                  fetch(apiUrl("/api/automation/templates"), {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(local),
+                  }).catch(() => undefined),
+                );
+                continue;
+              }
+
+              const shouldOverride =
+                differs(local, server) &&
+                (import.meta.env.DEV || isNewerOrEqual(local.updatedAt, server.updatedAt));
+
+              if (shouldOverride) {
+                mergedById.set(local.id, { ...local, id: server.id });
+                syncTasks.push(
+                  fetch(apiUrl(`/api/automation/templates/${encodeURIComponent(local.id)}`), {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...local, id: server.id }),
+                  }).catch(() => undefined),
+                );
+              }
+            }
+
+            if (syncTasks.length > 0) await Promise.all(syncTasks);
+            setAutomationTemplates(Array.from(mergedById.values()).sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")));
+          } else if (localTemplates.length > 0) {
             await Promise.all(
-              automationTemplates.map((t) =>
+              localTemplates.map((t) =>
                 fetch(apiUrl("/api/automation/templates"), {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
