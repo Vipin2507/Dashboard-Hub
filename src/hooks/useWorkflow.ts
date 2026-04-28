@@ -92,7 +92,7 @@ export function useApproveProposal() {
         salesRepId: rep?.id,
         salesRepName: rep?.name,
         salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
-        companyName: "Cravingcode Technologies Pvt. Ltd.",
+        companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
       });
       useAppStore.getState().pushNotification({
         type: "INTERNAL_EMAIL",
@@ -182,7 +182,7 @@ export function useSendProposal() {
         salesRepId: rep?.id,
         salesRepName: rep?.name,
         salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
-        companyName: "Cravingcode Technologies Pvt. Ltd.",
+        companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
       });
       toast({
         title: "Proposal sent",
@@ -303,7 +303,7 @@ export function useUpdateDealStage() {
           customerEmail: primary?.email,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
-          companyName: "Cravingcode Technologies Pvt. Ltd.",
+          companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
         useAppStore.getState().pushNotification({
           type: "INTERNAL_EMAIL",
@@ -325,7 +325,7 @@ export function useUpdateDealStage() {
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           lossReason: deal.lossReason ?? "",
-          companyName: "Cravingcode Technologies Pvt. Ltd.",
+          companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
         toast({ title: `Deal marked ${next}` });
       } else {

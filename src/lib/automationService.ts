@@ -220,7 +220,7 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{days_since_sent}}": String(ctx.daysSinceSent ?? ""),
     "{{sales_rep_name}}": ctx.salesRepName ?? "",
     "{{sales_rep_phone}}": ctx.salesRepPhone ?? "",
-    "{{company_name}}": ctx.companyName ?? "Cravingcode Technologies Pvt. Ltd.",
+    "{{company_name}}": ctx.companyName ?? "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
     "{{deal_id}}": ctx.dealId ?? "",
     "{{deal_title}}": ctx.dealTitle ?? "",
     "{{deal_value}}": formatINRInline(ctx.dealValue),
@@ -756,7 +756,7 @@ export function checkDealFollowUpReminders(
       customerEmail: primary?.email,
       salesRepId: rep?.id,
       salesRepName: rep?.name,
-      companyName: "Cravingcode Technologies Pvt. Ltd.",
+      companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
     });
   });
 

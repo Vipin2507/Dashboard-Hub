@@ -760,7 +760,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       salesRepId: rep?.id,
       salesRepName: rep?.name,
       salesRepPhone: (rep as { phone?: string } | null)?.phone,
-      companyName: 'Cravingcode Technologies Pvt. Ltd.',
+      companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
     });
   },
 
@@ -832,7 +832,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       salesRepId: rep?.id,
       salesRepName: rep?.name,
       salesRepPhone: (rep as { phone?: string } | null)?.phone,
-      companyName: 'Cravingcode Technologies Pvt. Ltd.',
+      companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
     });
   },
 
@@ -940,7 +940,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           salesRepPhone: (rep as { phone?: string } | null)?.phone,
-          companyName: 'Cravingcode Technologies Pvt. Ltd.',
+          companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
         });
       }
     }

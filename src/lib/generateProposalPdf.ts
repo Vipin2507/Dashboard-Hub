@@ -316,7 +316,7 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, images: Record<string, 
   if (roleDisplay) doc.text(roleDisplay, L.rightEdge, L.coverRepRoleY, { align: "right" });
   if (repPhone) doc.text(repPhone, L.rightEdge, L.coverRepPhoneY, { align: "right" });
 
-  doc.text("Cravingcode Technologies Pvt. Ltd.", L.rightEdge, L.coverCompanyY, { align: "right" });
+  doc.text("CRAVINGCODE TECHNOLOGIES PVT. LTD.", L.rightEdge, L.coverCompanyY, { align: "right" });
   doc.text(`Submitted on: ${formatProposalDate(proposal.createdAt)}`, L.rightEdge, L.coverSubmittedY, {
     align: "right",
   });
@@ -405,7 +405,7 @@ function renderVersionPage(
   doc.setFontSize(FONT.body);
   doc.setTextColor(60, 60, 60);
   const notice =
-    "This proposal contains information that is considered confidential by Cravingcode Technologies Pvt. Ltd. and is provided for the sole purpose of permitting the recipient to evaluate the proposal. In consideration of receipt of this document, the recipient agrees to maintain such information in confidence and not to reproduce or otherwise disclose this information to any person outside the group directly responsible for the evaluation of its contents.";
+    "This proposal contains information that is considered confidential by CRAVINGCODE TECHNOLOGIES PVT. LTD. and is provided for the sole purpose of permitting the recipient to evaluate the proposal. In consideration of receipt of this document, the recipient agrees to maintain such information in confidence and not to reproduce or otherwise disclose this information to any person outside the group directly responsible for the evaluation of its contents.";
   renderParagraph(doc, notice, L.marginLeft, afterTable + 8, L.contentWidth, 5.5, FONT.body);
 
   addPageNumber(doc, pageNum);
@@ -817,7 +817,7 @@ const SLA_SECTIONS: SlaSection[] = [
     title: "Buildesk Support Role",
     paragraphs: [
       "Provide technical support staff to man helpdesk and provide Tier 1 and 2 support via Buildesk systems and personnel during the agreed Support Hours Monday through Friday.",
-      "Cravingcode Technologies Pvt. Ltd. | nishant@cravingcode.in",
+      "CRAVINGCODE TECHNOLOGIES PVT. LTD. | nishant@cravingcode.in",
       "Customer team will require to provide all details requested by Buildesk and will use all reasonable endeavours to provide full details of any problems found, including: Full error messages, Log files, Actions/events performed prior to the problem, Repeatability, Workaround found, System administrator activity, and other relevant information.",
     ],
   },

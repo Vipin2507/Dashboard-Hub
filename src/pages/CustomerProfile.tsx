@@ -226,7 +226,7 @@ function SupportWorkflowTab({
       customerEmail: primaryEmail ?? undefined,
       amountDue: paymentSummary?.summary?.overdueAmount ?? 0,
       daysOverdue: 1,
-      companyName: "Cravingcode Technologies Pvt. Ltd.",
+      companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
     });
     toast({ title: "Reminder triggered", description: "Automation trigger fired for overdue reminder." });
   };

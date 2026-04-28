@@ -382,7 +382,7 @@ export default function Payments() {
                                         1,
                                         Math.floor((Date.now() - new Date(row.due_date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)),
                                       ),
-                                      companyName: 'Cravingcode Technologies Pvt. Ltd.',
+                                      companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
                                     });
                                     toast({ title: 'Reminder triggered' });
                                   }}

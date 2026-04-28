@@ -454,7 +454,7 @@ export default function DealsPage() {
           customerEmail: primary?.email,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
-          companyName: "Cravingcode Technologies Pvt. Ltd.",
+          companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
         toast({ title: "Deal won", description: "Team notification sent (if templates are active)." });
       }
@@ -469,7 +469,7 @@ export default function DealsPage() {
           salesRepId: rep?.id,
           salesRepName: rep?.name,
           lossReason: data.lossReason ?? "",
-          companyName: "Cravingcode Technologies Pvt. Ltd.",
+          companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
       }
     },
@@ -663,7 +663,7 @@ export default function DealsPage() {
             customerEmail: primary?.email,
             salesRepId: rep?.id,
             salesRepName: rep?.name,
-            companyName: "Cravingcode Technologies Pvt. Ltd.",
+            companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
           });
           toast({ title: "Deal updated", description: "Won notification sent (if templates are active)." });
         } else if (normalizeDealStatus(saved.dealStatus) === "Closed/Lost" && prev !== "Closed/Lost") {
@@ -676,7 +676,7 @@ export default function DealsPage() {
             salesRepId: rep?.id,
             salesRepName: rep?.name,
             lossReason: saved.lossReason ?? "",
-            companyName: "Cravingcode Technologies Pvt. Ltd.",
+            companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
           });
           toast({ title: "Deal updated", description: "Loss recorded and automation sent (if configured)." });
         } else {
@@ -702,7 +702,7 @@ export default function DealsPage() {
           customerName: customer?.customerName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
-          companyName: "Cravingcode Technologies Pvt. Ltd.",
+          companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
         toast({ title: "Deal created", description: `${saved.name} (${saved.id})` });
       } catch (e) {
