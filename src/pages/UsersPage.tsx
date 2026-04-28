@@ -32,6 +32,7 @@ export default function UsersPage() {
   const updateUserRole = useAppStore(s => s.updateUserRole);
   const updateUserStatus = useAppStore(s => s.updateUserStatus);
   const updatePassword = useAppStore(s => s.updatePassword);
+  const updateUserAssignment = useAppStore(s => s.updateUserAssignment);
 
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
@@ -155,8 +156,62 @@ export default function UsersPage() {
                         </Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-xs">{teams.find(t => t.id === u.teamId)?.name}</TableCell>
-                    <TableCell className="text-xs">{regions.find(r => r.id === u.regionId)?.name}</TableCell>
+                    <TableCell className="text-xs">
+                      {me.role === 'super_admin' ? (
+                        <Select
+                          value={u.teamId}
+                          onValueChange={(teamId) => {
+                            const team = teams.find(t => t.id === teamId);
+                            updateUserAssignment(u.id, { teamId, ...(team?.regionId ? { regionId: team.regionId } : {}) });
+                            const user = useAppStore.getState().users.find((x) => x.id === u.id);
+                            if (user) updateUserMutation.mutate(user);
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-[10px]">
+                            <SelectValue placeholder="Team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams
+                              .filter(t => t.regionId === u.regionId)
+                              .map(t => (
+                                <SelectItem key={t.id} value={t.id} className="text-xs">
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        teams.find(t => t.id === u.teamId)?.name
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {me.role === 'super_admin' ? (
+                        <Select
+                          value={u.regionId}
+                          onValueChange={(regionId) => {
+                            const validTeams = teams.filter(t => t.regionId === regionId);
+                            const nextTeamId =
+                              validTeams.some(t => t.id === u.teamId) ? u.teamId : (validTeams[0]?.id ?? '');
+                            updateUserAssignment(u.id, { regionId, ...(nextTeamId ? { teamId: nextTeamId } : {}) });
+                            const user = useAppStore.getState().users.find((x) => x.id === u.id);
+                            if (user) updateUserMutation.mutate(user);
+                          }}
+                        >
+                          <SelectTrigger className="h-8 text-[10px]">
+                            <SelectValue placeholder="Region" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {regions.map(r => (
+                              <SelectItem key={r.id} value={r.id} className="text-xs">
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        regions.find(r => r.id === u.regionId)?.name
+                      )}
+                    </TableCell>
                     <TableCell>
                       <span className={`flex items-center gap-1 text-xs ${u.status === 'active' ? 'text-success' : 'text-destructive'}`}>
                         <span className={`w-2 h-2 rounded-full ${u.status === 'active' ? 'bg-success' : 'bg-destructive'}`} />

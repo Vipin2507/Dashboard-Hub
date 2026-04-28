@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,6 +26,33 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { TagsInput } from "@/components/ui/tags-input";
+
+type PostalApiResponse = Array<{
+  Status?: string;
+  PostOffice?: Array<{
+    Name?: string;
+    District?: string;
+    State?: string;
+    Pincode?: string;
+  }> | null;
+}>;
+
+function norm(s: unknown) {
+  return String(s ?? "").trim();
+}
+
+function isSixDigitPincode(s: string) {
+  return /^\d{6}$/.test(s);
+}
+
+function titleCase(s: string) {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 function FormSection({ title }: { title: string }) {
   return (
     <div className="col-span-1 sm:col-span-2 flex items-center gap-3 pt-1">
@@ -227,6 +254,13 @@ export function CustomerFormDialog({
   const teamId = form.watch("teamId");
   const usersInTeam = users.filter((u) => u.teamId === teamId);
 
+  const pincode = form.watch("pincode");
+  const city = form.watch("city");
+  const lastAutofillRef = useRef<{ pincode?: string; city?: string } | null>(null);
+  const [pinLookupBusy, setPinLookupBusy] = useState(false);
+  const [cityLookupBusy, setCityLookupBusy] = useState(false);
+  const [lookupHint, setLookupHint] = useState<string>("");
+
   useEffect(() => {
     if (!open) return;
     if (editingCustomer) {
@@ -288,6 +322,81 @@ export function CustomerFormDialog({
     const firstTeam = teamsInRegion[0];
     if (firstTeam && !form.getValues("teamId")) form.setValue("teamId", firstTeam.id);
   }, [regionId, teamsInRegion]);
+
+  useEffect(() => {
+    if (!open) return;
+    const v = norm(pincode);
+    if (!isSixDigitPincode(v)) return;
+    if (lastAutofillRef.current?.pincode === v) return;
+
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      setPinLookupBusy(true);
+      setLookupHint("");
+      void fetch(`https://api.postalpincode.in/pincode/${encodeURIComponent(v)}`, { signal: ac.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: PostalApiResponse | null) => {
+          const po = data?.[0]?.PostOffice?.[0] ?? null;
+          const fetchedCity = norm(po?.District) || norm(po?.Name);
+          const fetchedState = norm(po?.State);
+          if (!fetchedCity && !fetchedState) {
+            setLookupHint("No address found for this pincode.");
+            return;
+          }
+          if (fetchedCity) form.setValue("city", titleCase(fetchedCity), { shouldDirty: true });
+          if (fetchedState) form.setValue("state", fetchedState, { shouldDirty: true });
+          form.setValue("country", "India");
+          lastAutofillRef.current = { ...(lastAutofillRef.current ?? {}), pincode: v };
+        })
+        .catch(() => undefined)
+        .finally(() => setPinLookupBusy(false));
+    }, 400);
+
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [open, pincode]);
+
+  useEffect(() => {
+    if (!open) return;
+    const c = norm(city);
+    if (c.length < 3) return;
+    if (lastAutofillRef.current?.city === c.toLowerCase()) return;
+
+    const currentPin = norm(form.getValues("pincode"));
+    if (isSixDigitPincode(currentPin)) return;
+
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      setCityLookupBusy(true);
+      setLookupHint("");
+      void fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(c)}`, { signal: ac.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data: PostalApiResponse | null) => {
+          const po = data?.[0]?.PostOffice?.find((x) => norm(x?.Pincode)) ?? data?.[0]?.PostOffice?.[0] ?? null;
+          const fetchedPin = norm(po?.Pincode);
+          const fetchedState = norm(po?.State);
+          if (!fetchedPin && !fetchedState) {
+            setLookupHint("No pincodes found for this city.");
+            return;
+          }
+          if (fetchedPin && isSixDigitPincode(fetchedPin)) {
+            form.setValue("pincode", fetchedPin, { shouldDirty: true });
+          }
+          if (fetchedState) form.setValue("state", fetchedState, { shouldDirty: true });
+          form.setValue("country", "India");
+          lastAutofillRef.current = { ...(lastAutofillRef.current ?? {}), city: c.toLowerCase() };
+        })
+        .catch(() => undefined)
+        .finally(() => setCityLookupBusy(false));
+    }, 500);
+
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [open, city, form]);
 
   const getNextCustomerNumber = () => {
     const nums = customers
@@ -617,6 +726,17 @@ export function CustomerFormDialog({
                     </FormItem>
                   )}
                 />
+                <div className="col-span-1 sm:col-span-2">
+                  {(pinLookupBusy || cityLookupBusy || lookupHint) && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {pinLookupBusy
+                        ? "Fetching address from pincode…"
+                        : cityLookupBusy
+                          ? "Fetching pincode from city…"
+                          : lookupHint}
+                    </p>
+                  )}
+                </div>
                 <div className="col-span-1 sm:col-span-2">
                   <FormField
                     control={form.control}

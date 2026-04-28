@@ -122,8 +122,13 @@ export function useDashboardData() {
   const dealsQuery = useQuery({
     queryKey: QK.deals({ role: me.role }),
     queryFn: async () => {
-      const q = role === "super_admin" ? "?includeDeleted=1&actorRole=super_admin" : "";
-      return api.get<Deal[]>(`/deals${q}`);
+      const qs = new URLSearchParams();
+      qs.set("actorRole", me.role);
+      qs.set("actorUserId", me.id);
+      qs.set("actorTeamId", me.teamId);
+      qs.set("actorRegionId", me.regionId);
+      if (role === "super_admin") qs.set("includeDeleted", "1");
+      return api.get<Deal[]>(`/deals?${qs.toString()}`);
     },
     staleTime: 30_000,
     refetchInterval: DASH_INTERVAL,

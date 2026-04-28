@@ -352,10 +352,12 @@ async function fireN8nWebhook(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const errBody = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 600);
+      const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
 
       updateAutomationLog(logEntry.id, {
         status: (res.ok ? "sent" : "failed") as AutomationLog["status"],
-        errorMessage: res.ok ? undefined : `HTTP ${res.status}`,
+        errorMessage: res.ok ? undefined : `HTTP ${res.status}${errShort ? ` — ${errShort}` : ""}`,
       });
     } catch (err) {
       updateAutomationLog(logEntry.id, {

@@ -27,7 +27,13 @@ export function useSidebarBadges() {
   const dealsNegotiation = useQuery({
     queryKey: [...QK.dealsNegotiationBadge(), role, me.teamId, me.regionId],
     queryFn: async () => {
-      const rows = await api.get<Deal[]>("/deals?stage=Negotiation");
+      const qs = new URLSearchParams();
+      qs.set("stage", "Negotiation");
+      qs.set("actorRole", me.role);
+      qs.set("actorUserId", me.id);
+      qs.set("actorTeamId", me.teamId);
+      qs.set("actorRegionId", me.regionId);
+      const rows = await api.get<Deal[]>(`/deals?${qs.toString()}`);
       const scope = getScope(me.role, "deals");
       return visibleWithScope(scope, me, rows).length;
     },

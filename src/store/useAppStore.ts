@@ -69,6 +69,7 @@ interface AppState {
   updateUserRole: (userId: string, role: Role) => void;
   updateUserStatus: (userId: string, status: User['status'], opts?: { transferToUserId?: string }) => void;
   updatePassword: (userId: string, oldPassword: string | null, newPassword: string) => void;
+  updateUserAssignment: (userId: string, updates: { teamId?: string; regionId?: string }) => void;
 
   // Customers
   setCustomers: (customers: Customer[]) => void;
@@ -344,6 +345,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         users: s.users.map(u => (u.id === userId ? { ...u, password: newPassword } : u)),
       };
     });
+    const user = get().users.find(u => u.id === userId);
+    if (user) {
+      void fetch(apiUrl(`/api/users/${userId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      }).catch(() => undefined);
+    }
+  },
+
+  updateUserAssignment: (userId, updates) => {
+    set(s => ({
+      users: s.users.map(u => (u.id === userId ? { ...u, ...updates } : u)),
+      me:
+        s.me.id === userId
+          ? {
+              ...s.me,
+              ...(typeof updates.teamId === 'string' ? { teamId: updates.teamId } : {}),
+              ...(typeof updates.regionId === 'string' ? { regionId: updates.regionId } : {}),
+            }
+          : s.me,
+    }));
     const user = get().users.find(u => u.id === userId);
     if (user) {
       void fetch(apiUrl(`/api/users/${userId}`), {
