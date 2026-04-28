@@ -517,7 +517,8 @@ function renderCommercialSection(
   totalChunks: number,
   globalOffset: number,
   totalToShow: number,
-): void {
+): number {
+  let currentPageNum = pageNum;
   addPageHeader(doc);
 
   doc.setFont("helvetica", "bold");
@@ -531,7 +532,7 @@ function renderCommercialSection(
   const comW = doc.getTextWidth("Commercial");
   doc.line(L.marginLeft, commercialY + 1.5, L.marginLeft + comW, commercialY + 1.5);
 
-  const moduleHeading = `Module 1: Buildesk Annual End to End Sales Management — ${proposal.title}`;
+  const moduleHeading = `Module 1: Buildesk Annual Sales Management — ${proposal.title}`;
   doc.setFontSize(FONT.moduleTitle);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(40, 40, 40);
@@ -575,8 +576,15 @@ function renderCommercialSection(
 
     const pushSummary = (label: string, value: number) => {
       tableBody.push([
-        { content: label, colSpan: 3, styles: { halign: "right", fontStyle: "bold", fontSize: FONT.tableBody } },
-        { content: formatINRTotal(Math.round(value)), styles: { halign: "right", fontStyle: "bold", fontSize: 10 } },
+        {
+          content: label,
+          colSpan: 3,
+          styles: { halign: "left", fontStyle: "bold", fontSize: FONT.tableBody },
+        },
+        {
+          content: formatINRTotal(Math.round(value)),
+          styles: { halign: "left", fontStyle: "bold", fontSize: 10 },
+        },
       ]);
     };
 
@@ -668,38 +676,77 @@ function renderCommercialSection(
 
   // Terms should start immediately after the product table (or NOTE), not on a separate page.
   if (isLastCommercialPage) {
-    const titleY = afterY + 10;
-    const startTermsOnNewPage = titleY > L.footerBreakY - 40;
-    if (startTermsOnNewPage) {
-      addPageNumber(doc, pageNum);
+    const terms = getTermsForProposal(proposal);
+    const lineHeight = 5.2;
+    const itemGap = 2.5;
+    const fontSize = 9.5;
+
+    const renderTermsHeading = (y: number, contd: boolean) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(FONT.termsTitle);
+      doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
+      doc.text("Terms &", L.marginLeft, y);
+      const termsAmpW = doc.getTextWidth("Terms &");
+      doc.setTextColor(0, 0, 0);
+      doc.text(contd ? " Conditions (contd.)" : " Conditions", L.marginLeft + termsAmpW, y);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(fontSize);
+      doc.setTextColor(40, 40, 40);
+      return y + 10;
+    };
+
+    const newTermsPage = (contd: boolean) => {
+      addPageNumber(doc, currentPageNum);
+      currentPageNum += 1;
       doc.addPage();
       addPageHeader(doc);
-      afterY = L.contentStartY;
+      return renderTermsHeading(L.contentStartY, contd);
+    };
+
+    // Ensure there is enough space for the title + at least one bullet line.
+    const titleY = afterY + 10;
+    const minNeeded = 10 /* title */ + 10 /* title gap */ + lineHeight + itemGap;
+    let y = titleY;
+    let contd = false;
+    if (y + minNeeded > L.footerBreakY) {
+      y = newTermsPage(false);
+    } else {
+      y = renderTermsHeading(y, false);
     }
 
-    const termsTitleY = startTermsOnNewPage ? L.contentStartY : titleY;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(FONT.termsTitle);
-    doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-    doc.text("Terms &", L.marginLeft, termsTitleY);
-    const termsAmpW = doc.getTextWidth("Terms &");
-    doc.setTextColor(0, 0, 0);
-    doc.text(" Conditions", L.marginLeft + termsAmpW, termsTitleY);
-
-    const terms = getTermsForProposal(proposal);
-
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(9.5);
+    doc.setFontSize(fontSize);
     doc.setTextColor(40, 40, 40);
-    const yStart = termsTitleY + 10;
-    renderBulletList(doc, terms, L.marginLeft, yStart, L.contentWidth, 5.2, 2.5, 9.5);
+
+    // Paginate bullets so they never get clipped.
+    for (const item of terms) {
+      const firstLine = `• ${item}`;
+      const lines = doc.splitTextToSize(firstLine, L.contentWidth - 4);
+      const itemHeight = Math.max(1, lines.length) * lineHeight + itemGap;
+      if (y + itemHeight > L.footerBreakY) {
+        contd = true;
+        y = newTermsPage(contd);
+      }
+
+      if (lines.length) {
+        doc.text(lines[0], L.marginLeft, y);
+        if (lines.length > 1) {
+          for (let i = 1; i < lines.length; i++) {
+            y += lineHeight;
+            doc.text(lines[i], L.marginLeft + 3, y);
+          }
+        }
+      }
+      y += lineHeight + itemGap;
+    }
   }
 
-  addPageNumber(doc, pageNum);
+  addPageNumber(doc, currentPageNum);
+  return currentPageNum;
 }
 
 const DEFAULT_TERMS = [
-  "18% GST is applicable on the final total.",
+  "18% GST is included in the final total.",
   "100% payment has to be done in advance.",
   "Post sales are offered as an individual service, and it will need to be renewed annually.",
   "Dedicated Delivery Manager to handle implementation and onboarding.",
@@ -973,17 +1020,18 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
 
   chunks.forEach((chunk, idx) => {
     if (idx > 0) doc.addPage();
-    renderCommercialSection(
+    const lastUsed = renderCommercialSection(
       doc,
       proposal,
       autoTable,
-      pageNum++,
+      pageNum,
       chunk,
       idx,
       chunks.length,
       idx * ROWS_PER_COMMERCIAL_PAGE,
       totalToShow,
     );
+    pageNum = lastUsed + 1;
   });
 
   doc.addPage();

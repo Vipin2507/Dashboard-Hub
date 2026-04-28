@@ -175,6 +175,10 @@ export function TagsInput({
         className="w-[var(--radix-popover-trigger-width)] p-0"
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
+        onWheelCapture={(e) => {
+          // Prevent the DialogBody from stealing mouse-wheel scroll.
+          e.stopPropagation();
+        }}
       >
         <div className="max-h-64 overflow-auto p-1">
           {canCreate && (

@@ -883,11 +883,29 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
     },
   });
 
+  // When opening "Edit", ensure the current template values are loaded.
+  // `defaultValues` are only applied on first render in react-hook-form.
+  useEffect(() => {
+    form.reset({
+      name: template?.name ?? "",
+      trigger: template?.trigger ?? "proposal_sent",
+      channel: template?.channel ?? "whatsapp",
+      recipients: (template?.recipients ?? ["customer"]) as AutomationRecipient[],
+      subject: template?.subject ?? "",
+      body: template?.body ?? "",
+      isActive: template?.isActive ?? true,
+      delayHours: template?.delayHours ?? 0,
+      repeatEveryHours: template?.repeatEveryHours ?? 0,
+      maxRepeats: template?.maxRepeats ?? 0,
+    });
+  }, [template?.id]);
+
   const watchedTrigger = form.watch("trigger");
   const watchedChannel = form.watch("channel");
   const availableVars = TEMPLATE_VARIABLES[watchedTrigger] ?? [];
 
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const bodyRegister = form.register("body");
   const insertVariable = (token: string) => {
     const el = bodyRef.current;
     const current = form.getValues("body") ?? "";
@@ -1117,8 +1135,9 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
             <Textarea
               rows={6}
               className="text-sm font-mono resize-none"
-              {...form.register("body")}
+              {...bodyRegister}
               ref={(el) => {
+                bodyRegister.ref(el);
                 bodyRef.current = el;
               }}
               placeholder="Type your message here. Click variables above to insert them."

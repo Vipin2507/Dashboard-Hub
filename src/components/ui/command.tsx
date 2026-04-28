@@ -60,7 +60,11 @@ const CommandList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive.List
     ref={ref}
-    className={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", className)}
+    className={cn(
+      // Prevent scroll chaining to the Dialog body on mouse wheel/trackpad.
+      "max-h-[300px] overflow-y-auto overflow-x-hidden overscroll-contain",
+      className,
+    )}
     {...props}
   />
 ));
