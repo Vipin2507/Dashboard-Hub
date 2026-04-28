@@ -219,6 +219,8 @@ export function CustomerFormDialog({
   const updateContact = useAppStore((s) => s.updateContact);
   const appendActivityLog = useAppStore((s) => s.appendActivityLog);
 
+  const assignmentVisible = me.role === "super_admin";
+
   const tagSuggestions = Array.from(
     new Set([...DEFAULT_TAG_SUGGESTIONS, ...customers.flatMap((c) => normalizeExistingTags((c as Customer).tags))]),
   );
@@ -243,9 +245,9 @@ export function CustomerFormDialog({
       contactDesignation: "",
       contactEmail: "",
       contactPhone: "",
-      regionId: regions[0]?.id ?? "",
-      teamId: "",
-      assignedTo: me.role === "sales_rep" ? me.id : "",
+      regionId: assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || regions[0]?.id ?? ""),
+      teamId: assignmentVisible ? "" : (me.teamId ?? ""),
+      assignedTo: assignmentVisible ? "" : me.id,
     },
   });
 
@@ -289,6 +291,14 @@ export function CustomerFormDialog({
         assignedTo: editingCustomer.assignedTo,
       });
     } else {
+      const defaultRegion = assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || regions[0]?.id ?? "");
+      const teamsForMeRegion = teams.filter((t) => t.regionId === defaultRegion);
+      const defaultTeam = assignmentVisible
+        ? teamsForMeRegion[0]?.id ?? ""
+        : (me.teamId && teamsForMeRegion.some((t) => t.id === me.teamId) ? me.teamId : teamsForMeRegion[0]?.id ?? me.teamId ?? "");
+      const defaultAssignee = assignmentVisible
+        ? (defaultTeam ? users.find((u) => u.teamId === defaultTeam)?.id : undefined) ?? ""
+        : me.id;
       form.reset({
         companyName: "",
         customerName: "",
@@ -307,12 +317,9 @@ export function CustomerFormDialog({
         contactDesignation: "",
         contactEmail: "",
         contactPhone: "",
-        regionId: regions[0]?.id ?? "",
-        teamId: teamsInRegion[0]?.id ?? "",
-        assignedTo:
-          me.role === "sales_rep"
-            ? me.id
-            : (teamsInRegion[0] ? users.find((u) => u.teamId === teamsInRegion[0]?.id)?.id : undefined) ?? "",
+        regionId: defaultRegion,
+        teamId: defaultTeam,
+        assignedTo: defaultAssignee,
       });
     }
   }, [open, editingCustomer?.id]);
@@ -414,6 +421,25 @@ export function CustomerFormDialog({
     const customerName = (values.customerName ?? "").trim();
     const safeCustomerName = customerName || companyName;
 
+    let regionId = values.regionId;
+    let teamId = values.teamId;
+    let assignedTo = values.assignedTo;
+    if (!assignmentVisible) {
+      if (editingCustomer) {
+        regionId = editingCustomer.regionId;
+        teamId = editingCustomer.teamId;
+        assignedTo = editingCustomer.assignedTo;
+      } else {
+        const r = me.regionId || regions[0]?.id ?? "";
+        const teamsForR = teams.filter((t) => t.regionId === r);
+        const t =
+          me.teamId && teamsForR.some((x) => x.id === me.teamId) ? me.teamId : teamsForR[0]?.id ?? me.teamId ?? "";
+        regionId = r;
+        teamId = t;
+        assignedTo = me.id;
+      }
+    }
+
     const address = {
       line1: values.line1 || undefined,
       line2: values.line2 || undefined,
@@ -423,8 +449,8 @@ export function CustomerFormDialog({
       country: "India" as const,
     };
 
-    const regionName = regions.find((r) => r.id === values.regionId)?.name ?? "";
-    const assignedUser = users.find((u) => u.id === values.assignedTo);
+    const regionName = regions.find((r) => r.id === regionId)?.name ?? "";
+    const assignedUser = users.find((u) => u.id === assignedTo);
 
     if (editingCustomer) {
       const primary =
@@ -438,10 +464,10 @@ export function CustomerFormDialog({
         address,
         gstin: values.gstin || undefined,
         pan: values.pan || undefined,
-        regionId: values.regionId,
+        regionId,
         regionName,
-        teamId: values.teamId,
-        assignedTo: values.assignedTo,
+        teamId,
+        assignedTo,
         assignedToName: assignedUser?.name ?? "",
         tags: uniqueTags,
       };
@@ -498,11 +524,11 @@ export function CustomerFormDialog({
         gstin: values.gstin || undefined,
         pan: values.pan || undefined,
         contacts: [contact],
-        regionId: values.regionId,
+        regionId,
         regionName,
-        teamId: values.teamId,
-        assignedTo: values.assignedTo,
-        assignedToName: assignedUser?.name ?? "",
+        teamId,
+        assignedTo,
+        assignedToName: assignedUser?.name ?? me.name,
         tags: uniqueTags,
         notes: [],
         attachments: [],
@@ -828,74 +854,78 @@ export function CustomerFormDialog({
                   )}
                 />
 
-                <FormSection title="Assignment" />
-                <FormField
-                  control={form.control}
-                  name="regionId"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Region *</FormLabel>
-                      <FormControl>
-                        <SearchableSelect
-                          value={field.value}
-                          onValueChange={(v) => {
-                            field.onChange(v);
-                            form.setValue("teamId", "");
-                            form.setValue("assignedTo", "");
-                          }}
-                          options={regions.map((r) => ({ value: r.id, label: r.name }))}
-                          placeholder="Select region"
-                          triggerClassName="h-10 text-sm"
-                        />
-                      </FormControl>
-                      <FormMessage className="text-xs" />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="teamId"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Team *</FormLabel>
-                      <FormControl>
-                        <SearchableSelect
-                          value={field.value}
-                          onValueChange={(v) => {
-                            field.onChange(v);
-                            form.setValue("assignedTo", "");
-                          }}
-                          options={teamsInRegion.map((t) => ({ value: t.id, label: t.name }))}
-                          placeholder="Select team"
-                          emptyText="No teams in this region."
-                          triggerClassName="h-10 text-sm"
-                        />
-                      </FormControl>
-                      <FormMessage className="text-xs" />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="assignedTo"
-                  render={({ field }) => (
-                    <FormItem className="space-y-1.5">
-                      <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Assigned To *</FormLabel>
-                      <FormControl>
-                        <SearchableSelect
-                          value={field.value}
-                          onValueChange={field.onChange}
-                          options={usersInTeam.map((u) => ({ value: u.id, label: u.name }))}
-                          placeholder="Select user"
-                          emptyText="No users in this team."
-                          disabled={me.role === "sales_rep"}
-                          triggerClassName="h-10 text-sm"
-                        />
-                      </FormControl>
-                      <FormMessage className="text-xs" />
-                    </FormItem>
-                  )}
-                />
+                {assignmentVisible && (
+                  <>
+                    <FormSection title="Assignment" />
+                    <FormField
+                      control={form.control}
+                      name="regionId"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Region *</FormLabel>
+                          <FormControl>
+                            <SearchableSelect
+                              value={field.value}
+                              onValueChange={(v) => {
+                                field.onChange(v);
+                                form.setValue("teamId", "");
+                                form.setValue("assignedTo", "");
+                              }}
+                              options={regions.map((r) => ({ value: r.id, label: r.name }))}
+                              placeholder="Select region"
+                              triggerClassName="h-10 text-sm"
+                            />
+                          </FormControl>
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="teamId"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Team *</FormLabel>
+                          <FormControl>
+                            <SearchableSelect
+                              value={field.value}
+                              onValueChange={(v) => {
+                                field.onChange(v);
+                                form.setValue("assignedTo", "");
+                              }}
+                              options={teamsInRegion.map((t) => ({ value: t.id, label: t.name }))}
+                              placeholder="Select team"
+                              emptyText="No teams in this region."
+                              triggerClassName="h-10 text-sm"
+                            />
+                          </FormControl>
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="assignedTo"
+                      render={({ field }) => (
+                        <FormItem className="space-y-1.5">
+                          <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Assigned To *</FormLabel>
+                          <FormControl>
+                            <SearchableSelect
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              options={usersInTeam.map((u) => ({ value: u.id, label: u.name }))}
+                              placeholder="Select user"
+                              emptyText="No users in this team."
+                              disabled={me.role === "sales_rep"}
+                              triggerClassName="h-10 text-sm"
+                            />
+                          </FormControl>
+                          <FormMessage className="text-xs" />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                )}
               </div>
             </form>
           </Form>
