@@ -245,7 +245,7 @@ export function CustomerFormDialog({
       contactDesignation: "",
       contactEmail: "",
       contactPhone: "",
-      regionId: assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || regions[0]?.id ?? ""),
+      regionId: assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || (regions[0]?.id ?? "")),
       teamId: assignmentVisible ? "" : (me.teamId ?? ""),
       assignedTo: assignmentVisible ? "" : me.id,
     },
@@ -291,7 +291,7 @@ export function CustomerFormDialog({
         assignedTo: editingCustomer.assignedTo,
       });
     } else {
-      const defaultRegion = assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || regions[0]?.id ?? "");
+      const defaultRegion = assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || (regions[0]?.id ?? ""));
       const teamsForMeRegion = teams.filter((t) => t.regionId === defaultRegion);
       const defaultTeam = assignmentVisible
         ? teamsForMeRegion[0]?.id ?? ""
@@ -430,7 +430,7 @@ export function CustomerFormDialog({
         teamId = editingCustomer.teamId;
         assignedTo = editingCustomer.assignedTo;
       } else {
-        const r = me.regionId || regions[0]?.id ?? "";
+        const r = me.regionId || (regions[0]?.id ?? "");
         const teamsForR = teams.filter((t) => t.regionId === r);
         const t =
           me.teamId && teamsForR.some((x) => x.id === me.teamId) ? me.teamId : teamsForR[0]?.id ?? me.teamId ?? "";
