@@ -7,6 +7,7 @@ import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
 import { registerIntegrationProxies } from "./integrationsProxy.js";
 import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
+import { registerProposalPdfRoutes } from "./proposalPdfRoute.ts";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -283,13 +284,23 @@ app.get("/api/users", (_req, res) => {
 });
 
 app.post("/api/users", (req, res) => {
-  const { id, name, email, password, role, teamId, regionId, status } = req.body || {};
+  const { id, name, email, password, role, teamId, regionId, status, phone } = req.body || {};
   if (!name || !email || !password || !role || !teamId || !regionId) {
     return res.status(400).json({ error: "name, email, password, role, teamId, regionId are required" });
   }
-  const user = { id: id || "u" + makeId(), name, email, password, role, teamId, regionId, status: status || "active" };
+  const user = {
+    id: id || "u" + makeId(),
+    name,
+    email,
+    password,
+    role,
+    teamId,
+    regionId,
+    status: status || "active",
+    phone: phone != null && String(phone).trim() ? String(phone).trim() : null,
+  };
   db.prepare(
-    "INSERT INTO users (id, name, email, password, role, teamId, regionId, status) VALUES (@id, @name, @email, @password, @role, @teamId, @regionId, @status)"
+    "INSERT INTO users (id, name, email, password, role, teamId, regionId, status, phone) VALUES (@id, @name, @email, @password, @role, @teamId, @regionId, @status, @phone)"
   ).run(user);
   res.status(201).json(user);
 });
@@ -605,6 +616,8 @@ app.delete("/api/proposals/:id", (req, res) => {
   if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
+
+registerProposalPdfRoutes(app);
 
 app.get("/api/deals", (req, res) => {
   const actorRole = normalizeRole(req.query.actorRole);

@@ -14,6 +14,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required"),
   email: z.string().email("Enter a valid email"),
+  phone: z.string().optional(),
   password: z.string().min(4, "Password must be at least 4 characters"),
   role: z.enum(["sales_rep", "sales_manager", "support", "finance", "super_admin"]),
 });
@@ -38,6 +39,7 @@ export default function RegisterPage() {
     defaultValues: {
       name: "",
       email: "",
+      phone: "",
       password: "",
       role: "sales_rep",
     },
@@ -53,6 +55,7 @@ export default function RegisterPage() {
         role: values.role as Role,
         teamId: DEFAULT_TEAM_ID,
         regionId: DEFAULT_REGION_ID,
+        phone: values.phone?.trim() || undefined,
       });
       navigate("/login");
     } catch (e) {
@@ -90,9 +93,23 @@ export default function RegisterPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Work email</FormLabel>
+                    <FormLabel>Sign-in email</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="you@company.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone (optional)</FormLabel>
+                    <FormControl>
+                      <Input type="tel" placeholder="+91 …" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

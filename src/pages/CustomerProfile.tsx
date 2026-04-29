@@ -11,6 +11,7 @@ import {
 } from "@/components/customer-profile/CustomerLiveSections";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
+import { Topbar } from "@/components/Topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -494,12 +495,15 @@ export default function CustomerProfile() {
 
   if (!customer) {
     return (
-      <div className="mx-auto w-full max-w-page space-y-4 py-2">
-        <p className="text-sm text-muted-foreground">Customer not found or you don&apos;t have access.</p>
-        <Button variant="outline" onClick={() => navigate("/customers")}>
-          Back to Customers
-        </Button>
-      </div>
+      <>
+        <Topbar title="Customer" subtitle="Not found or you don't have access" />
+        <div className="mx-auto w-full max-w-page space-y-4 py-2">
+          <p className="text-sm text-muted-foreground">Customer not found or you don&apos;t have access.</p>
+          <Button variant="outline" onClick={() => navigate("/customers")}>
+            Back to Customers
+          </Button>
+        </div>
+      </>
     );
   }
 
@@ -594,26 +598,32 @@ export default function CustomerProfile() {
 
   return (
     <>
+      <Topbar
+        title={customer.companyName || customer.customerName}
+        subtitle={customer.customerNumber}
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0"
+              onClick={() => navigate("/customers")}
+            >
+              <ArrowLeft className="mr-1.5 h-4 w-4 shrink-0" />
+              Customers
+            </Button>
+            <Button
+              className="h-9 shrink-0 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => navigate("/proposals", { state: { customerId: customer.id } })}
+            >
+              <Plus className="mr-1.5 h-4 w-4 shrink-0" />
+              Create Proposal
+            </Button>
+          </div>
+        }
+      />
       <div className="mx-auto w-full max-w-page space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            className="-ml-2 h-8 gap-1.5 px-2 text-sm text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-            onClick={() => navigate("/customers")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Customers
-          </Button>
-          <Button
-            className="h-9 shrink-0 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
-            onClick={() => navigate("/proposals", { state: { customerId: customer.id } })}
-          >
-            <Plus className="mr-1.5 h-4 w-4 shrink-0" />
-            Create Proposal
-          </Button>
-        </div>
-
         <div className="flex flex-col gap-5 lg:flex-row">
           <aside className="w-full flex-shrink-0 space-y-4 lg:w-72 lg:sticky lg:top-4 lg:self-start">
             {/* Identity */}

@@ -65,7 +65,16 @@ interface AppState {
   setNotifications: (notifications: Notification[]) => void;
   login: (email: string, password: string) => void;
   logout: () => void;
-  registerUser: (payload: { name: string; email: string; password: string; role: Role; teamId: string; regionId: string }) => void;
+  registerUser: (payload: {
+    name: string;
+    email: string;
+    password: string;
+    role: Role;
+    teamId: string;
+    regionId: string;
+    phone?: string;
+  }) => void;
+  updateUserContactInfo: (userId: string, updates: { email: string; phone: string; name?: string }) => void;
   updateUserRole: (userId: string, role: Role) => void;
   updateUserStatus: (userId: string, status: User['status'], opts?: { transferToUserId?: string }) => void;
   updatePassword: (userId: string, oldPassword: string | null, newPassword: string) => void;
@@ -267,28 +276,72 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ authUserId: null, effectiveUserId: null, me: guestMe() });
   },
 
-  registerUser: ({ name, email, password, role, teamId, regionId }) => {
-    const exists = get().users.some(u => u.email.toLowerCase() === email.toLowerCase());
+  registerUser: ({ name, email, password, role, teamId, regionId, phone }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const exists = get().users.some(u => u.email.toLowerCase() === normalizedEmail);
     if (exists) {
       throw new Error('Email already registered');
     }
     const id = makeId();
+    const trimmedPhone = phone?.trim() || undefined;
     const user: User = {
       id,
       name,
-      email,
+      email: email.trim(),
       password,
       role,
       teamId,
       regionId,
       status: 'active',
+      ...(trimmedPhone ? { phone: trimmedPhone } : {}),
     };
     set(s => ({ users: [...s.users, user] }));
     void fetch(apiUrl('/api/users'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(user),
+      body: JSON.stringify({ ...user, phone: trimmedPhone ?? null }),
     }).catch(() => undefined);
+  },
+
+  updateUserContactInfo: (userId, { email, phone, name }) => {
+    const normalizedEmail = email.trim().toLowerCase();
+    const taken = get().users.some(
+      u => u.id !== userId && u.email.toLowerCase() === normalizedEmail
+    );
+    if (taken) {
+      throw new Error('Email already in use by another user');
+    }
+    const trimmedName = name?.trim();
+    if (trimmedName !== undefined && trimmedName.length < 2) {
+      throw new Error('Name must be at least 2 characters');
+    }
+    const trimmedPhone = phone.trim();
+    set(s => ({
+      users: s.users.map(u => {
+        if (u.id !== userId) return u;
+        return {
+          ...u,
+          email: email.trim(),
+          phone: trimmedPhone ? trimmedPhone : null,
+          ...(trimmedName !== undefined ? { name: trimmedName } : {}),
+        };
+      }),
+      me:
+        s.me.id === userId
+          ? {
+              ...s.me,
+              ...(trimmedName !== undefined ? { name: trimmedName } : {}),
+            }
+          : s.me,
+    }));
+    const user = get().users.find(u => u.id === userId);
+    if (user) {
+      void fetch(apiUrl(`/api/users/${userId}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      }).catch(() => undefined);
+    }
   },
 
   updateUserRole: (userId, role) => {
@@ -745,7 +798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       approvedBy: approver?.name ?? '',
       salesRepId: rep?.id,
       salesRepName: rep?.name,
-      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      salesRepPhone: rep?.phone ?? undefined,
     });
     void triggerAutomation('proposal_approved_customer_notify', {
       proposalId: proposal?.id,
@@ -759,7 +812,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       approvedBy: approver?.name ?? '',
       salesRepId: rep?.id,
       salesRepName: rep?.name,
-      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      salesRepPhone: rep?.phone ?? undefined,
       companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
     });
   },
@@ -793,7 +846,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       rejectionReason: reason,
       salesRepId: rep?.id,
       salesRepName: rep?.name,
-      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      salesRepPhone: rep?.phone ?? undefined,
     });
   },
 
@@ -831,7 +884,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       customerEmail: primaryContact?.email,
       salesRepId: rep?.id,
       salesRepName: rep?.name,
-      salesRepPhone: (rep as { phone?: string } | null)?.phone,
+      salesRepPhone: rep?.phone ?? undefined,
       companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
     });
   },
@@ -939,7 +992,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           customerName: customer.customerName ?? customer.companyName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
-          salesRepPhone: (rep as { phone?: string } | null)?.phone,
+          salesRepPhone: rep?.phone ?? undefined,
           companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
         });
       }

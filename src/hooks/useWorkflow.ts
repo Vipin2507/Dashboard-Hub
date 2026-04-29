@@ -77,7 +77,7 @@ export function useApproveProposal() {
         approvedBy: approver?.name ?? me.name,
         salesRepId: rep?.id,
         salesRepName: rep?.name,
-        salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+        salesRepPhone: rep?.phone ?? undefined,
       });
       await triggerAutomation("proposal_approved_customer_notify", {
         proposalId: proposal.id,
@@ -91,7 +91,7 @@ export function useApproveProposal() {
         approvedBy: approver?.name ?? me.name,
         salesRepId: rep?.id,
         salesRepName: rep?.name,
-        salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+        salesRepPhone: rep?.phone ?? undefined,
         companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
       });
       useAppStore.getState().pushNotification({
@@ -133,7 +133,7 @@ export function useRejectProposal() {
         rejectionReason: proposal.rejectionReason ?? "",
         salesRepId: rep?.id,
         salesRepName: rep?.name,
-        salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+        salesRepPhone: rep?.phone ?? undefined,
       });
       useAppStore.getState().pushNotification({
         type: "INTERNAL_EMAIL",
@@ -181,7 +181,7 @@ export function useSendProposal() {
         customerEmail: primary?.email,
         salesRepId: rep?.id,
         salesRepName: rep?.name,
-        salesRepPhone: (rep as { phone?: string } | undefined)?.phone,
+        salesRepPhone: rep?.phone ?? undefined,
         companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
       });
       toast({

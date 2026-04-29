@@ -46,6 +46,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import type { Proposal, ProposalStatus } from "@/types";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
@@ -607,22 +608,11 @@ export default function Proposals() {
 
   return (
     <>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 -mx-4 sm:-mx-5 lg:-mx-6 px-4 sm:px-5 lg:px-6 py-6 space-y-5 max-w-[1440px] mx-auto">
-        {proposalsQuery.isLoading && (
-          <div className="text-sm text-muted-foreground">Loading proposals...</div>
-        )}
-
-        {/* PAGE HEADER */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              Proposals
-            </h1>
-            <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-              {filtered.length} proposals
-            </p>
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
+      <Topbar
+        title="Proposals"
+        subtitle={`${filtered.length} proposals`}
+        actions={
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
             {canExport && (
               <Button variant="outline" size="sm" className="h-9 shrink-0 px-4 text-sm font-medium" onClick={handleExportCsv}>
                 <FileDown className="mr-1.5 h-4 w-4 shrink-0" />
@@ -653,7 +643,12 @@ export default function Proposals() {
               </>
             )}
           </div>
-        </div>
+        }
+      />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 -mx-4 sm:-mx-5 lg:-mx-6 px-4 sm:px-5 lg:px-6 py-6 space-y-5 max-w-[1440px] mx-auto">
+        {proposalsQuery.isLoading && (
+          <div className="text-sm text-muted-foreground">Loading proposals...</div>
+        )}
 
         {/* KPI CARDS */}
         <ProposalKPICards data={kpiMetrics} />

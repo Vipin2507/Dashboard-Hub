@@ -49,6 +49,8 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  /** Contact / WhatsApp number for automations and directory */
+  phone?: string | null;
   /**
    * Demo-only plaintext password field.
    * In a real app this would be a hash managed by the backend.
@@ -59,6 +61,18 @@ export interface User {
   regionId: string;
   status: 'active' | 'disabled';
 }
+
+/** Minimal user row for proposal PDF (browser store or server DB). */
+export type ProposalPdfUserRow = Pick<User, "id" | "name" | "role" | "phone">;
+
+/** Preloaded template images for proposal PDF (browser or server). */
+export type ProposalPdfImageSet = {
+  coverBg: string;
+  logoBuildesk: string;
+  logoCravingcode: string;
+  meetingPhoto: string;
+  blueArrow: string;
+};
 
 export type CustomerStatus =
   | 'active'
@@ -239,6 +253,9 @@ export type ProposalStatus =
   | 'rejected'
   | 'deal_created';
 
+/** Drives the proposal PDF cover title and module heading (create / edit proposal). */
+export type ProposalPdfScope = 'sales' | 'post' | 'end_to_end';
+
 export interface ProposalLineItem {
   id: string;
   inventoryItemId: string;
@@ -301,6 +318,8 @@ export interface Proposal {
   sentAt?: string;
   dealId?: string;
   paymentTerms?: string;
+  /** Cover page heading variant for generated PDF (defaults to end-to-end when omitted). */
+  pdfScope?: ProposalPdfScope;
 }
 
 export interface Deal {

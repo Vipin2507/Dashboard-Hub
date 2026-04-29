@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSmUp } from "@/hooks/useSmUp";
 import type { Customer, CustomerStatus } from "@/types";
+import { Topbar } from "@/components/Topbar";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { BulkImportCustomersDialog } from "@/components/BulkImportCustomersDialog";
 import { RenewalSubscriptionTracker } from "@/components/RenewalSubscriptionTracker";
@@ -431,6 +432,71 @@ export default function Customers() {
 
   return (
     <>
+      <Topbar
+        title="Customers"
+        subtitle={
+          customerModuleTab === "renewals"
+            ? "Renewal & subscription tracker"
+            : `${filtered.length} customers across all regions`
+        }
+        actions={
+          customerModuleTab === "directory" ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+                <button
+                  type="button"
+                  title="Table view"
+                  onClick={() => persistView("table")}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    viewMode === "table"
+                      ? "bg-background text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <List className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
+                  title="Card view"
+                  onClick={() => persistView("card")}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    viewMode === "card"
+                      ? "bg-background text-primary shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              {canCreate && (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 shrink-0 px-4 text-sm font-medium"
+                    onClick={() => setBulkImportOpen(true)}
+                  >
+                    <Upload className="mr-1.5 h-4 w-4 shrink-0" />
+                    <span className="hidden sm:inline">Bulk import</span>
+                  </Button>
+                  <Button
+                    className="h-9 shrink-0 px-4 text-sm font-medium"
+                    onClick={() => {
+                      setEditingCustomer(null);
+                      setFormOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-1.5 h-4 w-4" />
+                    Add Customer
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
       <div className="mx-auto w-full max-w-page space-y-5">
         {customersQuery.isLoading && (
           <div className="text-sm text-muted-foreground">Loading customers...</div>
@@ -458,71 +524,6 @@ export default function Customers() {
         ) : (
           <div className="min-h-screen bg-gray-50 dark:bg-gray-950 sm:min-h-0 sm:rounded-xl sm:p-0">
             <div className="mx-auto max-w-page space-y-5 px-0 py-4 sm:px-0 sm:py-0">
-              {/* PAGE HEADER */}
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h1 className="text-xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-                    Customers
-                  </h1>
-                  <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
-                    {filtered.length} customers across all regions
-                  </p>
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-2">
-                  <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
-                    <button
-                      type="button"
-                      title="Table view"
-                      onClick={() => persistView("table")}
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                        viewMode === "table"
-                          ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700"
-                          : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300",
-                      )}
-                    >
-                      <List className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      title="Card view"
-                      onClick={() => persistView("card")}
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                        viewMode === "card"
-                          ? "bg-white text-blue-600 shadow-sm dark:bg-gray-700"
-                          : "text-gray-500 hover:text-gray-700 dark:hover:text-gray-300",
-                      )}
-                    >
-                      <LayoutGrid className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {canCreate && (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 shrink-0 px-4 text-sm font-medium"
-                        onClick={() => setBulkImportOpen(true)}
-                      >
-                        <Upload className="mr-1.5 h-4 w-4 shrink-0" />
-                        <span className="hidden sm:inline">Bulk import</span>
-                      </Button>
-                      <Button
-                        className="h-9 shrink-0 px-4 text-sm font-medium"
-                        onClick={() => {
-                          setEditingCustomer(null);
-                          setFormOpen(true);
-                        }}
-                      >
-                        <Plus className="mr-1.5 h-4 w-4" />
-                        Add Customer
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-
               {/* STAT CARDS */}
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {(

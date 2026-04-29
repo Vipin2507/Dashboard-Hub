@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Topbar } from "@/components/Topbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -364,37 +365,35 @@ export default function Automation() {
   const failed = useMemo(() => automationLogs.filter((l) => l.status === "failed").length, [automationLogs]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 tracking-tight">Automation</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            Manage WhatsApp, email and notification workflows
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
-          <ConnectionStatusPill service="n8n" />
-          <ConnectionStatusPill service="waha" />
-          <Button
-            variant="outline"
-            className="h-9"
-            onClick={() => {
-              runAutomationRules();
-              toast({ title: "Rule check started", description: "Proposal follow-up and payment rules evaluated." });
-            }}
-          >
-            Run Rules Now
-          </Button>
-          <Button
-            onClick={() => setShowAddTemplate(true)}
-            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg"
-          >
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Template
-          </Button>
-        </div>
-      </div>
-
+    <>
+      <Topbar
+        title="Automation"
+        subtitle="Manage WhatsApp, email and notification workflows"
+        actions={
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+            <ConnectionStatusPill service="n8n" />
+            <ConnectionStatusPill service="waha" />
+            <Button
+              variant="outline"
+              className="h-9"
+              onClick={() => {
+                runAutomationRules();
+                toast({ title: "Rule check started", description: "Proposal follow-up and payment rules evaluated." });
+              }}
+            >
+              Run Rules Now
+            </Button>
+            <Button
+              onClick={() => setShowAddTemplate(true)}
+              className="h-9 rounded-lg bg-blue-600 px-4 text-sm text-white hover:bg-blue-700"
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              New Template
+            </Button>
+          </div>
+        }
+      />
+      <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: "Total Templates", value: automationTemplates.length },
@@ -468,7 +467,8 @@ export default function Automation() {
       <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
         <TemplateDialog template={editingTemplate} onClose={() => setEditingTemplate(null)} />
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,11 +34,19 @@ export default function UsersPage() {
   const updateUserStatus = useAppStore(s => s.updateUserStatus);
   const updatePassword = useAppStore(s => s.updatePassword);
   const updateUserAssignment = useAppStore(s => s.updateUserAssignment);
+  const updateUserContactInfo = useAppStore(s => s.updateUserContactInfo);
 
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
   const [disableTarget, setDisableTarget] = useState<import('@/types').User | null>(null);
   const [transferToUserId, setTransferToUserId] = useState<string>('');
+  const [contactDrafts, setContactDrafts] = useState<Record<string, { email: string; phone: string }>>({});
+
+  useEffect(() => {
+    setContactDrafts(
+      Object.fromEntries(users.map((u) => [u.id, { email: u.email, phone: u.phone ?? '' }])),
+    );
+  }, [users]);
 
   const usersQuery = useQuery({
     queryKey: ['users'],
@@ -104,6 +113,24 @@ export default function UsersPage() {
     }
   };
 
+  const handleSaveContact = (userId: string) => {
+    const draft = contactDrafts[userId];
+    if (!draft) return;
+    if (!draft.email.trim()) {
+      toast({ title: 'Email required', variant: 'destructive' });
+      return;
+    }
+    try {
+      updateUserContactInfo(userId, { email: draft.email.trim(), phone: draft.phone });
+      const user = useAppStore.getState().users.find((u) => u.id === userId);
+      if (user) updateUserMutation.mutate(user);
+      toast({ title: 'Contact updated' });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unable to update contact';
+      toast({ title: 'Update failed', description: message, variant: 'destructive' });
+    }
+  };
+
   return (
     <>
       <Topbar title="Users" subtitle="Manage platform users" />
@@ -115,7 +142,7 @@ export default function UsersPage() {
                 <TableRow>
                   <TableHead className="text-xs">Name</TableHead>
                   <TableHead className="text-xs">ID</TableHead>
-                  <TableHead className="text-xs">Email</TableHead>
+                  <TableHead className="text-xs min-w-[240px]">Email / phone</TableHead>
                   <TableHead className="text-xs">Role</TableHead>
                   <TableHead className="text-xs">Team</TableHead>
                   <TableHead className="text-xs">Region</TableHead>
@@ -128,7 +155,50 @@ export default function UsersPage() {
                   <TableRow key={u.id}>
                     <TableCell className="text-sm font-medium">{u.name}</TableCell>
                     <TableCell className="font-mono-id">{u.id}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{u.email}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1.5 min-w-[200px]">
+                        <Input
+                          type="email"
+                          className="h-8 text-xs"
+                          placeholder="Sign-in email"
+                          value={contactDrafts[u.id]?.email ?? u.email}
+                          onChange={(e) =>
+                            setContactDrafts((prev) => ({
+                              ...prev,
+                              [u.id]: {
+                                email: e.target.value,
+                                phone: prev[u.id]?.phone ?? u.phone ?? '',
+                              },
+                            }))
+                          }
+                        />
+                        <div className="flex gap-1">
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="Phone"
+                            value={contactDrafts[u.id]?.phone ?? u.phone ?? ''}
+                            onChange={(e) =>
+                              setContactDrafts((prev) => ({
+                                ...prev,
+                                [u.id]: {
+                                  email: prev[u.id]?.email ?? u.email,
+                                  phone: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 text-xs shrink-0"
+                            onClick={() => handleSaveContact(u.id)}
+                            disabled={updateUserMutation.isPending}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {me.role === 'super_admin' ? (
                         <Select

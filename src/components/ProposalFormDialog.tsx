@@ -29,7 +29,9 @@ import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
 import { toast } from "@/components/ui/use-toast";
-import type { Proposal, ProposalLineItem } from "@/types";
+import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
 
 function makeId() {
@@ -97,6 +99,7 @@ export function ProposalFormDialog({
   const [finalQuoteValue, setFinalQuoteValue] = useState("");
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
+  const [pdfScope, setPdfScope] = useState<ProposalPdfScope>("end_to_end");
 
   const canOverride = can(me.role, "proposals", "override_final_value");
   const canRequestApproval = can(me.role, "proposals", "request_approval");
@@ -265,6 +268,7 @@ export function ProposalFormDialog({
       createdAt: editingProposal?.createdAt ?? now,
       updatedAt: now,
       createdBy: editingProposal?.createdBy ?? me.id,
+      pdfScope,
     };
   };
 
@@ -357,6 +361,7 @@ export function ProposalFormDialog({
       setSetupDeploymentCharges(Number(editingProposal.setupDeploymentCharges) || 0);
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
+      setPdfScope(editingProposal.pdfScope ?? "end_to_end");
     } else {
       const createdAt = new Date();
       setTitleAutoCreatedAt(createdAt);
@@ -371,6 +376,7 @@ export function ProposalFormDialog({
       setSetupDeploymentCharges(0);
       setOverrideFinal(false);
       setFinalQuoteValue("");
+      setPdfScope("end_to_end");
     }
   }, [open, editingProposal?.id, initialCustomerId]);
 
@@ -415,6 +421,60 @@ export function ProposalFormDialog({
                   }}
                   placeholder="Lead name or proposal title"
                 />
+              </div>
+              <div className="space-y-3 sm:col-span-2 lg:col-span-3">
+                <Label>Proposal PDF cover heading</Label>
+                <RadioGroup
+                  value={pdfScope}
+                  onValueChange={(v) => setPdfScope(v as ProposalPdfScope)}
+                  className="grid gap-3 sm:grid-cols-3"
+                >
+                  <label
+                    htmlFor="pdf-scope-sales"
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
+                      pdfScope === "sales" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
+                    )}
+                  >
+                    <RadioGroupItem value="sales" id="pdf-scope-sales" className="mt-0.5" />
+                    <span className="text-sm leading-snug">
+                      <span className="font-medium">Sales</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        Buildesk Annual sales management proposal
+                      </span>
+                    </span>
+                  </label>
+                  <label
+                    htmlFor="pdf-scope-post"
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
+                      pdfScope === "post" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
+                    )}
+                  >
+                    <RadioGroupItem value="post" id="pdf-scope-post" className="mt-0.5" />
+                    <span className="text-sm leading-snug">
+                      <span className="font-medium">Post</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        Buildesk Annual Post sales management proposal
+                      </span>
+                    </span>
+                  </label>
+                  <label
+                    htmlFor="pdf-scope-e2e"
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
+                      pdfScope === "end_to_end" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
+                    )}
+                  >
+                    <RadioGroupItem value="end_to_end" id="pdf-scope-e2e" className="mt-0.5" />
+                    <span className="text-sm leading-snug">
+                      <span className="font-medium">End to end</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        Buildesk annual end to end sales management proposal
+                      </span>
+                    </span>
+                  </label>
+                </RadioGroup>
               </div>
               <div className="space-y-2">
                 <Label>Company Name *</Label>

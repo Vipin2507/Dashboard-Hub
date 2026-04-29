@@ -1,7 +1,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 
 export type TagsInputProps = {
@@ -102,7 +102,7 @@ export function TagsInput({
 
   return (
     <Popover modal={false} open={open} onOpenChange={(v) => !disabled && setOpen(v)}>
-      <PopoverTrigger asChild>
+      <PopoverAnchor asChild>
         <div
           className={cn(
             "min-h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
@@ -113,7 +113,7 @@ export function TagsInput({
           )}
           onMouseDown={(e) => {
             if (disabled) return;
-            // Keep input focus when clicking inside container.
+            // Avoid losing focus to trigger toggle; PopoverAnchor does not toggle on click.
             e.preventDefault();
             inputRef.current?.focus();
             setOpen(true);
@@ -169,7 +169,7 @@ export function TagsInput({
             />
           </div>
         </div>
-      </PopoverTrigger>
+      </PopoverAnchor>
 
       <PopoverContent
         className="w-[var(--radix-popover-trigger-width)] p-0"

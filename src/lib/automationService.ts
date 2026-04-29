@@ -101,26 +101,27 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
   // and the user sends immediately without visiting the Automation page).
   await refreshTemplatesIfStale();
   const { automationTemplates, automationSettings } = useAppStore.getState();
+  const ctx = enrichAutomationContext(context);
 
   const templates = automationTemplates.filter((t) => t.trigger === trigger && t.isActive);
 
   for (const template of templates) {
-    const resolvedBody = resolveVariables(template.body, context);
-    const resolvedSubject = template.subject ? resolveVariables(template.subject, context) : undefined;
+    const resolvedBody = resolveVariables(template.body, ctx);
+    const resolvedSubject = template.subject ? resolveVariables(template.subject, ctx) : undefined;
 
     if (template.channel === "in_app") {
-      await sendInAppNotification(template, resolvedBody, context);
+      await sendInAppNotification(template, resolvedBody, ctx);
     } else if (template.channel === "whatsapp") {
-      await fireWhatsAppDirect(template, resolvedBody, context, automationSettings);
+      await fireWhatsAppDirect(template, resolvedBody, ctx, automationSettings);
     } else if (template.channel === "email" || template.channel === "sms") {
-      await fireN8nWebhook(template, resolvedBody, resolvedSubject, context, automationSettings);
+      await fireN8nWebhook(template, resolvedBody, resolvedSubject, ctx, automationSettings);
     }
   }
 
   // Rules engine (MoM 19/04/2026) — optional local rules that can fire additional actions.
   try {
     const { evaluateAndFire, loadRulesFromStore } = await import('@/lib/automationRules');
-    await evaluateAndFire(trigger, context, loadRulesFromStore());
+    await evaluateAndFire(trigger, ctx, loadRulesFromStore());
   } catch {
     // ignore
   }
@@ -131,14 +132,15 @@ export async function sendAutomationTemplateById(templateId: string, context: Au
   const { automationTemplates, automationSettings } = useAppStore.getState();
   const template = automationTemplates.find((t) => t.id === templateId);
   if (!template) return;
-  const resolvedBody = resolveVariables(template.body, context);
-  const resolvedSubject = template.subject ? resolveVariables(template.subject, context) : undefined;
+  const ctx = enrichAutomationContext(context);
+  const resolvedBody = resolveVariables(template.body, ctx);
+  const resolvedSubject = template.subject ? resolveVariables(template.subject, ctx) : undefined;
   if (template.channel === 'in_app') {
-    await sendInAppNotification(template, resolvedBody, context);
+    await sendInAppNotification(template, resolvedBody, ctx);
   } else if (template.channel === 'whatsapp') {
-    await fireWhatsAppDirect(template, resolvedBody, context, automationSettings);
+    await fireWhatsAppDirect(template, resolvedBody, ctx, automationSettings);
   } else if (template.channel === 'email' || template.channel === 'sms') {
-    await fireN8nWebhook(template, resolvedBody, resolvedSubject, context, automationSettings);
+    await fireN8nWebhook(template, resolvedBody, resolvedSubject, ctx, automationSettings);
   }
 }
 
@@ -181,6 +183,7 @@ export interface AutomationContext {
   salesRepId?: string;
   salesRepName?: string;
   salesRepPhone?: string;
+  salesRepEmail?: string;
   salesManagerId?: string;
   approvedBy?: string;
   rejectionReason?: string;
@@ -210,9 +213,45 @@ function normalizeIndiaPhone(phone?: string): string | undefined {
   return digits;
 }
 
+/** Fill sales rep / customer contact fields from the store when callers pass ids only. */
+function enrichAutomationContext(ctx: AutomationContext): AutomationContext {
+  const { users, customers } = useAppStore.getState();
+  let next: AutomationContext = { ...ctx };
+
+  if (next.salesRepId) {
+    const rep = users.find((u) => u.id === next.salesRepId);
+    if (rep) {
+      const phone = rep.phone != null && String(rep.phone).trim() ? String(rep.phone).trim() : undefined;
+      next = {
+        ...next,
+        salesRepName: next.salesRepName ?? rep.name,
+        salesRepPhone: next.salesRepPhone ?? phone,
+        salesRepEmail: next.salesRepEmail ?? rep.email,
+      };
+    }
+  }
+
+  if (next.customerId) {
+    const customer = customers.find((c) => c.id === next.customerId);
+    if (customer) {
+      const primary = customer.contacts?.find((c) => c.isPrimary) ?? customer.contacts?.[0];
+      next = {
+        ...next,
+        customerName: next.customerName ?? customer.customerName ?? customer.companyName,
+        customerPhone: next.customerPhone ?? primary?.phone,
+        customerEmail: next.customerEmail ?? primary?.email,
+      };
+    }
+  }
+
+  return next;
+}
+
 function resolveVariables(template: string, ctx: AutomationContext): string {
   const map: Record<string, string> = {
     "{{customer_name}}": ctx.customerName ?? "",
+    "{{customer_phone}}": ctx.customerPhone ?? "",
+    "{{customer_email}}": ctx.customerEmail ?? "",
     "{{proposal_number}}": ctx.proposalNumber ?? "",
     "{{proposal_title}}": ctx.proposalTitle ?? "",
     "{{grand_total}}": formatINRInline(ctx.grandTotal),
@@ -220,6 +259,7 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{days_since_sent}}": String(ctx.daysSinceSent ?? ""),
     "{{sales_rep_name}}": ctx.salesRepName ?? "",
     "{{sales_rep_phone}}": ctx.salesRepPhone ?? "",
+    "{{sales_rep_email}}": ctx.salesRepEmail ?? "",
     "{{company_name}}": ctx.companyName ?? "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
     "{{deal_id}}": ctx.dealId ?? "",
     "{{deal_title}}": ctx.dealTitle ?? "",
@@ -282,23 +322,33 @@ function resolveRecipients(roles: AutomationRecipient[], ctx: AutomationContext)
     if (role === "sales_rep" && ctx.salesRepId) {
       const rep = users.find((u) => u.id === ctx.salesRepId);
       if (rep) {
-        result.push({ name: rep.name, email: rep.email, userId: rep.id });
+        const phone = rep.phone != null && String(rep.phone).trim() ? String(rep.phone).trim() : undefined;
+        result.push({ name: rep.name, email: rep.email, phone, userId: rep.id });
       }
     }
 
     if (role === "sales_manager") {
       const managers = users.filter((u) => u.role === "sales_manager");
-      managers.forEach((m) => result.push({ name: m.name, email: m.email, userId: m.id }));
+      managers.forEach((m) => {
+        const phone = m.phone != null && String(m.phone).trim() ? String(m.phone).trim() : undefined;
+        result.push({ name: m.name, email: m.email, phone, userId: m.id });
+      });
     }
 
     if (role === "finance") {
       const finance = users.filter((u) => u.role === "finance");
-      finance.forEach((f) => result.push({ name: f.name, email: f.email, userId: f.id }));
+      finance.forEach((f) => {
+        const phone = f.phone != null && String(f.phone).trim() ? String(f.phone).trim() : undefined;
+        result.push({ name: f.name, email: f.email, phone, userId: f.id });
+      });
     }
 
     if (role === "super_admin") {
       const admins = users.filter((u) => u.role === "super_admin");
-      admins.forEach((a) => result.push({ name: a.name, email: a.email, userId: a.id }));
+      admins.forEach((a) => {
+        const phone = a.phone != null && String(a.phone).trim() ? String(a.phone).trim() : undefined;
+        result.push({ name: a.name, email: a.email, phone, userId: a.id });
+      });
     }
   }
 
@@ -526,6 +576,8 @@ export function checkAndTriggerPaymentDue(): void {
             daysUntilDue,
             salesRepId: rep?.id,
             salesRepName: rep?.name,
+            salesRepPhone: rep?.phone ?? undefined,
+            salesRepEmail: rep?.email,
           });
           state.paymentDueRuns[key] = todayIso;
         }
@@ -544,6 +596,8 @@ export function checkAndTriggerPaymentDue(): void {
             daysOverdue,
             salesRepId: rep?.id,
             salesRepName: rep?.name,
+            salesRepPhone: rep?.phone ?? undefined,
+            salesRepEmail: rep?.email,
           });
           state.invoiceOverdueRuns[key] = todayIso;
         }
@@ -602,9 +656,11 @@ export function checkAndTriggerProposalFollowUps(): void {
           validUntil: proposal.validUntil,
           daysSinceSent,
           customerId: customer?.id,
-            customerName: customer?.customerName ?? customer?.companyName,
+          customerName: customer?.customerName ?? customer?.companyName,
           salesRepId: rep?.id,
           salesRepName: rep?.name,
+          salesRepPhone: rep?.phone ?? undefined,
+          salesRepEmail: rep?.email,
         });
       });
     });
@@ -899,10 +955,13 @@ export async function checkSubscriptionRenewalAutomation(): Promise<void> {
           const tmpl =
             (settings[tplKey] as string) ||
             "Reminder: {{plan_name}} for {{customer_name}} expires {{expiry_date}}. {{renewal_link}}";
-          const text = resolveVariables(tmpl, {
-            ...ctx,
-            daysOverdue: daysLeft < 0 ? Math.abs(daysLeft) : undefined,
-          });
+          const text = resolveVariables(
+            tmpl,
+            enrichAutomationContext({
+              ...ctx,
+              daysOverdue: daysLeft < 0 ? Math.abs(daysLeft) : undefined,
+            }),
+          );
           const chs = (settings[channelsKey] as Array<"whatsapp" | "email" | "sms">) ?? ["email"];
           await sendSubscriptionReminderChannels(chs, text, "Subscription renewal", {
             ...ctx,
