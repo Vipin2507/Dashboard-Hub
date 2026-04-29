@@ -1,6 +1,7 @@
-import type { Proposal, ProposalLineItem, ProposalPdfImageSet, ProposalPdfScope, ProposalPdfUserRow } from "@/types";
+import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import type { ImageCompression, jsPDF } from "jspdf";
-import { imageDataFormat } from "@/lib/proposalPdfImageFormat";
+import { useAppStore } from "@/store/useAppStore";
+import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
 
 // Brand blue (hex #176CEC)
 const BLUE = [23, 108, 236] as const;
@@ -323,7 +324,7 @@ function addPageNumber(doc: jsPDF, num: number): void {
   doc.text(String(num), L.rightEdge - 5, L.pageNumTextY, { align: "center" });
 }
 
-function renderCoverPage(doc: jsPDF, proposal: Proposal, images: ProposalPdfImageSet, users: ProposalPdfUserRow[]): void {
+function renderCoverPage(doc: jsPDF, proposal: Proposal, images: Record<string, string>): void {
   addPdfRasterImage(doc, images.coverBg, 0, 0, PAGE_W, PAGE_H);
 
   addPdfRasterImage(doc, images.logoBuildesk, L.coverTitleX, 10, 55, 20);
@@ -344,6 +345,7 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, images: ProposalPdfImag
   doc.setFontSize(L.coverTitleSize);
   doc.text(`For ${String(proposal.customerName || "").toUpperCase()}`, L.coverTitleX, ty + 2);
 
+  const users = useAppStore.getState().users;
   const rep = users.find((u) => u.id === proposal.assignedTo);
   const repPhone = rep?.phone ?? "";
   const roleDisplay = toTitleCase((rep?.role ?? "").replace(/_/g, " "));
@@ -366,15 +368,15 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, images: ProposalPdfImag
 function renderVersionPage(
   doc: jsPDF,
   proposal: Proposal,
-  images: ProposalPdfImageSet,
+  images: Record<string, string>,
   autoTable: (doc: jsPDF, options: object) => void,
   pageNum: number,
-  users: ProposalPdfUserRow[],
 ): void {
   addPageHeader(doc);
 
   addPdfRasterImage(doc, images.meetingPhoto, L.meetingPhotoX, L.meetingPhotoY, L.meetingPhotoW, L.meetingPhotoH);
 
+  const users = useAppStore.getState().users;
   const DEFAULT_VERSION_COMMENT = "This is the first version of Proposal to be submitted for Buildesk Annual Licenses";
   const versionData =
     proposal.versionHistory?.map((v) => {
@@ -448,7 +450,7 @@ function renderVersionPage(
 function renderCoverLetterPage(
   doc: jsPDF,
   proposal: Proposal,
-  images: ProposalPdfImageSet,
+  images: Record<string, string>,
   pageNum: number,
 ): void {
   addPageHeader(doc);
@@ -1024,19 +1026,12 @@ function renderSLAPages(doc: jsPDF, startPageNum: number): number {
   return pageNum;
 }
 
-/**
- * Build the proposal PDF document (same layout as in-app download).
- * Use from the server or n8n HTTP flow; browser code uses `generateProposalPdf` which preloads images and calls this.
- */
-export async function composeProposalPdf(
-  proposal: Proposal,
-  images: ProposalPdfImageSet,
-  users: ProposalPdfUserRow[],
-): Promise<jsPDF> {
+export async function generateProposalPdf(proposal: Proposal): Promise<void> {
   const [jsPDFModule, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
   const jsPDF = jsPDFModule.default;
   const autoTable = autoTableModule.default;
 
+  const images = await preloadProposalImages();
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -1045,12 +1040,12 @@ export async function composeProposalPdf(
     putOnlyUsedFonts: true,
   });
 
-  renderCoverPage(doc, proposal, images, users);
+  renderCoverPage(doc, proposal, images);
 
   let pageNum = 1;
 
   doc.addPage();
-  renderVersionPage(doc, proposal, images, autoTable, pageNum++, users);
+  renderVersionPage(doc, proposal, images, autoTable, pageNum++);
 
   doc.addPage();
   renderCoverLetterPage(doc, proposal, images, pageNum++);
@@ -1086,5 +1081,5 @@ export async function composeProposalPdf(
   doc.addPage();
   renderSLAPages(doc, pageNum);
 
-  return doc;
+  doc.save(`Proposal-${proposal.proposalNumber}.pdf`);
 }

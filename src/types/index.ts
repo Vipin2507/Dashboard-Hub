@@ -62,18 +62,6 @@ export interface User {
   status: 'active' | 'disabled';
 }
 
-/** Minimal user row for proposal PDF (browser store or server DB). */
-export type ProposalPdfUserRow = Pick<User, "id" | "name" | "role" | "phone">;
-
-/** Preloaded template images for proposal PDF (browser or server). */
-export type ProposalPdfImageSet = {
-  coverBg: string;
-  logoBuildesk: string;
-  logoCravingcode: string;
-  meetingPhoto: string;
-  blueArrow: string;
-};
-
 export type CustomerStatus =
   | 'active'
   | 'inactive'

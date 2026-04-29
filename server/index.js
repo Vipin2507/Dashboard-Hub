@@ -7,7 +7,6 @@ import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
 import { registerIntegrationProxies } from "./integrationsProxy.js";
 import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
-import { registerProposalPdfRoutes } from "./proposalPdfRoute.ts";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -616,8 +615,6 @@ app.delete("/api/proposals/:id", (req, res) => {
   if (!info.changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 });
-
-registerProposalPdfRoutes(app);
 
 app.get("/api/deals", (req, res) => {
   const actorRole = normalizeRole(req.query.actorRole);

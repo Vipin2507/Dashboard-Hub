@@ -16,6 +16,11 @@ export async function loadImageAsBase64(url: string): Promise<string> {
   });
 }
 
+function getImageFormat(dataUrl: string): "PNG" | "JPEG" {
+  if (!dataUrl?.startsWith("data:")) return "PNG";
+  return dataUrl.includes("image/jpeg") || dataUrl.includes("image/jpg") ? "JPEG" : "PNG";
+}
+
 /** Preload all proposal template images as data URLs for jsPDF */
 export async function preloadProposalImages(): Promise<{
   coverBg: string;
@@ -55,7 +60,9 @@ export async function preloadProposalImages(): Promise<{
   };
 }
 
-export { imageDataFormat } from "@/lib/proposalPdfImageFormat";
+export function imageDataFormat(dataUrl: string): "PNG" | "JPEG" {
+  return getImageFormat(dataUrl);
+}
 
 type PdfImagePreset = { maxEdgePx: number; quality: number };
 
