@@ -31,6 +31,8 @@ function n8nBase(settings) {
 }
 
 export function registerIntegrationProxies(app, { db }) {
+  const PROXY_VERSION = "integrationsProxy-multipart-forward-v2";
+
   async function readRawBody(req) {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -114,7 +116,12 @@ export function registerIntegrationProxies(app, { db }) {
       const isJson = ct.toLowerCase().includes("application/json");
 
       let body;
-      const headers = { Accept: "application/json, text/plain" };
+      const headers = {
+        Accept: "application/json, text/plain",
+        // Visible in n8n webhook headers, helps confirm which VPS code is live.
+        "X-Buildesk-Integrations-Proxy": PROXY_VERSION,
+        "X-Buildesk-Incoming-Content-Type": ct || "none",
+      };
 
       if (isMultipart) {
         // Express doesn't parse multipart by default, so forward the raw body as-is.
@@ -134,6 +141,7 @@ export function registerIntegrationProxies(app, { db }) {
       const upstream = await fetch(url, { method: "POST", headers, body });
       const buf = await upstream.text();
       const upstreamCt = upstream.headers.get("content-type") || "";
+      res.setHeader("X-Buildesk-Integrations-Proxy", PROXY_VERSION);
       res.status(upstream.status);
       if (upstreamCt.includes("application/json")) {
         try {
