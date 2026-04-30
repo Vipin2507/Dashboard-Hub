@@ -36,6 +36,19 @@ function orderedIntegrationBases(): string[] {
   return out;
 }
 
+function cloneRequestInitForRetry(init?: RequestInit): RequestInit | undefined {
+  if (!init) return init;
+  const body = init.body;
+  // FormData bodies can be consumed by a failed/retried fetch in some environments.
+  // Re-create them per retry attempt to avoid sending an empty body.
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    const next = new FormData();
+    for (const [k, v] of body.entries()) next.append(k, v as never);
+    return { ...init, body: next };
+  }
+  return init;
+}
+
 export async function fetchIntegrationProxy(path: string, init?: RequestInit): Promise<Response> {
   const normalized = path.startsWith("/") ? path : `/${path}`;
   const urls: string[] = [];
@@ -46,7 +59,7 @@ export async function fetchIntegrationProxy(path: string, init?: RequestInit): P
 
   let last: Response | undefined;
   for (const url of urls) {
-    last = await fetch(url, init);
+    last = await fetch(url, cloneRequestInitForRetry(init));
     if (!shouldRetryIntegration(last.status)) return last;
   }
   return last!;
