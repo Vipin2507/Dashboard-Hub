@@ -120,9 +120,9 @@ function getPdfScope(proposal: Proposal): ProposalPdfScope {
 function getCoverTitleLines(proposal: Proposal): [string, string] {
   switch (getPdfScope(proposal)) {
     case "sales":
-      return ["BUILDESK ANNUAL SALES MANAGEMENT", "PROPOSAL"];
+      return ["BUILDESK ANNUAL SALES", "MANAGEMENT PROPOSAL"];
     case "post":
-      return ["BUILDESK ANNUAL POST SALES MANAGEMENT", "PROPOSAL"];
+      return ["BUILDESK ANNUAL POST SALES", "MANAGEMENT PROPOSAL"];
     case "end_to_end":
     default:
       return ["BUILDESK ANNUAL END TO END SALES", "MANAGEMENT PROPOSAL"];
@@ -194,6 +194,12 @@ function formatProposalDate(iso: string): string {
 
 function getServiceLabel(_item: ProposalLineItem): string {
   return "12 Months";
+}
+
+function formatLicenseSuffix(item: ProposalLineItem): string {
+  const qty = Number(item.qty) || 0;
+  if (qty <= 0) return "";
+  return ` (${qty} license${qty === 1 ? "" : "s"})`;
 }
 
 function baseAmount(item: ProposalLineItem): number {
@@ -555,7 +561,7 @@ function renderCommercialSection(
   globalOffset: number,
   totalToShow: number,
 ): number {
-  let currentPageNum = pageNum;
+  const currentPageNum = pageNum;
   addPageHeader(doc);
 
   doc.setFont("helvetica", "bold");
@@ -580,9 +586,10 @@ function renderCommercialSection(
 
   const tableBody: unknown[] = chunk.map((item, idx) => [
     globalOffset + idx + 1,
-    item.name + (item.description ? `\n${item.description}` : ""),
+    item.name + formatLicenseSuffix(item) + (item.description ? `\n${item.description}` : ""),
     getServiceLabel(item),
-    formatINR(Math.round(taxableAmount(item))),
+    // Show original amount (pre-discount) on each item row.
+    formatINR(Math.round(baseAmount(item))),
   ]);
 
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
