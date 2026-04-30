@@ -1,5 +1,5 @@
 import { fetchN8nWebhook, fetchWahaSendText } from "@/lib/automationEndpoints";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type {
   AutomationChannel,
@@ -9,10 +9,18 @@ import type {
   AutomationTemplate,
   AutomationTrigger,
 } from "@/types";
+import type { Proposal } from "@/types";
 
 const RULE_STATE_KEY = "buildesk_automation_rule_state_v1";
 const TEMPLATE_REFRESH_TTL_MS = 15_000;
 let lastTemplateRefreshAt = 0;
+
+async function loadProposalForPdf(proposalId: string): Promise<Proposal> {
+  const list = await api.get<Proposal[]>("/proposals");
+  const p = list.find((x) => x.id === proposalId);
+  if (!p) throw new Error("Proposal not found");
+  return p;
+}
 
 async function refreshTemplatesIfStale(): Promise<void> {
   const now = Date.now();
@@ -365,6 +373,26 @@ async function fireN8nWebhook(
   const { appendAutomationLog } = useAppStore.getState();
   const recipients = resolveRecipients(template.recipients, ctx);
 
+  // For proposal-related emails, attach the proposal PDF as binary (n8n expects `proposal_pdf`).
+  const shouldAttachProposalPdf =
+    template.channel === "email" &&
+    !!ctx.proposalId &&
+    String(template.trigger || "").toLowerCase().startsWith("proposal");
+
+  let proposalPdfBlob: Blob | null = null;
+  let proposalPdfName = "proposal.pdf";
+  if (shouldAttachProposalPdf) {
+    try {
+      const proposal = await loadProposalForPdf(ctx.proposalId as string);
+      const { generateProposalPdfBlob } = await import("@/lib/generateProposalPdf");
+      proposalPdfBlob = await generateProposalPdfBlob(proposal as never);
+      const num = (ctx.proposalNumber || (proposal as unknown as { proposalNumber?: string }).proposalNumber || "").trim();
+      proposalPdfName = num ? `Proposal-${num}.pdf` : `Proposal-${ctx.proposalId}.pdf`;
+    } catch {
+      proposalPdfBlob = null;
+    }
+  }
+
   for (const recipient of recipients) {
     const webhookPath = "buildesk-email";
     const normalizedPhone =
@@ -418,11 +446,30 @@ async function fireN8nWebhook(
     appendAutomationLog(logEntry);
 
     try {
-      const res = await fetchN8nWebhook(settings, webhookPath, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const init: RequestInit =
+        proposalPdfBlob && template.channel === "email"
+          ? (() => {
+              const formData = new FormData();
+              // Keep backward compatibility with existing n8n mappings like:
+              //   {{ $json.body.delayHours }}
+              // by also sending payload fields as top-level form fields.
+              // `data` remains as a full JSON blob for convenience/debugging.
+              formData.append("data", JSON.stringify(payload));
+              for (const [k, v] of Object.entries(payload)) {
+                if (v === undefined || v === null) continue;
+                // n8n webhook parses multipart fields as strings
+                formData.append(k, typeof v === "string" ? v : String(v));
+              }
+              formData.append("proposal_pdf", proposalPdfBlob, proposalPdfName);
+              return { method: "POST", body: formData };
+            })()
+          : {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            };
+
+      const res = await fetchN8nWebhook(settings, webhookPath, init);
       const errBody = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 600);
       const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
 

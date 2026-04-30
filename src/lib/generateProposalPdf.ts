@@ -1034,12 +1034,17 @@ function renderSLAPages(doc: jsPDF, startPageNum: number): number {
 }
 
 export async function generateProposalPdf(proposal: Proposal): Promise<void> {
+  const doc = await buildProposalPdfDoc(proposal);
+  doc.save(`Proposal-${proposal.proposalNumber}.pdf`);
+}
+
+async function buildProposalPdfDoc(proposal: Proposal): Promise<jsPDF> {
   const [jsPDFModule, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
-  const jsPDF = jsPDFModule.default;
+  const JsPdfCtor = jsPDFModule.default;
   const autoTable = autoTableModule.default;
 
   const images = await preloadProposalImages();
-  const doc = new jsPDF({
+  const doc = new JsPdfCtor({
     orientation: "portrait",
     unit: "mm",
     format: "a4",
@@ -1088,5 +1093,11 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
   doc.addPage();
   renderSLAPages(doc, pageNum);
 
-  doc.save(`Proposal-${proposal.proposalNumber}.pdf`);
+  return doc;
+}
+
+export async function generateProposalPdfBlob(proposal: Proposal): Promise<Blob> {
+  const doc = await buildProposalPdfDoc(proposal);
+  // jsPDF's TS types vary; at runtime this returns a Blob.
+  return doc.output("blob") as unknown as Blob;
 }

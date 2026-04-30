@@ -31,6 +31,12 @@ function n8nBase(settings) {
 }
 
 export function registerIntegrationProxies(app, { db }) {
+  async function readRawBody(req) {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  }
+
   async function proxyWahaSendText(req, res) {
     try {
       const settings = getAutomationSettingsFromDb(db);
@@ -102,25 +108,41 @@ export function registerIntegrationProxies(app, { db }) {
         return res.status(400).json({ error: "Invalid webhook name" });
       }
       const url = `${base}/${segment}`;
-      const upstream = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/plain",
-        },
-        body: JSON.stringify(req.body ?? {}),
-      });
+
+      const ct = String(req.headers["content-type"] || "");
+      const isMultipart = ct.toLowerCase().includes("multipart/form-data");
+      const isJson = ct.toLowerCase().includes("application/json");
+
+      let body;
+      const headers = { Accept: "application/json, text/plain" };
+
+      if (isMultipart) {
+        // Express doesn't parse multipart by default, so forward the raw body as-is.
+        body = await readRawBody(req);
+        headers["Content-Type"] = ct; // includes boundary
+        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
+      } else if (isJson) {
+        headers["Content-Type"] = "application/json";
+        body = JSON.stringify(req.body ?? {});
+      } else {
+        // Fallback: forward raw body (useful for x-www-form-urlencoded, etc.)
+        body = await readRawBody(req);
+        if (ct) headers["Content-Type"] = ct;
+        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
+      }
+
+      const upstream = await fetch(url, { method: "POST", headers, body });
       const buf = await upstream.text();
-      const ct = upstream.headers.get("content-type") || "";
+      const upstreamCt = upstream.headers.get("content-type") || "";
       res.status(upstream.status);
-      if (ct.includes("application/json")) {
+      if (upstreamCt.includes("application/json")) {
         try {
           return res.json(JSON.parse(buf || "{}"));
         } catch {
           return res.type("text/plain").send(buf);
         }
       }
-      return res.type(ct || "text/plain").send(buf);
+      return res.type(upstreamCt || "text/plain").send(buf);
     } catch (e) {
       res.status(502).json({ error: String(e?.message || e) });
     }
