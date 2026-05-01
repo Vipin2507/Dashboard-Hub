@@ -1,4 +1,5 @@
 import multer from 'multer';
+import express from 'express';
 
 /**
  * Buildesk CRM Integration Proxy — Full Updated Version
@@ -36,6 +37,7 @@ function n8nBase(settings) {
 export function registerIntegrationProxies(app, { db }) {
   
   const multipartHandler = upload.any();
+  const jsonHandler = express.json({ limit: "5mb" });
 
   // --- WAHA PROXY LOGIC ---
 
@@ -167,8 +169,10 @@ export function registerIntegrationProxies(app, { db }) {
   // --- ROUTE REGISTRATION ---
 
   // WAHA Routes (Standard JSON)
-  app.post("/api/integrations/waha/sendText", proxyWahaSendText);
-  app.post("/integrations/waha/sendText", proxyWahaSendText);
+  // NOTE: These proxy routes are registered before the global body parsers in `server/index.js`,
+  // so we must attach a JSON parser here; otherwise `req.body` is always empty `{}`.
+  app.post("/api/integrations/waha/sendText", jsonHandler, proxyWahaSendText);
+  app.post("/integrations/waha/sendText", jsonHandler, proxyWahaSendText);
   app.get("/api/integrations/waha/sessions", proxyWahaSessions);
   app.get("/integrations/waha/sessions", proxyWahaSessions);
 
