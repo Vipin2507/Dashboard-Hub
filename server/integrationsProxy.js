@@ -9,6 +9,8 @@
  * forwards an empty `{}` JSON payload to n8n.
  */
 
+import os from "node:os";
+
 /** Bump when changing proxy behaviour — visible on GET webhook URL and in POST response headers (unless stripped by nginx). */
 export const N8N_WEBHOOK_PROXY_VERSION = "n8n-raw-v4";
 
@@ -197,7 +199,14 @@ export function registerIntegrationProxies(app, { db }) {
   }
 
   function ping(_req, res) {
-    res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
+    res.json({
+      ok: true,
+      module: "integrations",
+      ts: new Date().toISOString(),
+      n8nProxyVersion: N8N_WEBHOOK_PROXY_VERSION,
+      hostname: os.hostname(),
+      pid: process.pid,
+    });
   }
 
   /** Browsers open links with GET; n8n webhooks use POST. Avoid Express "Cannot GET" for manual checks. */
