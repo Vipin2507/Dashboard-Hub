@@ -4,11 +4,7 @@ import { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, forceReseedUsersAndTeams } from 
 import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
 import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
-import {
-  registerIntegrationProxies,
-  registerN8nWebhookProxyEarly,
-  N8N_WEBHOOK_PROXY_VERSION,
-} from "./integrationsProxy.js";
+import { registerIntegrationProxies } from "./integrationsProxy.js";
 import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
 
@@ -16,31 +12,10 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(cors());
-// n8n webhooks must see the raw body (JSON or multipart). Register before express.json/urlencoded
-// so the integration proxy forwards the full payload to n8n (HTTPS dashboard path).
-registerN8nWebhookProxyEarly(app, { db });
-console.log(`[buildesk] n8n webhook integration proxy: ${N8N_WEBHOOK_PROXY_VERSION} (GET /api/integrations/n8n/webhook/buildesk-email to verify)`);
 // Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
 // Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
-const BODY_PARSER_LIMIT = "100mb";
-
-/** Never run global JSON/urlencoded parsers on n8n proxy POSTs (multipart + large bodies). Avoids PayloadTooLarge if Content-Type is wrong or route order differs. */
-function isN8nWebhookProxyPost(req) {
-  if (req.method !== "POST") return false;
-  const url = String(req.originalUrl || req.url || "").split("?")[0];
-  return (
-    url.startsWith("/api/integrations/n8n/webhook/") || url.startsWith("/integrations/n8n/webhook/")
-  );
-}
-
-app.use((req, res, next) => {
-  if (isN8nWebhookProxyPost(req)) return next();
-  express.json({ limit: BODY_PARSER_LIMIT })(req, res, next);
-});
-app.use((req, res, next) => {
-  if (isN8nWebhookProxyPost(req)) return next();
-  express.urlencoded({ extended: true, limit: BODY_PARSER_LIMIT })(req, res, next);
-});
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 app.use(attachInteractionLogger(db));
 registerIntegrationProxies(app, { db });
 
