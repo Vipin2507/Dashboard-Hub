@@ -44,10 +44,10 @@ app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 // ---------------------------------------------------------
 // 5. REMAINING API REGISTRATIONS
 // ---------------------------------------------------------
-registerPaymentsApi(app, { db });
-registerDataControlApi(app, { db });
-registerSubscriptionRenewalApi(app, { db });
-registerDeliveryApi(app, { db });
+registerPaymentsApi(app,  db );
+registerDataControlApi(app,  db );
+registerSubscriptionRenewalApi(app,  db );
+registerDeliveryApi(app,  db );
 
 /**
  * Debug helpers (intentionally behind an env flag for VPS troubleshooting).
