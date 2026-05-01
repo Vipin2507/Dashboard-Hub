@@ -36,6 +36,7 @@ jobs:
           target: "/home/buildesk-dashboard/htdocs/dashboard.buildesk.ae/public/"
           strip_components: 1
 
+      # --- BACKEND DEPLOYMENT (PERSISTENT DATA) ---
       - name: Deploy Backend to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -45,26 +46,27 @@ jobs:
           script: |
             cd /home/buildesk-api/htdocs/api.buildesk.ae
             
-            # 1. Fix Git "dubious ownership" and set permissions
+            # 1. Fix Git ownership and ensure data directory exists
             git config --global --add safe.directory /home/buildesk-api/htdocs/api.buildesk.ae
+            
+            # 2. Create data folder if missing and set permissions
+            # We use mkdir -p because it won't delete existing files
+            mkdir -p data
             chown -R buildesk-api:buildesk-api .
-            
-            # 2. Force delete database files that cause Git Reset to fail
-            # (Git cannot overwrite files that root created if it's running as buildesk-api)
-            rm -f data/app.db* 2>/dev/null || true
-            rm -f server/data/app.db* 2>/dev/null || true
-            
-            # 3. Pull and Reset to match GitHub exactly
+            chmod -R 775 data
+
+            # 3. Pull and Reset logic
+            # Because app.db is in .gitignore, 'git reset --hard' will NOT delete it.
             sudo -u buildesk-api git fetch --all
             sudo -u buildesk-api git reset --hard origin/main
             
             # 4. Install dependencies
             sudo -u buildesk-api npm install
             
-            # 5. Smart Restart: Try to restart, but start it if it doesn't exist
+            # 5. Smart Restart
             sudo -u buildesk-api pm2 restart buildesk-api --update-env || sudo -u buildesk-api pm2 start server/index.js --name buildesk-api
 
-      # --- FINAL PERMISSIONS ---
+      # --- FINAL PERMISSIONS & RELOAD ---
       - name: Permissions & Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
         with:
