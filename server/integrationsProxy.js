@@ -3,7 +3,13 @@
  * HTTPS dashboards cannot call http:// WAHA/n8n (mixed content); browser → this API → upstream HTTP.
  *
  * Defaults match server/db.js seeds; override with WAHA_PUBLIC_URL / N8N_WEBHOOK_BASE on the host.
+ *
+ * **n8n webhooks** must be registered *before* `express.json()` / `express.urlencoded()` in `server/index.js`
+ * (see `registerN8nWebhookProxyEarly`). Otherwise multipart bodies can be mishandled and the proxy
+ * forwards an empty `{}` JSON payload to n8n.
  */
+
+import express from "express";
 
 function parseJsonSafe(raw, fallback = null) {
   try {
@@ -30,13 +36,81 @@ function n8nBase(settings) {
   return String(process.env.N8N_WEBHOOK_BASE || "http://72.60.200.185:5678/webhook").replace(/\/$/, "");
 }
 
-export function registerIntegrationProxies(app, { db }) {
-  async function readRawBody(req) {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    return Buffer.concat(chunks);
+/** Capture full request body before global JSON/urlencoded parsers touch it. */
+const n8nWebhookRawBody = express.raw({ type: () => true, limit: "100mb" });
+
+/**
+ * Register n8n webhook POST proxies **before** `app.use(express.json())` in server/index.js.
+ * Uses raw body so multipart (proposal PDF) and JSON payloads forward intact to n8n.
+ */
+export function registerN8nWebhookProxyEarly(app, { db }) {
+  /**
+   * @param {import("express").Request} req
+   * @param {import("express").Response} res
+   * @param {string | undefined} segmentOverride
+   */
+  async function proxyN8nWebhook(req, res, segmentOverride) {
+    try {
+      const settings = getAutomationSettingsFromDb(db);
+      const base = n8nBase(settings);
+      const raw =
+        segmentOverride != null && segmentOverride !== ""
+          ? String(segmentOverride)
+          : String(req.params?.segment || "");
+      const segment = raw.replace(/[^a-zA-Z0-9._-]/g, "");
+      if (!segment || segment !== raw) {
+        return res.status(400).json({ error: "Invalid webhook name" });
+      }
+      const url = `${base}/${segment}`;
+
+      const ct = String(req.headers["content-type"] || "");
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "", "utf8");
+
+      const headers = {
+        Accept: "application/json, text/plain",
+        ...(ct ? { "Content-Type": ct } : {}),
+        "Content-Length": String(buf.length),
+      };
+
+      const upstream = await fetch(url, { method: "POST", headers, body: buf });
+      const responseBuf = await upstream.text();
+      const upstreamCt = upstream.headers.get("content-type") || "";
+      res.status(upstream.status);
+      if (upstreamCt.includes("application/json")) {
+        try {
+          return res.json(JSON.parse(responseBuf || "{}"));
+        } catch {
+          return res.type("text/plain").send(responseBuf);
+        }
+      }
+      return res.type(upstreamCt || "text/plain").send(responseBuf);
+    } catch (e) {
+      res.status(502).json({ error: String(e?.message || e) });
+    }
   }
 
+  app.post("/api/integrations/n8n/webhook/buildesk-health", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-health");
+  });
+  app.post("/api/integrations/n8n/webhook/buildesk-email", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-email");
+  });
+  app.post("/integrations/n8n/webhook/buildesk-health", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-health");
+  });
+  app.post("/integrations/n8n/webhook/buildesk-email", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, "buildesk-email");
+  });
+
+  app.post("/api/integrations/n8n/webhook/:segment", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, undefined);
+  });
+  app.post("/integrations/n8n/webhook/:segment", n8nWebhookRawBody, (req, res) => {
+    void proxyN8nWebhook(req, res, undefined);
+  });
+}
+
+export function registerIntegrationProxies(app, { db }) {
   async function proxyWahaSendText(req, res) {
     try {
       const settings = getAutomationSettingsFromDb(db);
@@ -90,64 +164,6 @@ export function registerIntegrationProxies(app, { db }) {
     }
   }
 
-  /**
-   * @param {import("express").Request} req
-   * @param {import("express").Response} res
-   * @param {string | undefined} segmentOverride optional — use for explicit paths like `/webhook/buildesk-health` (hyphen in segment)
-   */
-  async function proxyN8nWebhook(req, res, segmentOverride) {
-    try {
-      const settings = getAutomationSettingsFromDb(db);
-      const base = n8nBase(settings);
-      const raw =
-        segmentOverride != null && segmentOverride !== ""
-          ? String(segmentOverride)
-          : String(req.params?.segment || "");
-      const segment = raw.replace(/[^a-zA-Z0-9._-]/g, "");
-      if (!segment || segment !== raw) {
-        return res.status(400).json({ error: "Invalid webhook name" });
-      }
-      const url = `${base}/${segment}`;
-
-      const ct = String(req.headers["content-type"] || "");
-      const isMultipart = ct.toLowerCase().includes("multipart/form-data");
-      const isJson = ct.toLowerCase().includes("application/json");
-
-      let body;
-      const headers = { Accept: "application/json, text/plain" };
-
-      if (isMultipart) {
-        // Express doesn't parse multipart by default, so forward the raw body as-is.
-        body = await readRawBody(req);
-        headers["Content-Type"] = ct; // includes boundary
-        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
-      } else if (isJson) {
-        headers["Content-Type"] = "application/json";
-        body = JSON.stringify(req.body ?? {});
-      } else {
-        // Fallback: forward raw body (useful for x-www-form-urlencoded, etc.)
-        body = await readRawBody(req);
-        if (ct) headers["Content-Type"] = ct;
-        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
-      }
-
-      const upstream = await fetch(url, { method: "POST", headers, body });
-      const buf = await upstream.text();
-      const upstreamCt = upstream.headers.get("content-type") || "";
-      res.status(upstream.status);
-      if (upstreamCt.includes("application/json")) {
-        try {
-          return res.json(JSON.parse(buf || "{}"));
-        } catch {
-          return res.type("text/plain").send(buf);
-        }
-      }
-      return res.type(upstreamCt || "text/plain").send(buf);
-    } catch (e) {
-      res.status(502).json({ error: String(e?.message || e) });
-    }
-  }
-
   function ping(_req, res) {
     res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
   }
@@ -160,7 +176,7 @@ export function registerIntegrationProxies(app, { db }) {
       segment,
       methodExpected: "POST",
       hint:
-        "The app calls this URL with POST JSON. Use Automation → Settings → “Test connection” to hit n8n.",
+        "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n.",
     });
   }
 
@@ -171,7 +187,7 @@ export function registerIntegrationProxies(app, { db }) {
         segment,
         methodExpected: "POST",
         hint:
-          "The app calls this URL with POST JSON. Use Automation → Settings → “Test connection” to hit n8n.",
+          "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n.",
       });
     };
   }
@@ -182,30 +198,13 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/api/integrations/waha/sessions", proxyWahaSessions);
   app.get("/integrations/waha/sessions", proxyWahaSessions);
 
-  // Explicit n8n paths (some Express/nginx setups mishandle :segment with hyphens)
-  app.post("/api/integrations/n8n/webhook/buildesk-health", (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-health");
-  });
-  app.post("/api/integrations/n8n/webhook/buildesk-email", (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-email");
-  });
-  app.post("/integrations/n8n/webhook/buildesk-health", (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-health");
-  });
-  app.post("/integrations/n8n/webhook/buildesk-email", (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-email");
-  });
+  // n8n POST webhooks are registered in registerN8nWebhookProxyEarly (before express.json).
+
   app.get("/api/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
   app.get("/api/integrations/n8n/webhook/buildesk-email", n8nWebhookGetFixed("buildesk-email"));
   app.get("/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
   app.get("/integrations/n8n/webhook/buildesk-email", n8nWebhookGetFixed("buildesk-email"));
 
-  app.post("/api/integrations/n8n/webhook/:segment", (req, res) => {
-    void proxyN8nWebhook(req, res, undefined);
-  });
-  app.post("/integrations/n8n/webhook/:segment", (req, res) => {
-    void proxyN8nWebhook(req, res, undefined);
-  });
   app.get("/api/integrations/n8n/webhook/:segment", n8nWebhookGet);
   app.get("/integrations/n8n/webhook/:segment", n8nWebhookGet);
   app.get("/api/integrations/ping", ping);
