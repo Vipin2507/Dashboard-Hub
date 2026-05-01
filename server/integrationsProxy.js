@@ -116,19 +116,45 @@ export function registerIntegrationProxies(app, { db }) {
       let body;
       const headers = { Accept: "application/json, text/plain" };
 
+      const rawBuf = Buffer.isBuffer(req.body) ? req.body : null;
+      const debugN8n =
+        process.env.DEBUG_N8N_WEBHOOK === "1" || String(process.env.DEBUG_N8N_WEBHOOK || "").toLowerCase() === "true";
+
       if (isMultipart) {
-        // Express doesn't parse multipart by default, so forward the raw body as-is.
-        body = await readRawBody(req);
+        // Prefer Buffer from express.raw (registered for these paths in server/index.js before express.json).
+        body = rawBuf ?? (await readRawBody(req));
         headers["Content-Type"] = ct; // includes boundary
-        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
+        headers["Content-Length"] = String(Buffer.byteLength(body));
       } else if (isJson) {
         headers["Content-Type"] = "application/json";
-        body = JSON.stringify(req.body ?? {});
+        if (rawBuf != null) {
+          body = rawBuf;
+          if (debugN8n) {
+            console.log("[proxyN8nWebhook] isJson=true (raw Buffer)", {
+              byteLength: rawBuf.length,
+              preview: rawBuf.toString("utf8").slice(0, 300),
+            });
+          }
+        } else {
+          if (debugN8n) {
+            console.log("[proxyN8nWebhook] isJson=true (parsed req.body)");
+            console.log("[proxyN8nWebhook] req.body exists?", !!req.body);
+            console.log("[proxyN8nWebhook] req.body keys:", req.body && typeof req.body === "object" ? Object.keys(req.body) : "N/A");
+            console.log(
+              "[proxyN8nWebhook] req.body sample:",
+              req.body && typeof req.body === "object" ? JSON.stringify(req.body).substring(0, 300) : "NO BODY",
+            );
+          }
+          body = JSON.stringify(req.body ?? {});
+          if (debugN8n) {
+            console.log("[proxyN8nWebhook] body prepared:", String(body).substring(0, 300));
+          }
+        }
       } else {
         // Fallback: forward raw body (useful for x-www-form-urlencoded, etc.)
-        body = await readRawBody(req);
+        body = rawBuf ?? (await readRawBody(req));
         if (ct) headers["Content-Type"] = ct;
-        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
+        headers["Content-Length"] = String(Buffer.byteLength(body));
       }
 
       const upstream = await fetch(url, { method: "POST", headers, body });

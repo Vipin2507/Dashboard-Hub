@@ -429,6 +429,9 @@ async function fireN8nWebhook(
       entityName,
     };
 
+    console.log("[fireN8nWebhook] Payload keys:", Object.keys(payload));
+    console.log("[fireN8nWebhook] Payload sample:", JSON.stringify(payload).substring(0, 300));
+
     const logEntry: AutomationLog = {
       id: crypto.randomUUID(),
       templateId: template.id,
@@ -468,6 +471,25 @@ async function fireN8nWebhook(
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
             };
+
+      if (!init.body) {
+        console.error("[fireN8nWebhook] CRITICAL: init.body is empty", { init });
+        updateAutomationLog(logEntry.id, {
+          status: "failed",
+          errorMessage: "Payload was not set in init object",
+        });
+        continue;
+      }
+
+      const bodyPreview =
+        typeof init.body === "string" ? `JSON string (${init.body.length} bytes)` : "FormData";
+      console.log("[fireN8nWebhook] About to send", {
+        webhookPath,
+        bodyType: bodyPreview,
+        recipientEmail: recipient.email,
+        recipientName: recipient.name,
+      });
+      console.log("[fireN8nWebhook] init.body type:", init.body ? typeof init.body : "EMPTY");
 
       const res = await fetchN8nWebhook(settings, webhookPath, init);
       const errBody = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 600);

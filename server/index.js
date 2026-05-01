@@ -11,11 +11,32 @@ import { registerDeliveryApi } from "./deliveryApi.js";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+/** n8n webhook POSTs must forward exact bytes; `express.json` can leave `req.body` as `{}` while the stream is gone. */
+function isN8nIntegrationsWebhookPost(req) {
+  if (req.method !== "POST") return false;
+  const p = req.path || "";
+  return (
+    p.startsWith("/api/integrations/n8n/webhook/") || p.startsWith("/integrations/n8n/webhook/")
+  );
+}
+
 app.use(cors());
+// 1) Capture raw body for n8n integration webhooks (before JSON parser consumes the stream).
+app.use((req, res, next) => {
+  if (!isN8nIntegrationsWebhookPost(req)) return next();
+  express.raw({ limit: "100mb", type: () => true })(req, res, next);
+});
 // Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
 // Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+// 2) JSON / urlencoded — skip for n8n webhook POSTs (`req.body` is already a Buffer from `express.raw`).
+app.use((req, res, next) => {
+  if (isN8nIntegrationsWebhookPost(req)) return next();
+  express.json({ limit: "100mb" })(req, res, next);
+});
+app.use((req, res, next) => {
+  if (isN8nIntegrationsWebhookPost(req)) return next();
+  express.urlencoded({ extended: true, limit: "100mb" })(req, res, next);
+});
 app.use(attachInteractionLogger(db));
 registerIntegrationProxies(app, { db });
 

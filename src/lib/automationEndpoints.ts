@@ -85,12 +85,29 @@ export async function fetchN8nWebhook(
   segment: string,
   init: RequestInit,
 ): Promise<Response> {
+  const bodyLen =
+    typeof init.body === "string" ? init.body.length : init.body instanceof FormData ? "FormData" : "N/A";
+  console.log("[fetchN8nWebhook]", {
+    segment,
+    hasBody: !!init.body,
+    bodyType: init.body ? (init.body instanceof FormData ? "FormData" : typeof init.body) : "none",
+    bodyLength: bodyLen,
+  });
+
   if (import.meta.env.DEV) {
+    console.log("[fetchN8nWebhook] Using DEV mode");
     return fetch(`/n8n/webhook/${segment}`, init);
   }
   if (isBrowserHttps()) {
+    console.log("[fetchN8nWebhook] Using HTTPS proxy mode");
     return fetchIntegrationProxy(`/api/integrations/n8n/webhook/${segment}`, init);
   }
-  const base = settings.n8nWebhookBase.trim().replace(/\/$/, "");
+
+  const base = settings.n8nWebhookBase?.trim().replace(/\/$/, "");
+  if (!base) {
+    console.error("[fetchN8nWebhook] ERROR: n8nWebhookBase is empty or undefined!");
+    throw new Error("n8nWebhookBase not configured");
+  }
+  console.log("[fetchN8nWebhook] Using direct mode:", `${base}/${segment}`);
   return fetch(`${base}/${segment}`, init);
 }
