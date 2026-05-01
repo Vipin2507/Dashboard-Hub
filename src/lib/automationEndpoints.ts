@@ -88,9 +88,18 @@ export async function fetchN8nWebhook(
   if (import.meta.env.DEV) {
     return fetch(`/n8n/webhook/${segment}`, init);
   }
+  
+  // Priority: use n8nWebhookBase if it's set
+  if (settings.n8nWebhookBase?.trim()) {
+    const base = settings.n8nWebhookBase.trim().replace(/\/$/, "");
+    return fetch(`${base}/${segment}`, init);
+  }
+  
+  // Fallback: use HTTPS proxy for dashboard
   if (isBrowserHttps()) {
     return fetchIntegrationProxy(`/api/integrations/n8n/webhook/${segment}`, init);
   }
-  const base = settings.n8nWebhookBase.trim().replace(/\/$/, "");
-  return fetch(`${base}/${segment}`, init);
+  
+  // Last resort: direct call (shouldn't reach here)
+  return fetch(`/webhook/${segment}`, init);
 }
