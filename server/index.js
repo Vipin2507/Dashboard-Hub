@@ -22,8 +22,25 @@ registerN8nWebhookProxyEarly(app, { db });
 console.log(`[buildesk] n8n webhook integration proxy: ${N8N_WEBHOOK_PROXY_VERSION} (GET /api/integrations/n8n/webhook/buildesk-email to verify)`);
 // Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
 // Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
-app.use(express.json({ limit: "100mb" }));
-app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+const BODY_PARSER_LIMIT = "100mb";
+
+/** Never run global JSON/urlencoded parsers on n8n proxy POSTs (multipart + large bodies). Avoids PayloadTooLarge if Content-Type is wrong or route order differs. */
+function isN8nWebhookProxyPost(req) {
+  if (req.method !== "POST") return false;
+  const url = String(req.originalUrl || req.url || "").split("?")[0];
+  return (
+    url.startsWith("/api/integrations/n8n/webhook/") || url.startsWith("/integrations/n8n/webhook/")
+  );
+}
+
+app.use((req, res, next) => {
+  if (isN8nWebhookProxyPost(req)) return next();
+  express.json({ limit: BODY_PARSER_LIMIT })(req, res, next);
+});
+app.use((req, res, next) => {
+  if (isN8nWebhookProxyPost(req)) return next();
+  express.urlencoded({ extended: true, limit: BODY_PARSER_LIMIT })(req, res, next);
+});
 app.use(attachInteractionLogger(db));
 registerIntegrationProxies(app, { db });
 

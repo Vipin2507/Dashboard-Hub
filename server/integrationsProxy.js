@@ -61,6 +61,8 @@ async function captureN8nWebhookRawBody(req, _res, next) {
  * Forwards JSON or multipart (proposal PDF) bytes verbatim to n8n.
  */
 export function registerN8nWebhookProxyEarly(app, { db }) {
+  console.log(`[buildesk] registerN8nWebhookProxyEarly mounted (${N8N_WEBHOOK_PROXY_VERSION})`);
+
   /**
    * @param {import("express").Request} req
    * @param {import("express").Response} res
