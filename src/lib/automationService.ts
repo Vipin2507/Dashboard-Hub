@@ -199,7 +199,6 @@ export interface AutomationContext {
   amountPaid?: number;
   paymentDate?: string;
   receiptNumber?: string;
-  planName?: string;
   paymentsMadeCount?: number;
   paymentsRemainingCount?: number;
   nextDueDate?: string;
@@ -298,7 +297,8 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{plan_start_date}}": ctx.planStartDate ?? "",
   };
 
-  return Object.entries(map).reduce((text, [token, value]) => text.replaceAll(token, value), template);
+  // `String.prototype.replaceAll` isn't available on all TS lib targets in this repo.
+  return Object.entries(map).reduce((text, [token, value]) => text.split(token).join(value), template);
 }
 
 type ResolvedRecipient = { name: string; phone?: string; email?: string; userId?: string };

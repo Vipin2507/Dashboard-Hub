@@ -11,36 +11,47 @@ import { registerDeliveryApi } from "./deliveryApi.js";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-/** n8n webhook POSTs must forward exact bytes; `express.json` can leave `req.body` as `{}` while the stream is gone. */
-function isN8nIntegrationsWebhookPost(req) {
-  if (req.method !== "POST") return false;
-  const p = req.path || "";
-  return (
-    p.startsWith("/api/integrations/n8n/webhook/") || p.startsWith("/integrations/n8n/webhook/")
-  );
-}
-
+// ---------------------------------------------------------
+// 1. GLOBAL PRE-ROUTING MIDDLEWARE
+// ---------------------------------------------------------
 app.use(cors());
-// 1) Capture raw body for n8n integration webhooks (before JSON parser consumes the stream).
-app.use((req, res, next) => {
-  if (!isN8nIntegrationsWebhookPost(req)) return next();
-  express.raw({ limit: "100mb", type: () => true })(req, res, next);
-});
-// Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
-// Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
-// 2) JSON / urlencoded — skip for n8n webhook POSTs (`req.body` is already a Buffer from `express.raw`).
-app.use((req, res, next) => {
-  if (isN8nIntegrationsWebhookPost(req)) return next();
-  express.json({ limit: "100mb" })(req, res, next);
-});
-app.use((req, res, next) => {
-  if (isN8nIntegrationsWebhookPost(req)) return next();
-  express.urlencoded({ extended: true, limit: "100mb" })(req, res, next);
-});
-app.use(attachInteractionLogger(db));
+
+// ---------------------------------------------------------
+// 2. INTEGRATION PROXIES (REGISTERED FIRST)
+// ---------------------------------------------------------
+/** 
+ * CRITICAL: We register these before the global express.json() parsers. 
+ * This allows the Multer middleware inside registerIntegrationProxies 
+ * to "claim" the multipart/form-data stream for n8n webhooks.
+ */
 registerIntegrationProxies(app, { db });
 
-// Debug helpers (intentionally behind an env flag for VPS troubleshooting).
+// ---------------------------------------------------------
+// 3. LOGGING & ANALYTICS
+// ---------------------------------------------------------
+app.use(attachInteractionLogger(db));
+
+// ---------------------------------------------------------
+// 4. GLOBAL BODY PARSERS
+// ---------------------------------------------------------
+/** 
+ * These now handle all other standard API routes. 
+ * High limits are set for bulk Excel imports and large JSON payloads.
+ */
+app.use(express.json({ limit: "100mb" }));
+app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+
+// ---------------------------------------------------------
+// 5. REMAINING API REGISTRATIONS
+// ---------------------------------------------------------
+registerPaymentsApi(app, { db });
+registerDataControlApi(app, { db });
+registerSubscriptionRenewalApi(app, { db });
+registerDeliveryApi(app, { db });
+
+/**
+ * Debug helpers (intentionally behind an env flag for VPS troubleshooting).
+ */
 function debugEnabled() {
   return process.env.ALLOW_DEBUG_API === "1" || process.env.ALLOW_DEBUG_API === "true";
 }
