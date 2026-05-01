@@ -36,8 +36,11 @@ function n8nBase(settings) {
   return String(process.env.N8N_WEBHOOK_BASE || "http://72.60.200.185:5678/webhook").replace(/\/$/, "");
 }
 
-/** Capture full request body before global JSON/urlencoded parsers touch it. */
-const n8nWebhookRawBody = express.raw({ type: () => true, limit: "100mb" });
+/**
+ * Capture the full request bytes before `express.json()` / `express.urlencoded()`.
+ * Mounted under `/api/integrations/n8n/webhook` so it always wins over global parsers for that prefix.
+ */
+const n8nWebhookRawBody = express.raw({ type: "*/*", limit: "100mb" });
 
 /**
  * Register n8n webhook POST proxies **before** `app.use(express.json())` in server/index.js.
@@ -64,7 +67,15 @@ export function registerN8nWebhookProxyEarly(app, { db }) {
       const url = `${base}/${segment}`;
 
       const ct = String(req.headers["content-type"] || "");
-      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? "", "utf8");
+      const buf = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+
+      if (buf.length === 0) {
+        return res.status(400).json({
+          error: "Empty webhook body",
+          hint:
+            "The Node integration proxy received no bytes. Redeploy the API server with the latest server/index.js + server/integrationsProxy.js. If you use nginx, ensure POST /api/integrations/n8n/webhook/* is proxied to Node (not directly to n8n) and client_max_body_size is large enough for PDFs.",
+        });
+      }
 
       const headers = {
         Accept: "application/json, text/plain",
@@ -75,6 +86,7 @@ export function registerN8nWebhookProxyEarly(app, { db }) {
       const upstream = await fetch(url, { method: "POST", headers, body: buf });
       const responseBuf = await upstream.text();
       const upstreamCt = upstream.headers.get("content-type") || "";
+      res.set("X-Buildesk-Integration-Proxy", "n8n-raw-v2");
       res.status(upstream.status);
       if (upstreamCt.includes("application/json")) {
         try {
@@ -89,25 +101,19 @@ export function registerN8nWebhookProxyEarly(app, { db }) {
     }
   }
 
-  app.post("/api/integrations/n8n/webhook/buildesk-health", n8nWebhookRawBody, (req, res) => {
+  const n8nWebhookRouter = express.Router({ caseSensitive: true });
+  n8nWebhookRouter.post("/buildesk-health", (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-health");
   });
-  app.post("/api/integrations/n8n/webhook/buildesk-email", n8nWebhookRawBody, (req, res) => {
+  n8nWebhookRouter.post("/buildesk-email", (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-email");
   });
-  app.post("/integrations/n8n/webhook/buildesk-health", n8nWebhookRawBody, (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-health");
-  });
-  app.post("/integrations/n8n/webhook/buildesk-email", n8nWebhookRawBody, (req, res) => {
-    void proxyN8nWebhook(req, res, "buildesk-email");
+  n8nWebhookRouter.post("/:segment", (req, res) => {
+    void proxyN8nWebhook(req, res, undefined);
   });
 
-  app.post("/api/integrations/n8n/webhook/:segment", n8nWebhookRawBody, (req, res) => {
-    void proxyN8nWebhook(req, res, undefined);
-  });
-  app.post("/integrations/n8n/webhook/:segment", n8nWebhookRawBody, (req, res) => {
-    void proxyN8nWebhook(req, res, undefined);
-  });
+  app.use("/api/integrations/n8n/webhook", n8nWebhookRawBody, n8nWebhookRouter);
+  app.use("/integrations/n8n/webhook", n8nWebhookRawBody, n8nWebhookRouter);
 }
 
 export function registerIntegrationProxies(app, { db }) {
