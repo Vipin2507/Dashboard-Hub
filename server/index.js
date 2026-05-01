@@ -4,7 +4,11 @@ import { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, forceReseedUsersAndTeams } from 
 import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
 import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
-import { registerIntegrationProxies, registerN8nWebhookProxyEarly } from "./integrationsProxy.js";
+import {
+  registerIntegrationProxies,
+  registerN8nWebhookProxyEarly,
+  N8N_WEBHOOK_PROXY_VERSION,
+} from "./integrationsProxy.js";
 import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
 
@@ -15,6 +19,7 @@ app.use(cors());
 // n8n webhooks must see the raw body (JSON or multipart). Register before express.json/urlencoded
 // so the integration proxy forwards the full payload to n8n (HTTPS dashboard path).
 registerN8nWebhookProxyEarly(app, { db });
+console.log(`[buildesk] n8n webhook integration proxy: ${N8N_WEBHOOK_PROXY_VERSION} (GET /api/integrations/n8n/webhook/buildesk-email to verify)`);
 // Bulk import endpoints can send large JSON payloads (Excel → rows → JSON).
 // Note: Reverse proxies (nginx) may also need `client_max_body_size` increased.
 app.use(express.json({ limit: "100mb" }));
