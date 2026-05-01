@@ -9,6 +9,9 @@
  * forwards an empty `{}` JSON payload to n8n.
  */
 
+/** Bump when changing proxy behaviour — visible on GET webhook URL and in POST response headers (unless stripped by nginx). */
+export const N8N_WEBHOOK_PROXY_VERSION = "n8n-raw-v4";
+
 function parseJsonSafe(raw, fallback = null) {
   try {
     return JSON.parse(raw);
@@ -95,8 +98,9 @@ export function registerN8nWebhookProxyEarly(app, { db }) {
       const upstream = await fetch(url, { method: "POST", headers, body: buf });
       const responseBuf = await upstream.text();
       const upstreamCt = upstream.headers.get("content-type") || "";
-      res.set("X-Buildesk-Integration-Proxy", "n8n-raw-v3");
+      res.set("X-Buildesk-Integration-Proxy", N8N_WEBHOOK_PROXY_VERSION);
       res.set("X-Buildesk-N8n-Proxy-Bytes", String(buf.length));
+      res.set("Access-Control-Expose-Headers", "X-Buildesk-Integration-Proxy, X-Buildesk-N8n-Proxy-Bytes");
       res.status(upstream.status);
       if (upstreamCt.includes("application/json")) {
         try {
@@ -203,8 +207,9 @@ export function registerIntegrationProxies(app, { db }) {
       ok: true,
       segment,
       methodExpected: "POST",
+      integrationProxyVersion: N8N_WEBHOOK_PROXY_VERSION,
       hint:
-        "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n.",
+        "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n. Open this URL with GET in a browser to confirm which API build is running.",
     });
   }
 
@@ -214,8 +219,9 @@ export function registerIntegrationProxies(app, { db }) {
         ok: true,
         segment,
         methodExpected: "POST",
+        integrationProxyVersion: N8N_WEBHOOK_PROXY_VERSION,
         hint:
-          "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n.",
+          "The app calls this URL with POST JSON or multipart. Use Automation → Settings → “Test connection” to hit n8n. Open this URL with GET in a browser to confirm which API build is running.",
       });
     };
   }
