@@ -101,6 +101,13 @@ const FONT = {
   termsTitle: 12,
 } as const;
 
+function getCustomerCompanyOrName(proposal: Proposal): string {
+  const customers = useAppStore.getState().customers;
+  const customer = customers.find((c) => c.id === proposal.customerId);
+  const v = (customer?.companyName ?? customer?.customerName ?? proposal.customerName ?? "").trim();
+  return v || "Customer";
+}
+
 function cleanName(name: string): string {
   return name.replace(/\s*\(.*?\)\s*/g, "").trim();
 }
@@ -349,7 +356,7 @@ function renderCoverPage(doc: jsPDF, proposal: Proposal, images: Record<string, 
 
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(L.coverTitleSize);
-  doc.text(`For ${String(proposal.customerName || "").toUpperCase()}`, L.coverTitleX, ty + 2);
+  doc.text(`For ${getCustomerCompanyOrName(proposal).toUpperCase()}`, L.coverTitleX, ty + 2);
 
   const users = useAppStore.getState().users;
   const rep = users.find((u) => u.id === proposal.assignedTo);
@@ -475,7 +482,7 @@ function renderCoverLetterPage(
   doc.setFont("helvetica", "normal");
   doc.text("To,", L.marginLeft, toY);
   doc.setFont("helvetica", "bold");
-  doc.text(proposal.customerName, L.marginLeft, 36);
+  doc.text(getCustomerCompanyOrName(proposal), L.marginLeft, 36);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FONT.body);
