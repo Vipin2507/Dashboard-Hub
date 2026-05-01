@@ -2,8 +2,19 @@
  * WAHA + n8n HTTP proxies — registered first so nginx/Express always see these paths.
  * HTTPS dashboards cannot call http:// WAHA/n8n (mixed content); browser → this API → upstream HTTP.
  *
- * Defaults match server/db.js seeds; override with WAHA_PUBLIC_URL / N8N_WEBHOOK_BASE on the host.
+ * n8n webhooks accept JSON or multipart (e.g. proposal PDF). JSON is forwarded as-is; multipart is
+ * parsed with multer then re-packed with `form-data` and sent to n8n (reliable with Node fetch).
  */
+
+import FormData from "form-data";
+import multer from "multer";
+
+const PROXY_VERSION = "integrationsProxy-multer-formdata-v3";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 function parseJsonSafe(raw, fallback = null) {
   try {
@@ -30,15 +41,25 @@ function n8nBase(settings) {
   return String(process.env.N8N_WEBHOOK_BASE || "http://72.60.200.185:5678/webhook").replace(/\/$/, "");
 }
 
-export function registerIntegrationProxies(app, { db }) {
-  const PROXY_VERSION = "integrationsProxy-multipart-forward-v2";
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
 
-  async function readRawBody(req) {
-    const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
-    return Buffer.concat(chunks);
+function appendBodyFieldsToForm(form, body) {
+  if (!body || typeof body !== "object") return;
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      form.append(key, String(value));
+    } else {
+      form.append(key, JSON.stringify(value));
+    }
   }
+}
 
+export function registerIntegrationProxies(app, { db }) {
   async function proxyWahaSendText(req, res) {
     try {
       const settings = getAutomationSettingsFromDb(db);
@@ -114,25 +135,57 @@ export function registerIntegrationProxies(app, { db }) {
       const ct = String(req.headers["content-type"] || "");
       const isMultipart = ct.toLowerCase().includes("multipart/form-data");
       const isJson = ct.toLowerCase().includes("application/json");
+      const files = Array.isArray(req.files) ? req.files : [];
+
+      /** After `upload.any()`, multipart fields are on req.body and files on req.files */
+      if (isMultipart || files.length > 0) {
+        const form = new FormData();
+        appendBodyFieldsToForm(form, req.body);
+        for (const file of files) {
+          form.append(file.fieldname, file.buffer, {
+            filename: file.originalname || "upload.bin",
+            contentType: file.mimetype || "application/octet-stream",
+          });
+        }
+
+        const upstream = await fetch(url, {
+          method: "POST",
+          headers: {
+            ...form.getHeaders(),
+            Accept: "application/json, text/plain",
+            "X-Buildesk-Integrations-Proxy": PROXY_VERSION,
+            "X-Buildesk-Incoming-Content-Type": ct || "multipart(parsed)",
+          },
+          // Pass the stream; do not use form.getBuffer() (not reliable / may not exist).
+          body: form,
+          duplex: "half",
+        });
+
+        const buf = await upstream.text();
+        const upstreamCt = upstream.headers.get("content-type") || "";
+        res.setHeader("X-Buildesk-Integrations-Proxy", PROXY_VERSION);
+        res.status(upstream.status);
+        if (upstreamCt.includes("application/json")) {
+          try {
+            return res.json(JSON.parse(buf || "{}"));
+          } catch {
+            return res.type("text/plain").send(buf);
+          }
+        }
+        return res.type(upstreamCt || "text/plain").send(buf);
+      }
 
       let body;
       const headers = {
         Accept: "application/json, text/plain",
-        // Visible in n8n webhook headers, helps confirm which VPS code is live.
         "X-Buildesk-Integrations-Proxy": PROXY_VERSION,
         "X-Buildesk-Incoming-Content-Type": ct || "none",
       };
 
-      if (isMultipart) {
-        // Express doesn't parse multipart by default, so forward the raw body as-is.
-        body = await readRawBody(req);
-        headers["Content-Type"] = ct; // includes boundary
-        if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
-      } else if (isJson) {
+      if (isJson) {
         headers["Content-Type"] = "application/json";
         body = JSON.stringify(req.body ?? {});
       } else {
-        // Fallback: forward raw body (useful for x-www-form-urlencoded, etc.)
         body = await readRawBody(req);
         if (ct) headers["Content-Type"] = ct;
         if (req.headers["content-length"]) headers["Content-Length"] = String(req.headers["content-length"]);
@@ -157,7 +210,8 @@ export function registerIntegrationProxies(app, { db }) {
   }
 
   function ping(_req, res) {
-    res.json({ ok: true, module: "integrations", ts: new Date().toISOString() });
+    res.setHeader("X-Buildesk-Integrations-Proxy", PROXY_VERSION);
+    res.json({ ok: true, module: "integrations", proxyVersion: PROXY_VERSION, ts: new Date().toISOString() });
   }
 
   /** Browsers open links with GET; n8n webhooks use POST. Avoid Express "Cannot GET" for manual checks. */
@@ -190,17 +244,17 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/api/integrations/waha/sessions", proxyWahaSessions);
   app.get("/integrations/waha/sessions", proxyWahaSessions);
 
-  // Explicit n8n paths (some Express/nginx setups mishandle :segment with hyphens)
-  app.post("/api/integrations/n8n/webhook/buildesk-health", (req, res) => {
+  // n8n: multer parses multipart before proxy forwards to n8n
+  app.post("/api/integrations/n8n/webhook/buildesk-health", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-health");
   });
-  app.post("/api/integrations/n8n/webhook/buildesk-email", (req, res) => {
+  app.post("/api/integrations/n8n/webhook/buildesk-email", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-email");
   });
-  app.post("/integrations/n8n/webhook/buildesk-health", (req, res) => {
+  app.post("/integrations/n8n/webhook/buildesk-health", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-health");
   });
-  app.post("/integrations/n8n/webhook/buildesk-email", (req, res) => {
+  app.post("/integrations/n8n/webhook/buildesk-email", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-email");
   });
   app.get("/api/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
@@ -208,10 +262,10 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/integrations/n8n/webhook/buildesk-health", n8nWebhookGetFixed("buildesk-health"));
   app.get("/integrations/n8n/webhook/buildesk-email", n8nWebhookGetFixed("buildesk-email"));
 
-  app.post("/api/integrations/n8n/webhook/:segment", (req, res) => {
+  app.post("/api/integrations/n8n/webhook/:segment", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, undefined);
   });
-  app.post("/integrations/n8n/webhook/:segment", (req, res) => {
+  app.post("/integrations/n8n/webhook/:segment", upload.any(), (req, res) => {
     void proxyN8nWebhook(req, res, undefined);
   });
   app.get("/api/integrations/n8n/webhook/:segment", n8nWebhookGet);
@@ -220,6 +274,6 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/integrations/ping", ping);
 
   console.log(
-    "[integrations] WAHA/n8n proxies active — POST /api/integrations/waha/sendText, GET /api/integrations/ping",
+    `[integrations] WAHA/n8n proxies active (${PROXY_VERSION}) — POST /api/integrations/waha/sendText, GET /api/integrations/ping`,
   );
 }
