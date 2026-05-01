@@ -1,8 +1,9 @@
 import multer from 'multer';
 
 /**
- * Buildesk CRM Integration Proxy V4
- * Optimized for Node 20+ using native FormData for n8n/WAHA forwarding.
+ * Buildesk CRM Integration Proxy V5 (Ultimate)
+ * Identity: V5-REDACTED-SHADOWS
+ * Specifically designed to eliminate empty-body JSON fall-throughs.
  */
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -30,60 +31,53 @@ export function registerIntegrationProxies(app, { db }) {
   const multipartHandler = upload.any();
 
   async function proxyN8nWebhook(req, res, segmentOverride) {
+    // LOUD LOGGING - This MUST appear in your PM2 logs
+    const segment = (segmentOverride || req.params?.segment || "").replace(/[^a-zA-Z0-9._-]/g, "");
+    console.log(`[V5-DEBUG] Hit /${segment} | Files: ${req.files?.length || 0} | Body Keys: ${Object.keys(req.body || {}).join(',')}`);
+
     try {
       const settings = getAutomationSettingsFromDb(db);
-      const base = n8nBase(settings);
-      const segment = (segmentOverride || req.params?.segment || "").replace(/[^a-zA-Z0-9._-]/g, "");
-      const url = `${base}/${segment}`;
+      const url = `${n8nBase(settings)}/${segment}`;
 
-      // DEBUG LOGS - Check your PM2 logs for these!
-      console.log(`[Proxy] Incoming to: ${segment}`);
-      console.log(`[Proxy] Files received: ${req.files ? req.files.length : 0}`);
-      console.log(`[Proxy] Body keys: ${Object.keys(req.body || {}).join(', ')}`);
-
-      // Use native Node.js FormData (Node 18+)
       const formData = new FormData();
 
-      // 1. Forward all text fields
+      // 1. Pack all text fields
       if (req.body) {
         Object.keys(req.body).forEach(key => {
           formData.append(key, req.body[key]);
         });
       }
 
-      // 2. Forward all files
+      // 2. Pack the PDF (proposal_pdf)
       if (req.files && req.files.length > 0) {
         req.files.forEach(file => {
-          // Convert buffer to Blob for native fetch compatibility
           const blob = new Blob([file.buffer], { type: file.mimetype });
           formData.append(file.fieldname, blob, file.originalname);
+          console.log(`[V5-DEBUG] Appending file: ${file.fieldname} (${file.size} bytes)`);
         });
       }
 
-      // 3. Forward to n8n using native fetch
-      // NOTE: Do NOT set Content-Type header; fetch sets it with the boundary automatically.
+      // 3. Send to n8n (NO manual Content-Type header)
       const upstream = await fetch(url, {
         method: "POST",
         body: formData,
-        headers: {
-          "Accept": "application/json, text/plain"
-        }
+        headers: { "Accept": "application/json, text/plain" }
       });
 
       const responseText = await upstream.text();
-      console.log(`[Proxy] n8n Response: ${upstream.status}`);
+      console.log(`[V5-DEBUG] n8n status: ${upstream.status}`);
 
       return res.status(upstream.status)
                 .type(upstream.headers.get("content-type") || "application/json")
                 .send(responseText);
 
     } catch (e) {
-      console.error("[Proxy Error]:", e.message);
+      console.error("[V5-ERROR]:", e.message);
       res.status(502).json({ error: e.message });
     }
   }
 
-  // Route Registration
+  // Define specific routes FIRST to avoid shadowing
   app.post("/api/integrations/n8n/webhook/buildesk-email", multipartHandler, (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-email");
   });
@@ -92,5 +86,7 @@ export function registerIntegrationProxies(app, { db }) {
     void proxyN8nWebhook(req, res, undefined);
   });
 
-  console.log("[integrations] Proxy V4 Active - Native FormData mode.");
+  app.get("/api/integrations/ping", (req, res) => res.json({ ok: true, version: "V5-REDACTED-SHADOWS" }));
+
+  console.log("[integrations] Proxy V5-REDACTED-SHADOWS is fully armed and active.");
 }
