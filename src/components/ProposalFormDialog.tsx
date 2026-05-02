@@ -246,6 +246,7 @@ export function ProposalFormDialog({
       title,
       customerId,
       customerName: customer?.customerName ?? "",
+      customerCompanyName: (customer?.companyName ?? "").trim() || undefined,
       assignedTo: assignedTo || me.id,
       assignedToName: assignedUser?.name ?? users.find((u) => u.id === (assignedTo || me.id))?.name ?? "",
       regionId: editingProposal?.regionId ?? me.regionId,

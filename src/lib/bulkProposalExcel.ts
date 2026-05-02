@@ -424,6 +424,7 @@ export async function buildProposalsFromExcelRows(
       title,
       customerId: customer.id,
       customerName: customer.name,
+      customerCompanyName: (data.companyName.trim() || customer.name.trim()) || undefined,
       assignedTo: assignee.id,
       assignedToName: assignee.name,
       regionId: assignee.regionId,

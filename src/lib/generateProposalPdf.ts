@@ -104,8 +104,11 @@ const FONT = {
 function getCustomerCompanyOrName(proposal: Proposal): string {
   const customers = useAppStore.getState().customers;
   const customer = customers.find((c) => c.id === proposal.customerId);
-  const v = (customer?.companyName ?? customer?.customerName ?? proposal.customerName ?? "").trim();
-  return v || "Customer";
+  const fromCustomer = (customer?.companyName ?? "").trim();
+  if (fromCustomer) return fromCustomer;
+  const fromSnapshot = (proposal.customerCompanyName ?? "").trim();
+  if (fromSnapshot) return fromSnapshot;
+  return (proposal.customerName ?? "").trim() || "Customer";
 }
 
 function cleanName(name: string): string {

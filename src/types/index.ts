@@ -278,7 +278,10 @@ export interface Proposal {
   proposalNumber: string;
   title: string;
   customerId: string;
+  /** Contact person name (optional in data; may be empty). */
   customerName: string;
+  /** Company / organization name for PDF and display when contact name differs (set on create/update). */
+  customerCompanyName?: string;
   assignedTo: string;
   assignedToName: string;
   regionId: string;
