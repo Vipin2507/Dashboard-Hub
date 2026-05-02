@@ -136,6 +136,7 @@ buildesk-sales-hub-main/
 
 ## Application routes
 
+
 | Path | Page |
 | ---- | ---- |
 | `/login` | Login (email + password) |
