@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { resolveCustomerNotifyReachability } from '@/lib/customerNotifyContacts';
 import { triggerAutomation } from '@/lib/automationService';
 import type {
   Role,
@@ -783,38 +784,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal approved', entityId: id });
 
-    const proposal = get().proposals.find(p => p.id === id);
-    const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
-    const primaryContact = customer?.contacts?.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
-    const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
-    const approver = get().users.find(u => u.id === approverId);
-    void triggerAutomation('proposal_approved', {
-      proposalId: proposal?.id,
-      proposalNumber: proposal?.proposalNumber,
-      proposalTitle: proposal?.title,
-      grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
-      customerId: customer?.id,
-      customerName: customer?.customerName ?? customer?.companyName,
-      approvedBy: approver?.name ?? '',
-      salesRepId: rep?.id,
-      salesRepName: rep?.name,
-      salesRepPhone: rep?.phone ?? undefined,
-    });
-    void triggerAutomation('proposal_approved_customer_notify', {
-      proposalId: proposal?.id,
-      proposalNumber: proposal?.proposalNumber,
-      proposalTitle: proposal?.title,
-      grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
-      customerId: customer?.id,
-      customerName: customer?.customerName ?? customer?.companyName,
-      customerPhone: primaryContact?.phone,
-      customerEmail: primaryContact?.email,
-      approvedBy: approver?.name ?? '',
-      salesRepId: rep?.id,
-      salesRepName: rep?.name,
-      salesRepPhone: rep?.phone ?? undefined,
-      companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
-    });
+    void (async () => {
+      const proposal = get().proposals.find(p => p.id === id);
+      const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
+      const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
+      const approver = get().users.find(u => u.id === approverId);
+      const reach = await resolveCustomerNotifyReachability(proposal?.customerId, customer ?? undefined);
+      const customerDisplay =
+        (customer?.companyName ?? proposal?.customerCompanyName ?? customer?.customerName ?? proposal?.customerName ?? reach.name ?? '').trim() ||
+        'Customer';
+      void triggerAutomation('proposal_approved', {
+        proposalId: proposal?.id,
+        proposalNumber: proposal?.proposalNumber,
+        proposalTitle: proposal?.title,
+        grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
+        customerId: customer?.id,
+        customerName: customerDisplay,
+        customerPhone: reach.phone,
+        customerEmail: reach.email,
+        approvedBy: approver?.name ?? '',
+        salesRepId: rep?.id,
+        salesRepName: rep?.name,
+        salesRepPhone: rep?.phone ?? undefined,
+      });
+      void triggerAutomation('proposal_approved_customer_notify', {
+        proposalId: proposal?.id,
+        proposalNumber: proposal?.proposalNumber,
+        proposalTitle: proposal?.title,
+        grandTotal: proposal?.finalQuoteValue ?? proposal?.grandTotal,
+        customerId: customer?.id,
+        customerName: customerDisplay,
+        customerPhone: reach.phone,
+        customerEmail: reach.email,
+        approvedBy: approver?.name ?? '',
+        salesRepId: rep?.id,
+        salesRepName: rep?.name,
+        salesRepPhone: rep?.phone ?? undefined,
+        companyName: 'CRAVINGCODE TECHNOLOGIES PVT. LTD.',
+      });
+    })();
   },
 
   rejectProposal: (id, approverId, reason) => {

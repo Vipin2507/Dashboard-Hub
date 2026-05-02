@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { INVALIDATE } from "@/lib/queryKeys";
+import { resolveCustomerNotifyReachability } from "@/lib/customerNotifyContacts";
 import { triggerAutomation } from "@/lib/automationService";
 import { normalizeDealStatus } from "@/lib/dealStatus";
 import { useAppStore } from "@/store/useAppStore";
@@ -66,14 +67,19 @@ export function useApproveProposal() {
       const approver = users.find((u) => u.id === proposal.approvedBy);
       const rep = users.find((u) => u.id === proposal.assignedTo);
       const customer = customers.find((c) => c.id === proposal.customerId);
-      const primary = customer?.contacts?.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
+      const reach = await resolveCustomerNotifyReachability(proposal.customerId, customer ?? undefined);
+      const customerDisplay =
+        (customer?.companyName ?? proposal.customerCompanyName ?? proposal.customerName ?? reach.name ?? "").trim() ||
+        "Customer";
       await triggerAutomation("proposal_approved", {
         proposalId: proposal.id,
         proposalNumber: proposal.proposalNumber,
         proposalTitle: proposal.title,
         grandTotal: proposal.finalQuoteValue ?? proposal.grandTotal,
         customerId: proposal.customerId,
-        customerName: proposal.customerName,
+        customerName: customerDisplay,
+        customerPhone: reach.phone,
+        customerEmail: reach.email,
         approvedBy: approver?.name ?? me.name,
         salesRepId: rep?.id,
         salesRepName: rep?.name,
@@ -85,9 +91,9 @@ export function useApproveProposal() {
         proposalTitle: proposal.title,
         grandTotal: proposal.finalQuoteValue ?? proposal.grandTotal,
         customerId: proposal.customerId,
-        customerName: proposal.customerName,
-        customerPhone: primary?.phone,
-        customerEmail: primary?.email,
+        customerName: customerDisplay,
+        customerPhone: reach.phone,
+        customerEmail: reach.email,
         approvedBy: approver?.name ?? me.name,
         salesRepId: rep?.id,
         salesRepName: rep?.name,

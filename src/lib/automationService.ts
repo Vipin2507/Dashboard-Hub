@@ -1,4 +1,5 @@
 import { fetchN8nWebhook, fetchWahaSendText } from "@/lib/automationEndpoints";
+import { primaryReachabilityFromUnknown } from "@/lib/customerNotifyContacts";
 import { api, apiUrl } from "@/lib/api";
 import { useAppStore } from "@/store/useAppStore";
 import type {
@@ -241,12 +242,12 @@ function enrichAutomationContext(ctx: AutomationContext): AutomationContext {
   if (next.customerId) {
     const customer = customers.find((c) => c.id === next.customerId);
     if (customer) {
-      const primary = customer.contacts?.find((c) => c.isPrimary) ?? customer.contacts?.[0];
+      const r = primaryReachabilityFromUnknown(customer);
       next = {
         ...next,
-        customerName: next.customerName ?? customer.customerName ?? customer.companyName,
-        customerPhone: next.customerPhone ?? primary?.phone,
-        customerEmail: next.customerEmail ?? primary?.email,
+        customerName: next.customerName ?? customer.customerName ?? customer.companyName ?? r.name,
+        customerPhone: next.customerPhone ?? r.phone,
+        customerEmail: next.customerEmail ?? r.email,
       };
     }
   }
@@ -310,11 +311,11 @@ function resolveRecipients(roles: AutomationRecipient[], ctx: AutomationContext)
   for (const role of roles) {
     if (role === "customer" && ctx.customerId) {
       const customer = customers.find((c) => c.id === ctx.customerId);
-      const primary = customer?.contacts.find((c) => c.isPrimary) ?? customer?.contacts[0];
+      const r = primaryReachabilityFromUnknown(customer);
       result.push({
-        name: primary?.name ?? ctx.customerName ?? "Customer",
-        phone: primary?.phone ?? ctx.customerPhone,
-        email: primary?.email ?? ctx.customerEmail,
+        name: r.name ?? ctx.customerName ?? "Customer",
+        phone: r.phone ?? ctx.customerPhone,
+        email: r.email ?? ctx.customerEmail,
       });
       continue;
     }
