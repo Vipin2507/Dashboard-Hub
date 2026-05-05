@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { toast } from '@/components/ui/use-toast';
 
 export default function TeamsPage() {
@@ -21,12 +22,15 @@ export default function TeamsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const teamsQuery = useQuery({
-    queryKey: ['teams'],
+    queryKey: QK.teams(),
     queryFn: async () => {
       const res = await fetch(apiUrl('/api/teams'));
       if (!res.ok) throw new Error('Failed to load teams');
       return res.json() as Promise<import('@/types').Team[]>;
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 
   useEffect(() => {

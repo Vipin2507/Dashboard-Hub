@@ -25,6 +25,7 @@ import RegisterPage from "@/pages/RegisterPage";
 import NotFound from "./pages/NotFound.tsx";
 import { useAppStore } from "@/store/useAppStore";
 import { apiUrl } from "@/lib/api";
+import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 
 function DataBootstrapper() {
   const setRegions = useAppStore((s) => s.setRegions);
@@ -34,7 +35,7 @@ function DataBootstrapper() {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
+    const sync = async () => {
       try {
         const [regionsRes, teamsRes, usersRes, notificationsRes] = await Promise.all([
           fetch(apiUrl("/api/regions")),
@@ -50,9 +51,14 @@ function DataBootstrapper() {
       } catch {
         // Keep local seeded data if backend isn't reachable.
       }
-    })();
+    };
+    void sync();
+    const intervalId = window.setInterval(() => {
+      void sync();
+    }, LIVE_ENTITY_POLL_MS);
     return () => {
       mounted = false;
+      window.clearInterval(intervalId);
     };
   }, [setRegions, setTeams, setUsers, setNotifications]);
 

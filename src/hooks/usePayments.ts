@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiUrl } from '@/lib/api';
+import { LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import type {
   CustomerPaymentSummary,
   PaymentAuditEntry,
@@ -30,7 +31,9 @@ export function usePaymentCatalog() {
   return useQuery({
     queryKey: ['payment-plans', 'catalog'],
     queryFn: () => apiGet<PaymentPlanCatalog[]>('/api/payment-plans/catalog'),
-    staleTime: 60_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 }
 
@@ -47,8 +50,9 @@ export function useOverduePayments() {
   return useQuery({
     queryKey: ['payments', 'overdue'],
     queryFn: () => apiGet<PaymentInstallment[]>('/api/payments/overdue'),
-    staleTime: 60_000,
-    refetchInterval: 5 * 60_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 }
 
@@ -60,7 +64,9 @@ export function usePaymentHistory(params?: Record<string, string>) {
       const suffix = q.toString() ? `?${q.toString()}` : '';
       return apiGet<PaymentInstallment[]>(`/api/payments/history-v2${suffix}`);
     },
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 }
 
@@ -68,7 +74,9 @@ export function useRemainingBalances() {
   return useQuery({
     queryKey: ['payments', 'remaining'],
     queryFn: () => apiGet<any[]>('/api/payments/remaining-v2'),
-    staleTime: 60_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 }
 
@@ -116,7 +124,9 @@ export function usePaymentAudit(params?: { customerId?: string; planId?: string 
       const suffix = q.toString() ? `?${q.toString()}` : '';
       return apiGet<PaymentAuditEntry[]>(`/api/payments/audit-v2${suffix}`);
     },
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 }
 

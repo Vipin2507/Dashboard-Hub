@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import {
   CustomerProposalsLiveTable,
   CustomerDealsLiveTable,
@@ -487,7 +487,9 @@ export default function CustomerProfile() {
     queryKey: QK.customerProposals(customer?.id ?? ""),
     queryFn: () => api.get<Proposal[]>(`/proposals?customerId=${encodeURIComponent(customer!.id)}`),
     enabled: !!customer?.id,
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   const openTicketsCount = customer?.supportTickets.filter(

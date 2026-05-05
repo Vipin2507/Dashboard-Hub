@@ -36,6 +36,7 @@ import { InventoryItemDialog } from "@/components/InventoryItemDialog";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import type { InventoryItem, ItemType } from "@/types";
 import { apiUrl } from "@/lib/api";
+import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import {
   Package,
   Pencil,
@@ -74,6 +75,9 @@ export default function Inventory() {
       if (!res.ok) throw new Error("Failed to load inventory");
       return res.json() as Promise<InventoryItem[]>;
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   // React Query v5 removed per-query callbacks (onSuccess). Keep Zustand store in sync.

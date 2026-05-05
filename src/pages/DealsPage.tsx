@@ -5,7 +5,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { can, getScope, visibleWithScope } from "@/lib/rbac";
 import { canDeleteDeal, canEditDeal, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
 import { apiUrl } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useUpdateDealStage } from "@/hooks/useWorkflow";
 import {
   DEAL_STATUSES,
@@ -263,6 +263,9 @@ export default function DealsPage() {
       if (!res.ok) throw new Error("Failed to load deals");
       return (await res.json()) as Deal[];
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   const auditQuery = useQuery({

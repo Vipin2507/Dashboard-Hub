@@ -67,6 +67,8 @@ export interface AutomationSettings {
   wahaFromNumber: string; // WhatsApp number linked in WAHA
   emailFromAddress: string;
   emailFromName: string;
+  /** Comma-separated CC addresses sent to n8n on every email automation webhook. */
+  emailCc: string;
   isWahaConnected: boolean;
   isN8nConnected: boolean;
 }

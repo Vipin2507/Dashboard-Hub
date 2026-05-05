@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/use-toast";
 import { apiUrl } from "@/lib/api";
+import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { can } from "@/lib/rbac";
 import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,9 @@ export default function DeliveryPage() {
   const dealsQ = useQuery({
     queryKey: ["delivery", "deals", me.role, me.id, me.teamId, me.regionId],
     queryFn: () => fetchDealsForDelivery(me),
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   const [dealFilter, setDealFilter] = useState<"all" | "active" | "won">("all");

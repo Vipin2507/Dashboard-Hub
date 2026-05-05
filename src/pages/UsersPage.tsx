@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { toast } from '@/components/ui/use-toast';
 import {
   AlertDialog,
@@ -49,12 +50,15 @@ export default function UsersPage() {
   }, [users]);
 
   const usersQuery = useQuery({
-    queryKey: ['users'],
+    queryKey: QK.users(),
     queryFn: async () => {
       const res = await fetch(apiUrl('/api/users'));
       if (!res.ok) throw new Error('Failed to load users');
       return res.json() as Promise<import('@/types').User[]>;
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 
   const updateUserMutation = useMutation({

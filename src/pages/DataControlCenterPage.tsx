@@ -43,7 +43,7 @@ import { toast } from "@/components/ui/use-toast";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useAppStore } from "@/store/useAppStore";
 
 type DccField = { key: string; label: string; editable: boolean };
@@ -109,6 +109,9 @@ export default function DataControlCenterPage() {
         totalModuleCount: number;
         totalFieldCount: number;
       }>(`/data-control/meta?${actorParams(me)}`),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   const rowsQuery = useQuery({
@@ -118,6 +121,9 @@ export default function DataControlCenterPage() {
         `/data-control/rows?module=${encodeURIComponent(activeModule!)}&${actorParams(me)}`,
       ),
     enabled: !!activeModule,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 
   const currentModuleDef = useMemo(

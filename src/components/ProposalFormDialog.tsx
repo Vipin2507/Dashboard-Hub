@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
+import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
 import { QK } from "@/lib/queryKeys";
 import {
   Dialog,
@@ -65,13 +67,22 @@ export function ProposalFormDialog({
   const me = useAppStore((s) => s.me);
   const proposals = useAppStore((s) => s.proposals);
   const customers = useAppStore((s) => s.customers);
+  const regions = useAppStore((s) => s.regions);
   const users = useAppStore((s) => s.users);
+  const setCustomers = useAppStore((s) => s.setCustomers);
   const inventoryItems = useAppStore((s) => s.inventoryItems);
   const addProposal = useAppStore((s) => s.addProposal);
   const updateProposal = useAppStore((s) => s.updateProposal);
   const saveNewVersion = useAppStore((s) => s.saveNewVersion);
   const submitForApproval = useAppStore((s) => s.submitForApproval);
   const sendProposal = useAppStore((s) => s.sendProposal);
+
+  const customersQuery = useCustomersListQuery({ enabled: open });
+
+  useEffect(() => {
+    if (!open || !customersQuery.data) return;
+    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+  }, [open, customersQuery.data, regions, users, me.id, setCustomers]);
 
   const invalidateProposalQueries = () => {
     void queryClient.invalidateQueries({ queryKey: QK.proposals() });

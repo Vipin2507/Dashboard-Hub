@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
+import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { apiUrl } from "@/lib/api";
@@ -95,104 +97,6 @@ export default function Customers() {
   const updateCustomer = useAppStore((s) => s.updateCustomer);
   const deleteCustomer = useAppStore((s) => s.deleteCustomer);
 
-  type ApiCustomer = {
-    id: string;
-    leadId?: string;
-    name: string;
-    customerName?: string | null;
-    companyName?: string | null;
-    state?: string | null;
-    gstin?: string | null;
-    regionId: string;
-    city?: string | null;
-    email?: string | null;
-    primaryPhone?: string | null;
-    status?: string | null;
-    createdAt?: string;
-    salesExecutive?: string | null;
-    accountManager?: string | null;
-    deliveryExecutive?: string | null;
-    tags?: string | string[] | null;
-  };
-
-  const normalizeTags = (input: unknown): string[] => {
-    if (Array.isArray(input)) return input.map((t) => String(t)).filter(Boolean);
-    if (typeof input === "string") {
-      const s = input.trim();
-      if (!s) return [];
-      if (s.startsWith("[")) {
-        try {
-          const parsed = JSON.parse(s);
-          if (Array.isArray(parsed)) return parsed.map((t) => String(t)).filter(Boolean);
-        } catch {
-          // fall through
-        }
-      }
-      return s
-        .split(/[,;]/)
-        .map((t) => t.trim())
-        .filter(Boolean);
-    }
-    return [];
-  };
-
-  const toUiCustomer = (row: ApiCustomer): Customer => {
-    const regionName = regions.find((r) => r.id === row.regionId)?.name ?? "Unknown";
-    const assignedUser =
-      users.find((u) => u.name === row.salesExecutive) ??
-      users.find((u) => u.regionId === row.regionId && u.role === "sales_rep") ??
-      users[0];
-    const nowIso = row.createdAt ?? new Date().toISOString();
-    const person = (row.customerName ?? "").trim();
-    const company = (row.companyName ?? "").trim();
-    const fallback = (company || person || row.name || "Customer").trim();
-    return {
-      id: row.id,
-      customerNumber: row.leadId ?? `CUST-${row.id.slice(-4).toUpperCase()}`,
-      customerName: person || (company ? "" : (row.name ?? "").trim()) || fallback,
-      companyName: company || (person ? "" : (row.name ?? "").trim()) || "",
-      status: (row.status as CustomerStatus) ?? "active",
-      gstin: row.gstin ?? undefined,
-      pan: undefined,
-      industry: undefined,
-      website: undefined,
-      address: {
-        city: row.city ?? undefined,
-        state: row.state ?? undefined,
-        country: "India",
-      },
-      contacts: [
-        {
-          id: `ct-${row.id}`,
-          name: person || fallback,
-          email: row.email ?? undefined,
-          phone: row.primaryPhone ?? undefined,
-          isPrimary: true,
-        },
-      ],
-      regionId: row.regionId,
-      regionName,
-      teamId: assignedUser?.teamId ?? users[0]?.teamId ?? "t1",
-      assignedTo: assignedUser?.id ?? users[0]?.id ?? me.id,
-      assignedToName: assignedUser?.name ?? row.salesExecutive ?? "Unassigned",
-      tags: normalizeTags(row.tags),
-      notes: [],
-      attachments: [],
-      productLines: [],
-      payments: [],
-      invoices: [],
-      supportTickets: [],
-      activityLog: [],
-      totalRevenue: 0,
-      totalDealValue: 0,
-      activeProposalsCount: 0,
-      activeDealsCount: 0,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      createdBy: me.id,
-    };
-  };
-
   const toApiPayload = (customer: Customer) => {
     const primary = customer.contacts.find((c) => c.isPrimary) ?? customer.contacts[0];
     const displayName = (customer.companyName || customer.customerName || customer.customerNumber).trim();
@@ -216,19 +120,12 @@ export default function Customers() {
     };
   };
 
-  const customersQuery = useQuery({
-    queryKey: ["customers-old-ui-sync"],
-    queryFn: async () => {
-      const res = await fetch(apiUrl("/api/customers"));
-      if (!res.ok) throw new Error("Failed to load customers");
-      return (await res.json()) as ApiCustomer[];
-    },
-  });
+  const customersQuery = useCustomersListQuery();
 
   useEffect(() => {
     if (!customersQuery.data) return;
-    setCustomers(customersQuery.data.map(toUiCustomer));
-  }, [customersQuery.data, regions, users]);
+    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+  }, [customersQuery.data, regions, users, me.id, setCustomers]);
 
   const createCustomerMutation = useMutation({
     mutationFn: async (customer: Customer) => {

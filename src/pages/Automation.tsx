@@ -1517,6 +1517,14 @@ function SettingsTab() {
               onChange={(v) => updateSettings({ emailFromAddress: v })}
             />
             <SettingField label="From Name" value={settings.emailFromName} onChange={(v) => updateSettings({ emailFromName: v })} />
+            <div className="col-span-2">
+              <SettingField
+                label="CC (email automation)"
+                value={settings.emailCc ?? ""}
+                onChange={(v) => updateSettings({ emailCc: v })}
+                hint="Comma-separated addresses copied on every automated email webhook to n8n (field emailCc in JSON / FormData)."
+              />
+            </div>
           </div>
           <p className="text-xs text-gray-400 mt-3">
             Email is sent via your n8n Gmail or SMTP node. Configure credentials inside n8n directly.

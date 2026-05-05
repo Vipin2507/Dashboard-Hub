@@ -411,6 +411,7 @@ async function fireN8nWebhook(
     const entityId = ctx.proposalId ?? ctx.dealId ?? ctx.invoiceId ?? ctx.customerId ?? "";
     const entityName = ctx.proposalTitle ?? ctx.dealTitle ?? ctx.invoiceNumber ?? ctx.customerName ?? "";
 
+    const emailCc = (settings.emailCc ?? "").trim();
     const payload = {
       channel: (template.channel === "sms" ? "sms" : "email") as "email" | "sms",
       templateId: template.id,
@@ -421,6 +422,7 @@ async function fireN8nWebhook(
       recipientName: recipient.name,
       messageBody: body,
       emailSubject: subject,
+      ...(template.channel === "email" ? { emailCc } : {}),
       wahaApiUrl: settings.wahaApiUrl,
       wahaApiKey: settings.wahaApiKey,
       wahaSession: settings.wahaSession,

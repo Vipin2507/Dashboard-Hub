@@ -751,6 +751,7 @@ function seedIfEmpty() {
       wahaFromNumber: "",
       emailFromAddress: "noreply@buildesk.in",
       emailFromName: "Buildesk CRM",
+      emailCc: "",
       isWahaConnected: false,
       isN8nConnected: false,
     };

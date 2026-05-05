@@ -2,11 +2,13 @@ import { AppSidebar } from '@/components/AppSidebar';
 import { AIAssistantSidebar } from '@/components/AIAssistantSidebar';
 import { MobileShellHeader } from '@/components/MobileShellHeader';
 import { SidebarNavProvider, useSidebarNav } from '@/contexts/SidebarNavContext';
+import { useCoreEntityQueries } from '@/hooks/useCoreEntityQueries';
 import { cn } from '@/lib/utils';
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 function AppLayoutShell() {
+  useCoreEntityQueries();
   const location = useLocation();
   const { sidebarOpen, closeSidebar, isLgUp } = useSidebarNav();
 

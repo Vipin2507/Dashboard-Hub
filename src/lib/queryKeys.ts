@@ -1,6 +1,12 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 /**
+ * Background refetch interval for list/entity queries while a screen is open, so the UI
+ * tracks the database without a full page refresh or tab switching.
+ */
+export const LIVE_ENTITY_POLL_MS = 30_000;
+
+/**
  * Central registry of TanStack Query keys — use for queries and targeted invalidation.
  */
 export const QK = {

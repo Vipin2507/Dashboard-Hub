@@ -1,53 +1,17 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { api } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
+import { useCoreEntityQueries } from "@/hooks/useCoreEntityQueries";
+import { type CustomersApiListRow } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope } from "@/lib/rbac";
 import { normalizeDealStatus } from "@/lib/dealStatus";
 import type { Customer, Deal, Proposal, Scope } from "@/types";
 
-/** SQLite/API customer row (subset of rich `Customer`). */
-export type ApiCustomerRow = {
-  id: string;
-  leadId?: string;
-  name: string;
-  state?: string;
-  gstin?: string | null;
-  regionId: string;
-  city?: string | null;
-  email?: string | null;
-  primaryPhone?: string | null;
-  status: string;
-  createdAt: string;
-  salesExecutive?: string | null;
-  accountManager?: string | null;
-  deliveryExecutive?: string | null;
-};
+/** @deprecated use CustomersApiListRow from useCustomersListQuery */
+export type ApiCustomerRow = CustomersApiListRow;
 
-type PaymentRemainingRow = {
-  customerId: string;
-  category: string;
-  totalRemaining?: number;
-};
-
-type PaymentHistoryRow = {
-  customerId: string;
-  amountPaid: number;
-  paymentDate: string;
-  paymentStatus?: string;
-};
-
-type NotificationRow = {
-  id: string;
-  type: string;
-  to: string;
-  subject: string;
-  entityId: string;
-  at: string;
-};
-
-function mapRowToCustomer(row: ApiCustomerRow): Customer {
+function mapRowToCustomer(row: CustomersApiListRow): Customer {
   return {
     id: row.id,
     customerNumber: row.leadId ?? row.id,
@@ -72,14 +36,19 @@ function mapRowToCustomer(row: ApiCustomerRow): Customer {
     totalDealValue: 0,
     activeProposalsCount: 0,
     activeDealsCount: 0,
-    createdAt: row.createdAt,
-    updatedAt: row.createdAt,
+    createdAt: row.createdAt ?? new Date().toISOString(),
+    updatedAt: row.createdAt ?? new Date().toISOString(),
     createdBy: "",
   };
 }
 
 /** API customers lack `teamId`; approximate TEAM scope via regions of users on the same team. */
-function filterApiCustomers(scope: Scope, me: { id: string; regionId: string; teamId: string }, users: { id: string; teamId: string; regionId: string; name: string }[], rows: ApiCustomerRow[]): ApiCustomerRow[] {
+function filterApiCustomers(
+  scope: Scope,
+  me: { id: string; regionId: string; teamId: string },
+  users: { id: string; teamId: string; regionId: string; name: string }[],
+  rows: CustomersApiListRow[],
+): CustomersApiListRow[] {
   if (scope === "ALL") return rows;
   if (scope === "REGION") return rows.filter((c) => c.regionId === me.regionId);
   if (scope === "TEAM") {
@@ -94,74 +63,28 @@ function filterApiCustomers(scope: Scope, me: { id: string; regionId: string; te
   return [];
 }
 
-const DASH_INTERVAL = 60_000;
-const NOTIF_INTERVAL = 30_000;
-
 /**
  * Live dashboard data from the API + RBAC scoping (same rules as `visibleWithScope` where fields exist).
  * Does not use Zustand seed for proposals/deals/customers lists.
  */
 export function useDashboardData() {
-  const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
   const queryClient = useQueryClient();
 
-  const role = me.role;
+  const {
+    me,
+    role,
+    proposalsQuery,
+    dealsQuery,
+    customersQuery,
+    paymentsRemainingQuery,
+    paymentHistoryQuery,
+    notificationsQuery,
+  } = useCoreEntityQueries();
+
   const proposalScope = getScope(role, "proposals");
   const dealScope = getScope(role, "deals");
   const customerScope = getScope(role, "customers");
-
-  /** Shared keys with list pages / INVALIDATE.* so mutations refresh dashboard too */
-  const proposalsQuery = useQuery({
-    queryKey: QK.proposals(),
-    queryFn: () => api.get<Proposal[]>("/proposals"),
-    staleTime: 30_000,
-    refetchInterval: DASH_INTERVAL,
-  });
-
-  const dealsQuery = useQuery({
-    queryKey: QK.deals({ role: me.role }),
-    queryFn: async () => {
-      const qs = new URLSearchParams();
-      qs.set("actorRole", me.role);
-      qs.set("actorUserId", me.id);
-      qs.set("actorTeamId", me.teamId);
-      qs.set("actorRegionId", me.regionId);
-      if (role === "super_admin") qs.set("includeDeleted", "1");
-      return api.get<Deal[]>(`/deals?${qs.toString()}`);
-    },
-    staleTime: 30_000,
-    refetchInterval: DASH_INTERVAL,
-  });
-
-  const customersQuery = useQuery({
-    queryKey: QK.customers(),
-    queryFn: () => api.get<ApiCustomerRow[]>("/customers"),
-    staleTime: 30_000,
-    refetchInterval: DASH_INTERVAL,
-  });
-
-  const paymentsRemainingQuery = useQuery({
-    queryKey: QK.paymentRemaining(),
-    queryFn: () => api.get<PaymentRemainingRow[]>("/payments/remaining"),
-    staleTime: 30_000,
-    refetchInterval: DASH_INTERVAL,
-    enabled: ["super_admin", "finance", "sales_manager"].includes(role),
-  });
-
-  const paymentHistoryQuery = useQuery({
-    queryKey: [...QK.paymentHistory(), "confirmed"],
-    queryFn: () => api.get<PaymentHistoryRow[]>("/payments/history?status=confirmed"),
-    staleTime: 30_000,
-    refetchInterval: DASH_INTERVAL,
-  });
-
-  const notificationsQuery = useQuery({
-    queryKey: QK.notifications(),
-    queryFn: () => api.get<NotificationRow[]>("/notifications"),
-    staleTime: 15_000,
-    refetchInterval: NOTIF_INTERVAL,
-  });
 
   const rawProposals = proposalsQuery.data ?? [];
   const rawDeals = dealsQuery.data ?? [];

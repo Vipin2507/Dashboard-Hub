@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useEffect, useState } from 'react';
 import { apiUrl } from '@/lib/api';
+import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { toast } from '@/components/ui/use-toast';
 
 export default function RegionsPage() {
@@ -18,12 +19,15 @@ export default function RegionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const regionsQuery = useQuery({
-    queryKey: ['regions'],
+    queryKey: QK.regions(),
     queryFn: async () => {
       const res = await fetch(apiUrl('/api/regions'));
       if (!res.ok) throw new Error('Failed to load regions');
       return res.json() as Promise<import('@/types').Region[]>;
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 
   useEffect(() => {

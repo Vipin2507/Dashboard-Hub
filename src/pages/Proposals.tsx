@@ -83,7 +83,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { apiUrl } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 
 const PAGE_SIZE = 10;
 const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
@@ -314,7 +314,7 @@ export default function Proposals() {
     },
     staleTime: 0,
     refetchOnMount: "always",
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
   });
 
   const proposals = proposalsQuery.data ?? [];
@@ -1180,7 +1180,6 @@ export default function Proposals() {
         onImported={async () => {
           await queryClient.invalidateQueries({ queryKey: QK.proposals() });
           await queryClient.refetchQueries({ queryKey: QK.proposals() });
-          await queryClient.invalidateQueries({ queryKey: ["customers-old-ui-sync"] });
           await queryClient.invalidateQueries({ queryKey: QK.customers() });
           await queryClient.invalidateQueries({ queryKey: QK.dashboard() });
         }}

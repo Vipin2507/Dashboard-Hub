@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getScope } from '@/lib/rbac';
 import { apiUrl } from '@/lib/api';
+import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,12 +17,15 @@ export default function EmailLogPage() {
   const visible = scope === 'NONE' ? [] : notifications;
 
   const notificationsQuery = useQuery({
-    queryKey: ['notifications'],
+    queryKey: QK.notifications(),
     queryFn: async () => {
       const res = await fetch(apiUrl('/api/notifications'));
       if (!res.ok) throw new Error('Failed to load notifications');
       return res.json() as Promise<import('@/types').Notification[]>;
     },
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
   });
 
   useEffect(() => {
