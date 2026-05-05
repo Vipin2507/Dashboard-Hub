@@ -4,6 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
 import { fetchN8nWebhook, fetchWahaSendText, fetchWahaSessions } from "@/lib/automationEndpoints";
+import type { AutomationContext } from "@/lib/automationService";
+import { resolveMergedEmailCc } from "@/lib/automationService";
 import { runAutomationRules } from "@/lib/automationService";
 import { loadRulesFromStore, saveRulesToStore, toggleRule, type AutomationRule } from "@/lib/automationRules";
 import { apiUrl } from "@/lib/api";
@@ -274,6 +276,7 @@ export default function Automation() {
               (a.repeatEveryHours ?? 0) !== (b.repeatEveryHours ?? 0) ||
               (a.maxRepeats ?? 0) !== (b.maxRepeats ?? 0) ||
               (a.subject ?? "") !== (b.subject ?? "") ||
+              (a.emailCc ?? "").trim() !== (b.emailCc ?? "").trim() ||
               a.body !== b.body ||
               JSON.stringify(a.recipients ?? []) !== JSON.stringify(b.recipients ?? [])
             );
@@ -573,6 +576,13 @@ function AutomationTemplateCard({
         </div>
       )}
 
+      {template.channel === "email" && (template.emailCc ?? "").trim() !== "" && (
+        <div className="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          <span className="font-medium text-gray-600 dark:text-gray-300">CC:</span>{" "}
+          <span className="font-mono break-all">{(template.emailCc ?? "").trim()}</span>
+        </div>
+      )}
+
       <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg px-3 py-2.5 mb-4 border border-gray-100 dark:border-gray-700">
         <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-mono">
           {template.body}
@@ -677,6 +687,13 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
         throw new Error("Email missing/invalid for email test");
       }
 
+      const me = useAppStore.getState().me;
+      const testCcCtx: AutomationContext = {
+        ...(me.id && me.id !== "__guest__" ? { salesRepId: me.id } : {}),
+        customerEmail: recipient.email,
+        customerName: recipient.name,
+      };
+
       const res =
         template.channel === "whatsapp"
           ? await fetchWahaSendText(settings, {
@@ -704,6 +721,9 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                 recipientName: recipient.name,
                 messageBody: template.body,
                 emailSubject: template.subject,
+                ...(template.channel === "email"
+                  ? { emailCc: resolveMergedEmailCc(settings, template, testCcCtx) }
+                  : {}),
                 delayHours: 0,
                 entityType: "customer",
                 entityId: "test",
@@ -918,6 +938,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
       .array(z.enum(["customer", "sales_rep", "sales_manager", "finance", "super_admin"]))
       .min(1),
     subject: z.string().optional(),
+    emailCc: z.string().optional(),
     body: z.string().min(10),
     isActive: z.boolean(),
     delayHours: z.number().min(0),
@@ -935,6 +956,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
       channel: template?.channel ?? "whatsapp",
       recipients: (template?.recipients ?? ["customer"]) as AutomationRecipient[],
       subject: template?.subject ?? "",
+      emailCc: template?.emailCc ?? "",
       body: template?.body ?? "",
       isActive: template?.isActive ?? true,
       delayHours: template?.delayHours ?? 0,
@@ -952,6 +974,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
       channel: template?.channel ?? "whatsapp",
       recipients: (template?.recipients ?? ["customer"]) as AutomationRecipient[],
       subject: template?.subject ?? "",
+      emailCc: template?.emailCc ?? "",
       body: template?.body ?? "",
       isActive: template?.isActive ?? true,
       delayHours: template?.delayHours ?? 0,
@@ -995,6 +1018,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         ...template,
         ...values,
         subject: values.channel === "email" ? values.subject : undefined,
+        emailCc: values.channel === "email" ? (values.emailCc?.trim() ? values.emailCc.trim() : undefined) : undefined,
         updatedAt: now,
       } satisfies AutomationTemplate;
       try {
@@ -1018,6 +1042,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         channel: values.channel,
         recipients: values.recipients,
         subject: values.channel === "email" ? values.subject : undefined,
+        emailCc: values.channel === "email" ? (values.emailCc?.trim() ? values.emailCc.trim() : undefined) : undefined,
         body: values.body,
         isActive: values.isActive,
         delayHours: values.delayHours || 0,
@@ -1129,9 +1154,24 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
           </div>
 
           {watchedChannel === "email" && (
-            <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Subject</p>
-              <Input className="h-9 text-sm" {...form.register("subject")} />
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Subject</p>
+                <Input className="h-9 text-sm" {...form.register("subject")} />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CC</p>
+                <Input
+                  className="h-9 text-sm"
+                  placeholder="ops@example.com, manager@example.com"
+                  {...form.register("emailCc")}
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Optional. Comma-separated for this template; merged with Settings → CC. Supports the same{" "}
+                  <code className="text-[11px]">{"{{ }}"}</code> variables as the subject (e.g.{" "}
+                  <code className="text-[11px]">{"{{sales_rep_email}}"}</code>).
+                </p>
+              </div>
             </div>
           )}
 
@@ -1522,7 +1562,7 @@ function SettingsTab() {
                 label="CC (email automation)"
                 value={settings.emailCc ?? ""}
                 onChange={(v) => updateSettings({ emailCc: v })}
-                hint="Comma-separated addresses copied on every automated email webhook to n8n (field emailCc in JSON / FormData)."
+                hint="Comma-separated; merged with per-template CC. Same {{variables}} as templates (e.g. {{sales_rep_email}}). Sent as emailCc to n8n."
               />
             </div>
           </div>

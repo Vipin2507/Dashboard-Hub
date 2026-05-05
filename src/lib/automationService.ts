@@ -364,6 +364,36 @@ function resolveRecipients(roles: AutomationRecipient[], ctx: AutomationContext)
   return result;
 }
 
+/** Merge comma/semicolon-separated address lists; dedupe case-insensitively, preserve first-seen casing. */
+export function mergeEmailCcLists(...parts: (string | undefined)[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    if (!p) continue;
+    for (const seg of p.split(/[,;]/)) {
+      const t = seg.trim();
+      if (!t) continue;
+      const key = t.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(t);
+    }
+  }
+  return out.join(", ");
+}
+
+/** Resolves `{{...}}` tokens in settings + template CC, then merges (same rules as subject/body). */
+export function resolveMergedEmailCc(
+  settings: Pick<AutomationSettings, "emailCc">,
+  template: Pick<AutomationTemplate, "emailCc">,
+  ctx: AutomationContext,
+): string {
+  const enriched = enrichAutomationContext({ ...ctx });
+  const s = resolveVariables((settings.emailCc ?? "").trim(), enriched);
+  const t = resolveVariables((template.emailCc ?? "").trim(), enriched);
+  return mergeEmailCcLists(s, t);
+}
+
 async function fireN8nWebhook(
   template: AutomationTemplate,
   body: string,
@@ -411,7 +441,7 @@ async function fireN8nWebhook(
     const entityId = ctx.proposalId ?? ctx.dealId ?? ctx.invoiceId ?? ctx.customerId ?? "";
     const entityName = ctx.proposalTitle ?? ctx.dealTitle ?? ctx.invoiceNumber ?? ctx.customerName ?? "";
 
-    const emailCc = (settings.emailCc ?? "").trim();
+    const emailCc = resolveMergedEmailCc(settings, template, ctx);
     const payload = {
       channel: (template.channel === "sms" ? "sms" : "email") as "email" | "sms",
       templateId: template.id,

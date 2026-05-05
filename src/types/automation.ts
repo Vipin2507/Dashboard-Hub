@@ -33,6 +33,8 @@ export interface AutomationTemplate {
   channel: AutomationChannel;
   recipients: AutomationRecipient[];
   subject?: string; // for email only
+  /** Optional CC for this template (email only); merged with automation settings CC for n8n. */
+  emailCc?: string;
   body: string; // supports {{variables}}
   isActive: boolean;
   delayHours?: number; // for follow-up: send after X hours
