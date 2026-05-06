@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/sheet";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
+import { useAppliedState } from "@/hooks/useAppliedState";
 import {
   Select,
   SelectTrigger,
@@ -49,6 +50,7 @@ import {
   List,
   Search,
   Eye,
+  Check,
 } from "lucide-react";
 
 const ITEM_TYPE_BADGE: Record<ItemType, string> = {
@@ -132,9 +134,12 @@ export default function Inventory() {
     },
   });
 
-  const [search, setSearch] = useState("");
-  const [itemTypeFilter, setItemTypeFilter] = useState<string>("all");
-  const [activeFilter, setActiveFilter] = useState<string>("all");
+  const invFilters = useAppliedState(
+    { search: "", itemType: "all" as string, active: "all" as string },
+    {
+      isEqual: (a, b) => a.search === b.search && a.itemType === b.itemType && a.active === b.active,
+    },
+  );
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -148,7 +153,7 @@ export default function Inventory() {
 
   const filtered = useMemo(() => {
     let list = inventoryItems;
-    const q = search.trim().toLowerCase();
+    const q = invFilters.applied.search.trim().toLowerCase();
     if (q) {
       list = list.filter(
         (it) =>
@@ -157,13 +162,13 @@ export default function Inventory() {
           it.category.toLowerCase().includes(q)
       );
     }
-    if (itemTypeFilter !== "all") {
-      list = list.filter((it) => it.itemType === itemTypeFilter);
+    if (invFilters.applied.itemType !== "all") {
+      list = list.filter((it) => it.itemType === invFilters.applied.itemType);
     }
-    if (activeFilter === "active") list = list.filter((it) => it.isActive);
-    if (activeFilter === "inactive") list = list.filter((it) => !it.isActive);
+    if (invFilters.applied.active === "active") list = list.filter((it) => it.isActive);
+    if (invFilters.applied.active === "inactive") list = list.filter((it) => !it.isActive);
     return list;
-  }, [inventoryItems, search, itemTypeFilter, activeFilter]);
+  }, [inventoryItems, invFilters.applied]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -266,19 +271,17 @@ export default function Inventory() {
             <Input
               className="h-9 w-full pl-9 text-sm"
               placeholder="Search name, item code, category..."
-              value={search}
+              value={invFilters.draft.search}
               onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
+                invFilters.setDraft({ ...invFilters.draft, search: e.target.value });
               }}
             />
           </div>
           <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2">
             <Select
-              value={itemTypeFilter}
+              value={invFilters.draft.itemType}
               onValueChange={(v) => {
-                setItemTypeFilter(v);
-                setPage(1);
+                invFilters.setDraft({ ...invFilters.draft, itemType: v });
               }}
             >
               <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-36">
@@ -293,10 +296,9 @@ export default function Inventory() {
               </SelectContent>
             </Select>
             <Select
-              value={activeFilter}
+              value={invFilters.draft.active}
               onValueChange={(v) => {
-                setActiveFilter(v);
-                setPage(1);
+                invFilters.setDraft({ ...invFilters.draft, active: v });
               }}
             >
               <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-32">
@@ -309,7 +311,30 @@ export default function Inventory() {
               </SelectContent>
             </Select>
           </div>
-          <div className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+            <Button
+              type="button"
+              className="h-9 gap-2"
+              disabled={!invFilters.hasChanges}
+              onClick={() => {
+                invFilters.apply();
+                setPage(1);
+              }}
+            >
+              <Check className="h-4 w-4" />
+              Apply
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9"
+              onClick={() => {
+                invFilters.clear();
+                setPage(1);
+              }}
+            >
+              Clear
+            </Button>
             <div className="flex gap-0.5 rounded-md border border-border p-0.5">
               <Button
                 type="button"

@@ -440,7 +440,7 @@ export default function DataControlCenterPage() {
         title="Data control center"
         subtitle="Super Admin — per-module bulk add, multi-field bulk update, row selection, and export"
       />
-      <div className="mx-auto w-full max-w-[1600px] space-y-4 sm:space-y-6">
+      <div className="w-full space-y-4 sm:space-y-6">
         <div className="flex flex-wrap items-center gap-3">
           <Badge variant="default" className="gap-1">
             <Shield className="h-3 w-3" />

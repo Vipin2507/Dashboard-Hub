@@ -65,6 +65,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
+import { makeProposalNumber } from "@/lib/proposalNumber";
 import { Progress } from "@/components/ui/progress";
 
 export type TrackerRow = {
@@ -268,16 +269,10 @@ export function RenewalSubscriptionTracker() {
     onError: (e: Error) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
   });
 
-  const getNextProposalNumber = () => {
-    const year = new Date().getFullYear();
-    const prefix = `PROP-${year}-`;
-    const existing = proposals.filter((p) => p.proposalNumber.startsWith(prefix));
-    const max = existing.reduce((m, p) => {
-      const num = parseInt(p.proposalNumber.slice(prefix.length), 10);
-      return Number.isNaN(num) ? m : Math.max(m, num);
-    }, 0);
-    return `${prefix}${String(max + 1).padStart(4, "0")}`;
-  };
+  const nextProposalNumber = useMemo(
+    () => makeProposalNumber(proposals.map((p) => p.proposalNumber)),
+    [proposals],
+  );
 
   const proposeMutation = useMutation({
     mutationFn: async () => {
@@ -320,7 +315,7 @@ export function RenewalSubscriptionTracker() {
       };
       const proposal: Proposal = {
         id: pid,
-        proposalNumber: getNextProposalNumber(),
+        proposalNumber: nextProposalNumber(customer.companyName || customer.customerName),
         title: `Renewal — ${proposeRow.planName}`,
         customerId: proposeRow.customerId,
         customerName: customer.companyName,

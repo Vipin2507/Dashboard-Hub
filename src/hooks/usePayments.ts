@@ -46,6 +46,31 @@ export function useCustomerPaymentSummary(customerId: string) {
   });
 }
 
+export type DealPaymentSummary = {
+  deal: any;
+  plans: Array<{
+    id: string;
+    customer_id: string;
+    deal_id: string;
+    plan_name: string;
+    total_amount: number;
+    paid_amount: number;
+    remaining_amount: number;
+    status: string;
+    start_date: string;
+    installments: PaymentInstallment[];
+  }>;
+};
+
+export function useDealPaymentSummary(dealId?: string | null) {
+  return useQuery({
+    queryKey: ['payments', 'deal', dealId],
+    queryFn: () => apiGet<DealPaymentSummary>(`/api/payments/deal/${dealId}/summary-v2`),
+    enabled: !!dealId,
+    staleTime: 15_000,
+  });
+}
+
 export function useOverduePayments() {
   return useQuery({
     queryKey: ['payments', 'overdue'],
@@ -87,6 +112,18 @@ export function useAssignPaymentPlan() {
       apiSend(`/api/payments/customer/${data.customerId}/assign-plan`, 'POST', data),
     onSuccess: (_r, vars) => {
       qc.invalidateQueries({ queryKey: ['payments', 'customer', vars.customerId] });
+      qc.invalidateQueries({ queryKey: ['payments', 'remaining'] });
+    },
+  });
+}
+
+export function useCreateDealPaymentPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, ...data }: any) => apiSend(`/api/payments/deal/${dealId}/create-plan-v2`, 'POST', data),
+    onSuccess: (_r, vars) => {
+      qc.invalidateQueries({ queryKey: ['payments'] });
+      qc.invalidateQueries({ queryKey: ['payments', 'deal', vars.dealId] });
       qc.invalidateQueries({ queryKey: ['payments', 'remaining'] });
     },
   });

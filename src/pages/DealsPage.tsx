@@ -25,11 +25,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload } from "lucide-react";
 import type { Deal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { Topbar } from "@/components/Topbar";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useCreateDealPaymentPlan, useDealPaymentSummary, useRecordPayment } from "@/hooks/usePayments";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,6 +137,18 @@ function formatINRAmount(n: number | null | undefined) {
   return `₹${v.toLocaleString("en-IN")}`;
 }
 
+function formatDueDate(iso: string) {
+  try {
+    return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 function isFollowUpOverdue(iso: string | null | undefined) {
   if (!iso) return false;
   const d = new Date(iso);
@@ -232,6 +247,17 @@ export default function DealsPage() {
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
+  const [paymentPlanOpen, setPaymentPlanOpen] = useState(false);
+  const [paymentPlanType, setPaymentPlanType] = useState<"one_time" | "monthly" | "quarterly" | "custom">("monthly");
+  const [paymentPlanStartDate, setPaymentPlanStartDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [paymentPlanEndDate, setPaymentPlanEndDate] = useState<string>("");
+  const [paymentPlanInstallmentsCount, setPaymentPlanInstallmentsCount] = useState<number>(3);
+  const [paymentPlanTotal, setPaymentPlanTotal] = useState<string>("");
+  const [gstApplicable, setGstApplicable] = useState(false);
+  const [customRows, setCustomRows] = useState<Array<{ label: string; due_date: string; amount: string }>>([
+    { label: "Installment 1", due_date: new Date().toISOString().slice(0, 10), amount: "" },
+  ]);
+
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
@@ -247,7 +273,34 @@ export default function DealsPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [remarks, setRemarks] = useState("");
 
+  const dealPaymentsQ = useDealPaymentSummary(sheetOpen && sheetDeal?.id && sheetMode !== "create" ? sheetDeal.id : null);
+  const createDealPlanM = useCreateDealPaymentPlan();
+  const recordPaymentM = useRecordPayment();
+
   const statusOptions = useMemo(() => [...dealStatusOptionsForRole(me.role)], [me.role]);
+
+  const eligibleForPaymentPlan = useMemo(() => {
+    if (!sheetDeal || sheetMode === "create") return false;
+    const s = normalizeDealStatus(sheetDeal.dealStatus);
+    return s === "Active" || s === "Closed/Won";
+  }, [sheetDeal, sheetMode]);
+
+  const hasLinkedPaymentPlan = (dealPaymentsQ.data?.plans?.length ?? 0) > 0;
+
+  const suggestedPlanTotal = useMemo(() => {
+    const base = Number(sheetDeal?.totalAmount ?? sheetDeal?.value ?? 0);
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    if (!gstApplicable) return base;
+    if (sheetDeal?.totalAmount != null) return base;
+    return Math.round(base * 1.18 * 100) / 100;
+  }, [gstApplicable, sheetDeal?.totalAmount, sheetDeal?.value]);
+
+  useEffect(() => {
+    if (!sheetOpen) return;
+    if (!sheetDeal) return;
+    if (sheetMode === "create") return;
+    setPaymentPlanTotal(String(suggestedPlanTotal || ""));
+  }, [sheetOpen, sheetDeal?.id, sheetMode, suggestedPlanTotal]);
 
   const dealsQuery = useQuery({
     queryKey: [...QK.deals({ role: me.role })],
@@ -608,6 +661,94 @@ export default function DealsPage() {
     setSearchParams(next, { replace: true });
   };
 
+  const openPaymentPlanDialog = useCallback(() => {
+    if (!sheetDeal?.id) return;
+    setPaymentPlanStartDate(new Date().toISOString().slice(0, 10));
+    setPaymentPlanEndDate("");
+    setPaymentPlanInstallmentsCount(3);
+    setPaymentPlanType("monthly");
+    setCustomRows([{ label: "Installment 1", due_date: new Date().toISOString().slice(0, 10), amount: "" }]);
+    setPaymentPlanOpen(true);
+  }, [sheetDeal?.id]);
+
+  const createPaymentPlan = useCallback(async () => {
+    if (!sheetDeal?.id) return;
+    const total = Number(paymentPlanTotal || suggestedPlanTotal || 0);
+    if (!Number.isFinite(total) || total <= 0) {
+      toast({ title: "Invalid total", description: "Total amount must be > 0", variant: "destructive" });
+      return;
+    }
+    if (!paymentPlanStartDate) {
+      toast({ title: "Start date required", variant: "destructive" });
+      return;
+    }
+    const schedule =
+      paymentPlanType === "custom"
+        ? customRows
+            .map((r, idx) => ({
+              label: (r.label || `Installment ${idx + 1}`).trim(),
+              due_date: r.due_date,
+              amount: Number(r.amount || 0),
+            }))
+            .filter((r) => Number.isFinite(r.amount) && r.amount > 0)
+        : undefined;
+
+    try {
+      await createDealPlanM.mutateAsync({
+        dealId: sheetDeal.id,
+        planType: paymentPlanType,
+        totalAmount: total,
+        startDate: paymentPlanStartDate,
+        endDate: paymentPlanEndDate || null,
+        installmentsCount: paymentPlanInstallmentsCount,
+        schedule,
+        gstApplicable,
+        userId: me.id,
+        userName: me.name,
+      });
+      toast({ title: "Payment plan created", description: "Installments generated for this deal." });
+      setPaymentPlanOpen(false);
+    } catch (e) {
+      toast({ title: "Failed to create plan", description: (e as Error).message, variant: "destructive" });
+    }
+  }, [
+    createDealPlanM,
+    customRows,
+    gstApplicable,
+    me.id,
+    me.name,
+    paymentPlanEndDate,
+    paymentPlanInstallmentsCount,
+    paymentPlanStartDate,
+    paymentPlanTotal,
+    paymentPlanType,
+    sheetDeal?.id,
+    suggestedPlanTotal,
+  ]);
+
+  const markInstallmentPaid = useCallback(
+    async (installmentId: string, amount: number) => {
+      try {
+        await recordPaymentM.mutateAsync({
+          installmentId,
+          paidAmount: amount,
+          paidDate: new Date().toISOString().slice(0, 10),
+          paymentMode: "other",
+          transactionReference: null,
+          notes: "Marked paid from Deals",
+          userId: me.id,
+          userName: me.name,
+        });
+        toast({ title: "Marked as paid" });
+        queryClient.invalidateQueries({ queryKey: ["payments"] });
+        if (sheetDeal?.id) queryClient.invalidateQueries({ queryKey: ["payments", "deal", sheetDeal.id] });
+      } catch (e) {
+        toast({ title: "Payment update failed", description: (e as Error).message, variant: "destructive" });
+      }
+    },
+    [me.id, me.name, queryClient, recordPaymentM, sheetDeal?.id],
+  );
+
   const handleSaveDeal = async () => {
     if (sheetMode === "view") return;
     const owner = users.find((u) => u.id === ownerUserId);
@@ -685,6 +826,23 @@ export default function DealsPage() {
         } else {
           toast({ title: "Deal updated", description: `${base.name} updated successfully.` });
         }
+
+        const savedStatus = normalizeDealStatus(saved.dealStatus);
+        if (savedStatus === "Active" || savedStatus === "Closed/Won") {
+          try {
+            const res = await fetch(apiUrl(`/api/payments/deal/${saved.id}/summary-v2`));
+            const js = res.ok ? await res.json() : null;
+            if (js && Array.isArray(js.plans) && js.plans.length === 0) {
+              setSheetDeal(saved);
+              setSheetMode("view");
+              setSheetOpen(true);
+              setPaymentPlanOpen(true);
+              return;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
       } catch (e) {
         toast({ title: "Update failed", description: (e as Error).message, variant: "destructive" });
       }
@@ -708,6 +866,15 @@ export default function DealsPage() {
           companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
         toast({ title: "Deal created", description: `${saved.name} (${saved.id})` });
+
+        const savedStatus = normalizeDealStatus(saved.dealStatus);
+        if (savedStatus === "Active" || savedStatus === "Closed/Won") {
+          setSheetDeal(saved);
+          setSheetMode("view");
+          setSheetOpen(true);
+          setPaymentPlanOpen(true);
+          return;
+        }
       } catch (e) {
         toast({ title: "Create failed", description: (e as Error).message, variant: "destructive" });
       }
@@ -1566,6 +1733,81 @@ export default function DealsPage() {
                   </div>
                 )}
               </div>
+
+              {eligibleForPaymentPlan && sheetDeal?.id && sheetMode !== "create" && (
+                <div className="rounded-md border border-border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">Payment plan</p>
+                      <p className="text-xs text-muted-foreground">Auto-generate installments and track payments.</p>
+                    </div>
+                    <Button size="sm" className="h-8" onClick={openPaymentPlanDialog} disabled={sheetMode === "edit"}>
+                      + Create Payment Plan
+                    </Button>
+                  </div>
+
+                  {dealPaymentsQ.isLoading && <p className="text-xs text-muted-foreground">Loading payment plan…</p>}
+                  {!dealPaymentsQ.isLoading && !hasLinkedPaymentPlan && (
+                    <p className="text-xs text-muted-foreground">No payment plan linked to this deal yet.</p>
+                  )}
+
+                  {(dealPaymentsQ.data?.plans ?? []).slice(0, 1).map((p) => (
+                    <div key={p.id} className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge variant="outline">{p.status}</Badge>
+                        <span className="text-muted-foreground">Total:</span>{" "}
+                        <span className="font-medium">{formatINRAmount(p.total_amount)}</span>
+                        <span className="text-muted-foreground">Paid:</span>{" "}
+                        <span className="font-medium">{formatINRAmount(p.paid_amount)}</span>
+                        <span className="text-muted-foreground">Remaining:</span>{" "}
+                        <span className="font-medium">{formatINRAmount(p.remaining_amount)}</span>
+                      </div>
+
+                      <div className="rounded-md border border-border overflow-hidden">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs w-[56px]">#</TableHead>
+                              <TableHead className="text-xs">Due date</TableHead>
+                              <TableHead className="text-xs text-right">Amount</TableHead>
+                              <TableHead className="text-xs">Status</TableHead>
+                              <TableHead className="text-xs text-right">Action</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(p.installments ?? []).map((i, idx) => (
+                              <TableRow key={i.id}>
+                                <TableCell className="text-xs tabular-nums">{idx + 1}</TableCell>
+                                <TableCell className="text-xs whitespace-nowrap">{formatDueDate(i.due_date)}</TableCell>
+                                <TableCell className="text-xs text-right tabular-nums">{formatINRAmount(i.amount)}</TableCell>
+                                <TableCell className="text-xs">
+                                  <Badge variant="outline">{i.status}</Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {i.status === "pending" || i.status === "partial" ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      onClick={() => markInstallmentPaid(i.id, Number(i.amount ?? 0))}
+                                      disabled={recordPaymentM.isPending}
+                                    >
+                                      Mark as paid
+                                    </Button>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {sheetDeal?.id && sheetMode !== "create" && (
                 <div className="border rounded-md p-3 space-y-2">
                   <p className="text-xs font-semibold">Activity log</p>
@@ -1620,6 +1862,145 @@ export default function DealsPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={paymentPlanOpen} onOpenChange={setPaymentPlanOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Create payment plan</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Deal</Label>
+              <Input value={sheetDeal?.name ?? ""} disabled />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Customer</Label>
+              <Input value={customers.find((c) => c.id === sheetDeal?.customerId)?.companyName ?? ""} disabled />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Total deal value</Label>
+              <Input
+                value={paymentPlanTotal}
+                onChange={(e) => setPaymentPlanTotal(e.target.value)}
+                placeholder={String(suggestedPlanTotal || "")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Plan type</Label>
+              <Select value={paymentPlanType} onValueChange={(v) => setPaymentPlanType(v as any)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="one_time">One time payment</SelectItem>
+                  <SelectItem value="monthly">Monthly installments</SelectItem>
+                  <SelectItem value="quarterly">Quarterly installments</SelectItem>
+                  <SelectItem value="custom">Custom schedule</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Start date</Label>
+              <Input type="date" value={paymentPlanStartDate} onChange={(e) => setPaymentPlanStartDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>End date (optional)</Label>
+              <Input type="date" value={paymentPlanEndDate} onChange={(e) => setPaymentPlanEndDate(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Number of installments</Label>
+              <Input
+                type="number"
+                value={paymentPlanInstallmentsCount}
+                onChange={(e) => setPaymentPlanInstallmentsCount(Math.max(1, Number(e.target.value || 1)))}
+                disabled={paymentPlanType === "one_time" || paymentPlanType === "custom"}
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-6">
+              <Checkbox checked={gstApplicable} onCheckedChange={(v) => setGstApplicable(Boolean(v))} />
+              <span className="text-sm">GST applicable</span>
+            </div>
+          </div>
+
+          {paymentPlanType === "custom" && (
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Installment schedule</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() =>
+                    setCustomRows((r) => [
+                      ...r,
+                      { label: `Installment ${r.length + 1}`, due_date: paymentPlanStartDate, amount: "" },
+                    ])
+                  }
+                >
+                  Add row
+                </Button>
+              </div>
+              <div className="rounded-md border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs w-[56px]">#</TableHead>
+                      <TableHead className="text-xs">Due date</TableHead>
+                      <TableHead className="text-xs">Label</TableHead>
+                      <TableHead className="text-xs text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {customRows.map((r, idx) => (
+                      <TableRow key={idx}>
+                        <TableCell className="text-xs tabular-nums">{idx + 1}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="date"
+                            value={r.due_date}
+                            onChange={(e) =>
+                              setCustomRows((rows) => rows.map((x, i) => (i === idx ? { ...x, due_date: e.target.value } : x)))
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={r.label}
+                            onChange={(e) =>
+                              setCustomRows((rows) => rows.map((x, i) => (i === idx ? { ...x, label: e.target.value } : x)))
+                            }
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            inputMode="decimal"
+                            className="text-right"
+                            value={r.amount}
+                            onChange={(e) =>
+                              setCustomRows((rows) => rows.map((x, i) => (i === idx ? { ...x, amount: e.target.value } : x)))
+                            }
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">Custom schedule total must exactly match the plan total.</p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setPaymentPlanOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={createPaymentPlan} disabled={createDealPlanM.isPending || !sheetDeal?.id}>
+              Create plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!lossTarget} onOpenChange={(open) => !open && setLossTarget(null)}>
         <AlertDialogContent>

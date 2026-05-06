@@ -394,7 +394,7 @@ export default function Customers() {
           ) : undefined
         }
       />
-      <div className="mx-auto w-full max-w-page space-y-5">
+      <div className="w-full space-y-5">
         {customersQuery.isLoading && (
           <div className="text-sm text-muted-foreground">Loading customers...</div>
         )}
@@ -419,8 +419,7 @@ export default function Customers() {
         {customerModuleTab === "renewals" ? (
           <RenewalSubscriptionTracker />
         ) : (
-          <div className="min-h-screen bg-gray-50 dark:bg-gray-950 sm:min-h-0 sm:rounded-xl sm:p-0">
-            <div className="mx-auto max-w-page space-y-5 px-0 py-4 sm:px-0 sm:py-0">
+          <div className="w-full space-y-5">
               {/* STAT CARDS */}
               <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {(
@@ -826,7 +825,6 @@ export default function Customers() {
                 />
               )}
             </div>
-          </div>
         )}
       </div>
 

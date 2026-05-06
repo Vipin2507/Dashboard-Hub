@@ -11,6 +11,7 @@ import {
 } from "@/components/customer-profile/CustomerLiveSections";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
+import { makeProposalNumber } from "@/lib/proposalNumber";
 import { Topbar } from "@/components/Topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -368,8 +369,9 @@ function SupportWorkflowTab({
                   return;
                 }
                 const id = "p-renew-" + makeId();
-                const year = new Date().getFullYear();
-                const proposalNumber = `PROP-${year}-${String(Date.now()).slice(-4)}`;
+                const proposalNumber = makeProposalNumber(proposals.map((p) => p.proposalNumber))(
+                  customer.companyName || customer.customerName,
+                );
                 const lineItems = customer.productLines.map((pl) => {
                   const qty = Number(pl.qty ?? 1) || 1;
                   const unitPrice = Number(pl.unitPrice ?? 0) || 0;
@@ -500,7 +502,7 @@ export default function CustomerProfile() {
     return (
       <>
         <Topbar title="Customer" subtitle="Not found or you don't have access" />
-        <div className="mx-auto w-full max-w-page space-y-4 py-2">
+        <div className="w-full space-y-4">
           <p className="text-sm text-muted-foreground">Customer not found or you don&apos;t have access.</p>
           <Button variant="outline" onClick={() => navigate("/customers")}>
             Back to Customers
@@ -626,7 +628,7 @@ export default function CustomerProfile() {
           </div>
         }
       />
-      <div className="mx-auto w-full max-w-page space-y-4">
+      <div className="w-full space-y-4">
         <div className="flex flex-col gap-5 lg:flex-row">
           <aside className="w-full flex-shrink-0 space-y-4 lg:w-72 lg:sticky lg:top-4 lg:self-start">
             {/* Identity */}

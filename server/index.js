@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import http from "http";
+import { WebSocketServer } from "ws";
 import { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, forceReseedUsersAndTeams } from "./db.js";
 import { registerPaymentsApi } from "./paymentsApi.js";
 import { registerDataControlApi } from "./dataControlApi.js";
@@ -10,6 +12,33 @@ import { registerDeliveryApi } from "./deliveryApi.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// ---------------------------------------------------------
+// 0. REALTIME (WebSocket) — broadcast DB changes
+// ---------------------------------------------------------
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: "/ws" });
+
+function broadcast(event) {
+  const payload = JSON.stringify({ ...event, at: new Date().toISOString() });
+  for (const client of wss.clients) {
+    if (client.readyState === 1) {
+      try {
+        client.send(payload);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+wss.on("connection", (socket) => {
+  try {
+    socket.send(JSON.stringify({ type: "hello", at: new Date().toISOString() }));
+  } catch {
+    /* ignore */
+  }
+});
 
 // ---------------------------------------------------------
 // 1. GLOBAL PRE-ROUTING MIDDLEWARE
@@ -47,7 +76,7 @@ app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 registerPaymentsApi(app,  db );
 registerDataControlApi(app,  db );
 registerSubscriptionRenewalApi(app,  db );
-registerDeliveryApi(app,  db );
+registerDeliveryApi(app,  db , { broadcast } );
 
 /**
  * Debug helpers (intentionally behind an env flag for VPS troubleshooting).
@@ -263,6 +292,7 @@ app.post("/api/regions", (req, res) => {
   if (!name) return res.status(400).json({ error: "name is required" });
   const region = { id: id || "r" + makeId(), name };
   db.prepare("INSERT INTO regions (id, name) VALUES (@id, @name)").run(region);
+  broadcast({ type: "change", entity: "regions", action: "created", id: region.id });
   res.status(201).json(region);
 });
 
@@ -271,12 +301,14 @@ app.put("/api/regions/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   const updated = { ...existing, ...(req.body || {}), id: req.params.id };
   db.prepare("UPDATE regions SET name = ? WHERE id = ?").run(updated.name, updated.id);
+  broadcast({ type: "change", entity: "regions", action: "updated", id: updated.id });
   res.json(updated);
 });
 
 app.delete("/api/regions/:id", (req, res) => {
   const info = db.prepare("DELETE FROM regions WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: "Not found" });
+  broadcast({ type: "change", entity: "regions", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -289,6 +321,7 @@ app.post("/api/teams", (req, res) => {
   if (!name || !regionId) return res.status(400).json({ error: "name and regionId are required" });
   const team = { id: id || "t" + makeId(), name, regionId };
   db.prepare("INSERT INTO teams (id, name, regionId) VALUES (@id, @name, @regionId)").run(team);
+  broadcast({ type: "change", entity: "teams", action: "created", id: team.id });
   res.status(201).json(team);
 });
 
@@ -301,12 +334,14 @@ app.put("/api/teams/:id", (req, res) => {
     updated.regionId,
     updated.id,
   );
+  broadcast({ type: "change", entity: "teams", action: "updated", id: updated.id });
   res.json(updated);
 });
 
 app.delete("/api/teams/:id", (req, res) => {
   const info = db.prepare("DELETE FROM teams WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: "Not found" });
+  broadcast({ type: "change", entity: "teams", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -333,6 +368,7 @@ app.post("/api/users", (req, res) => {
   db.prepare(
     "INSERT INTO users (id, name, email, password, role, teamId, regionId, status, phone) VALUES (@id, @name, @email, @password, @role, @teamId, @regionId, @status, @phone)"
   ).run(user);
+  broadcast({ type: "change", entity: "users", action: "created", id: user.id });
   res.status(201).json(user);
 });
 
@@ -392,11 +428,13 @@ app.put("/api/users/:id", (req, res) => {
   })();
 
   res.json(updated);
+  broadcast({ type: "change", entity: "users", action: "updated", id: updated.id });
 });
 
 app.delete("/api/users/:id", (req, res) => {
   const info = db.prepare("DELETE FROM users WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: "Not found" });
+  broadcast({ type: "change", entity: "users", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -430,6 +468,7 @@ app.post("/api/notifications", (req, res) => {
   } catch {
     /* ignore */
   }
+  broadcast({ type: "change", entity: "notifications", action: "created", id: notification.id });
   res.status(201).json(notification);
 });
 
@@ -507,6 +546,7 @@ app.post("/api/customers", (req, res) => {
     VALUES (@id, @leadId, @name, @customerName, @companyName, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks, @tags)
   `).run(customer);
 
+  broadcast({ type: "change", entity: "customers", action: "created", id: customer.id });
   res.status(201).json(customer);
 });
 
@@ -535,6 +575,7 @@ app.post("/api/customers/bulk", (req, res) => {
     }));
 
   db.transaction((rows) => rows.forEach((r) => insertCustomer.run(r)))(created);
+  if (created.length) broadcast({ type: "change", entity: "customers", action: "bulk_created", count: created.length });
   res.status(201).json(created);
 });
 
@@ -589,6 +630,7 @@ app.post("/api/proposals", (req, res) => {
   } catch {
     /* ignore */
   }
+  broadcast({ type: "change", entity: "proposals", action: "created", id: proposal.id });
   res.status(201).json(proposal);
 });
 
@@ -639,12 +681,14 @@ app.put("/api/proposals/:id", (req, res) => {
   } catch {
     /* ignore */
   }
+  broadcast({ type: "change", entity: "proposals", action: "updated", id: proposal.id });
   res.json(proposal);
 });
 
 app.delete("/api/proposals/:id", (req, res) => {
   const info = db.prepare("DELETE FROM proposals WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: "Not found" });
+  broadcast({ type: "change", entity: "proposals", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -814,6 +858,7 @@ app.post("/api/deals", (req, res) => {
     changedByUserId,
     changedByName,
   );
+  broadcast({ type: "change", entity: "deals", action: "created", id: deal.id });
   res.status(201).json(toDealResponse(deal));
 });
 
@@ -1082,6 +1127,7 @@ app.put("/api/deals/:id", (req, res) => {
   logDealFieldChanges(db, deal.id, beforeSnapshot, deal, changedByUserId, changedByName);
 
   const out = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
+  broadcast({ type: "change", entity: "deals", action: "updated", id: req.params.id });
   res.json(toDealResponse(out));
 });
 
@@ -1116,6 +1162,7 @@ app.delete("/api/deals/:id", (req, res) => {
     `UPDATE deals SET deletedAt = ?, deletedByUserId = ?, deletedByName = ?, updatedAt = ? WHERE id = ?`,
   ).run(now, deletedByUserId || null, deletedByName || null, now, req.params.id);
   logDealAudit(db, req.params.id, "deal_soft_deleted", {}, deletedByUserId, deletedByName);
+  broadcast({ type: "change", entity: "deals", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
@@ -1434,6 +1481,7 @@ app.post("/api/inventory", (req, res) => {
     VALUES (@id, @name, @description, @itemType, @sku, @hsnSacCode, @category, @unitOfMeasure, @costPrice, @sellingPrice, @taxRate, @isActive, @createdAt, @updatedAt, @createdBy, @notes, @stockQty, @supplier, @location)
   `).run(item);
 
+  broadcast({ type: "change", entity: "inventory", action: "created", id: item.id });
   res.status(201).json(toInventoryResponse(item));
 });
 
@@ -1476,21 +1524,23 @@ app.put("/api/inventory/:id", (req, res) => {
     WHERE id=@id
   `).run(item);
 
+  broadcast({ type: "change", entity: "inventory", action: "updated", id: item.id });
   res.json(toInventoryResponse(item));
 });
 
 app.delete("/api/inventory/:id", (req, res) => {
   const info = db.prepare("DELETE FROM inventory WHERE id = ?").run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: "Not found" });
+  broadcast({ type: "change", entity: "inventory", action: "deleted", id: req.params.id });
   res.json({ ok: true });
 });
 
-registerPaymentsApi(app, db);
-registerDeliveryApi(app, db);
+registerPaymentsApi(app, db, { broadcast });
+registerDeliveryApi(app, db, { broadcast });
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`API server listening on http://localhost:${PORT}`);
   console.log(`SQLite DB path: ${SQLITE_PATH}`);
 });

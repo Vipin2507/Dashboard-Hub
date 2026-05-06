@@ -21,7 +21,8 @@ function canTransition(role, toStatus) {
   return r === "delivery_manager";
 }
 
-export function registerDeliveryApi(app, db) {
+export function registerDeliveryApi(app, db, helpers = {}) {
+  const { broadcast } = helpers;
   app.get("/api/ai-memory/customer/:customerId/history", (req, res) => {
     const customerId = req.params.customerId;
     const limit = Math.max(1, Math.min(200, Number(req.query.limit ?? 50)));
@@ -111,6 +112,12 @@ export function registerDeliveryApi(app, db) {
     }
 
     const out = db.prepare("SELECT * FROM deals WHERE id = ?").get(dealId);
+    try {
+      broadcast?.({ type: "change", entity: "deals", action: "updated", id: dealId });
+      broadcast?.({ type: "change", entity: "delivery", action: "updated", id: dealId });
+    } catch {
+      /* ignore */
+    }
     res.json({
       ok: true,
       dealId,

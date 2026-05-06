@@ -33,7 +33,7 @@ function addBillingCycle(isoDate, cycle) {
 }
 
 export function registerPaymentsApi(app, db, helpers = {}) {
-  const { getProposalById } = helpers;
+  const { getProposalById, broadcast } = helpers;
 
   function nextReceiptNumber() {
     const y = new Date().getFullYear();
@@ -97,6 +97,11 @@ export function registerPaymentsApi(app, db, helpers = {}) {
        VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))`,
     ).run(planId, String(name).trim(), description ?? null, sched.length || 1, JSON.stringify(sched), userId ?? null);
     const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(planId);
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "catalog_created", id: planId });
+    } catch {
+      /* ignore */
+    }
     res.status(201).json({
       ...row,
       schedule: parseJsonSafe(row.schedule || "[]", []),
@@ -144,6 +149,11 @@ export function registerPaymentsApi(app, db, helpers = {}) {
       id,
     );
     const row = db.prepare("SELECT * FROM payment_plan_catalog WHERE id = ?").get(id);
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "catalog_updated", id });
+    } catch {
+      /* ignore */
+    }
     res.json({ ...row, schedule: parseJsonSafe(row.schedule || "[]", []), isActive: !!row.is_active });
   });
 
@@ -179,6 +189,11 @@ export function registerPaymentsApi(app, db, helpers = {}) {
     const inUse = db.prepare("SELECT COUNT(*) AS c FROM customer_payment_plans WHERE plan_catalog_id = ?").get(id).c;
     if (inUse > 0) return res.status(400).json({ error: "Plan template is assigned to deals; remove those plans first" });
     db.prepare("DELETE FROM payment_plan_catalog WHERE id = ?").run(id);
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "catalog_deleted", id });
+    } catch {
+      /* ignore */
+    }
     res.json({ ok: true });
   });
 
@@ -193,6 +208,178 @@ export function registerPaymentsApi(app, db, helpers = {}) {
   });
 
   // ── CUSTOMER PAYMENT PLANS (MoM 19/04/2026) ────────────────────────────────
+
+  app.get("/api/payments/deal/:dealId/summary-v2", (req, res) => {
+    const { dealId } = req.params;
+    const deal = db.prepare("SELECT id, name, customerId, value, totalAmount FROM deals WHERE id = ?").get(dealId);
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+    const plans = db
+      .prepare(
+        `SELECT cpp.*
+         FROM customer_payment_plans cpp
+         WHERE cpp.deal_id = ?
+         ORDER BY cpp.created_at DESC`,
+      )
+      .all(dealId);
+    const installments = db
+      .prepare(`SELECT * FROM payment_installments WHERE deal_id = ? ORDER BY due_date ASC`)
+      .all(dealId);
+    res.json({
+      deal,
+      plans: plans.map((p) => ({
+        ...p,
+        installments: installments.filter((i) => i.plan_id === p.id),
+      })),
+    });
+  });
+
+  app.post("/api/payments/deal/:dealId/create-plan-v2", (req, res) => {
+    const { dealId } = req.params;
+    const {
+      planType,
+      planName,
+      totalAmount,
+      startDate,
+      endDate,
+      installmentsCount,
+      schedule,
+      gstApplicable,
+      userId,
+      userName,
+    } = req.body || {};
+
+    const deal = db.prepare("SELECT * FROM deals WHERE id = ?").get(dealId);
+    if (!deal) return res.status(404).json({ error: "Deal not found" });
+
+    const total = Number(totalAmount ?? deal.totalAmount ?? deal.value ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return res.status(400).json({ error: "totalAmount must be > 0" });
+    const start = isoDateOnly(startDate) ?? isoDateOnly(new Date().toISOString());
+    if (!start) return res.status(400).json({ error: "startDate invalid" });
+    const end = endDate ? isoDateOnly(endDate) : null;
+
+    const pt = String(planType || "one_time");
+    const title =
+      String(planName || "").trim() ||
+      (pt === "monthly"
+        ? "Monthly installments"
+        : pt === "quarterly"
+          ? "Quarterly installments"
+          : pt === "custom"
+            ? "Custom schedule"
+            : "One time payment");
+
+    const planId = "cpp" + makeId();
+    db.prepare(
+      `INSERT INTO customer_payment_plans (
+        id, customer_id, deal_id, proposal_id, plan_catalog_id,
+        plan_name, total_amount, paid_amount, remaining_amount,
+        status, start_date, created_by, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,0,?, 'active',?,?, datetime('now'), datetime('now'))`,
+    ).run(
+      planId,
+      deal.customerId,
+      dealId,
+      deal.proposalId ?? null,
+      null,
+      gstApplicable ? `${title} (GST)` : title,
+      total,
+      total,
+      start,
+      userId ?? null,
+    );
+
+    const stmt = db.prepare(
+      `INSERT INTO payment_installments (
+        id, plan_id, customer_id, deal_id, label, amount, percentage, due_date, status, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?, 'pending', datetime('now'), datetime('now'))`,
+    );
+
+    const makeMonthlyDates = (count) => {
+      const base = new Date(start + "T12:00:00");
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        const d = new Date(base);
+        d.setMonth(d.getMonth() + i);
+        out.push(d.toISOString().slice(0, 10));
+      }
+      return out;
+    };
+    const makeQuarterlyDates = (count) => {
+      const base = new Date(start + "T12:00:00");
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        const d = new Date(base);
+        d.setMonth(d.getMonth() + i * 3);
+        out.push(d.toISOString().slice(0, 10));
+      }
+      return out;
+    };
+
+    const items = (() => {
+      if (pt === "custom" && Array.isArray(schedule) && schedule.length > 0) {
+        return schedule
+          .map((r, idx) => ({
+            label: String(r.label ?? `Installment ${idx + 1}`),
+            due_date: isoDateOnly(r.due_date) ?? start,
+            amount: Number(r.amount ?? 0),
+          }))
+          .filter((r) => Number.isFinite(r.amount) && r.amount > 0);
+      }
+      if (pt === "monthly") {
+        const n = Math.max(1, Number(installmentsCount ?? 3));
+        const dates = makeMonthlyDates(n);
+        const per = Math.round((total / n) * 100) / 100;
+        return dates.map((d, i) => ({ label: `Installment ${i + 1}`, due_date: d, amount: i === n - 1 ? total - per * (n - 1) : per }));
+      }
+      if (pt === "quarterly") {
+        const n = Math.max(1, Number(installmentsCount ?? 4));
+        const dates = makeQuarterlyDates(n);
+        const per = Math.round((total / n) * 100) / 100;
+        return dates.map((d, i) => ({ label: `Installment ${i + 1}`, due_date: d, amount: i === n - 1 ? total - per * (n - 1) : per }));
+      }
+      return [{ label: "One time", due_date: start, amount: total }];
+    })();
+
+    if (items.length === 0) {
+      db.prepare("DELETE FROM customer_payment_plans WHERE id = ?").run(planId);
+      return res.status(400).json({ error: "Invalid schedule (no installments)" });
+    }
+
+    const sum = items.reduce((s, r) => s + Number(r.amount ?? 0), 0);
+    if (Math.abs(sum - total) > 0.5) {
+      // Keep strict to prevent accidental mismatch.
+      db.prepare("DELETE FROM customer_payment_plans WHERE id = ?").run(planId);
+      return res.status(400).json({ error: `Schedule total (${sum}) must equal totalAmount (${total})` });
+    }
+
+    for (const r of items) {
+      stmt.run("pi" + makeId(), planId, deal.customerId, dealId, r.label, Number(r.amount), null, r.due_date);
+    }
+
+    db.prepare(
+      `INSERT INTO payment_audit (id, plan_id, customer_id, action, performed_by, performed_by_name, new_value, created_at)
+       VALUES (?, ?, ?, 'created', ?, ?, ?, datetime('now'))`,
+    ).run(
+      "pa" + makeId(),
+      planId,
+      deal.customerId,
+      userId ?? null,
+      userName ?? null,
+      JSON.stringify({ planType: pt, planName: title, totalAmount: total, startDate: start, endDate: end }),
+    );
+
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "plan_created", id: planId, dealId, customerId: deal.customerId });
+      broadcast?.({ type: "change", entity: "deals", action: "updated", id: dealId });
+    } catch {
+      /* ignore */
+    }
+
+    res.status(201).json({
+      plan: db.prepare("SELECT * FROM customer_payment_plans WHERE id = ?").get(planId),
+      installments: db.prepare("SELECT * FROM payment_installments WHERE plan_id = ? ORDER BY due_date ASC").all(planId),
+    });
+  });
 
   app.get("/api/payments/customer/:customerId/summary-v2", (req, res) => {
     const { customerId } = req.params;
@@ -287,6 +474,13 @@ export function registerPaymentsApi(app, db, helpers = {}) {
        VALUES (?, ?, ?, 'created', ?, ?, ?, datetime('now'))`,
     ).run("pa" + makeId(), planId, customerId, userId ?? null, userName ?? null, JSON.stringify({ planName, totalAmount: total, startDate: start }));
 
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "plan_assigned", id: planId, customerId });
+      broadcast?.({ type: "change", entity: "customers", action: "updated", id: customerId });
+      broadcast?.({ type: "change", entity: "deals", action: "updated", id: dealId });
+    } catch {
+      /* ignore */
+    }
     res.status(201).json({
       plan: db.prepare("SELECT * FROM customer_payment_plans WHERE id = ?").get(planId),
       installments: db.prepare("SELECT * FROM payment_installments WHERE plan_id = ? ORDER BY due_date ASC").all(planId),
@@ -347,6 +541,12 @@ export function registerPaymentsApi(app, db, helpers = {}) {
       `Paid ₹${paid} via ${paymentMode ?? "other"}`,
     );
 
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "installment_paid", id, customerId: inst.customer_id });
+      broadcast?.({ type: "change", entity: "customers", action: "updated", id: inst.customer_id });
+    } catch {
+      /* ignore */
+    }
     res.json({ installment: after, receiptNumber });
   });
 
@@ -362,6 +562,12 @@ export function registerPaymentsApi(app, db, helpers = {}) {
       `INSERT INTO payment_audit (id, installment_id, plan_id, customer_id, action, performed_by, performed_by_name, created_at)
        VALUES (?,?,?,?, 'confirmed', ?, ?, datetime('now'))`,
     ).run("pa" + makeId(), id, inst.plan_id, inst.customer_id, userId ?? null, userName ?? null);
+    try {
+      broadcast?.({ type: "change", entity: "payments", action: "installment_confirmed", id, customerId: inst.customer_id });
+      broadcast?.({ type: "change", entity: "customers", action: "updated", id: inst.customer_id });
+    } catch {
+      /* ignore */
+    }
     res.json(db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id));
   });
 

@@ -31,6 +31,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
 import { toast } from "@/components/ui/use-toast";
+import { makeProposalNumber } from "@/lib/proposalNumber";
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -235,25 +236,20 @@ export function ProposalFormDialog({
 
   const removeLineItem = (id: string) => setLineItems((prev) => prev.filter((li) => li.id !== id));
 
-  const getNextProposalNumber = () => {
-    const year = new Date().getFullYear();
-    const prefix = `PROP-${year}-`;
-    const existing = proposals.filter((p) => p.proposalNumber.startsWith(prefix));
-    const max = existing.reduce((m, p) => {
-      const num = parseInt(p.proposalNumber.slice(prefix.length), 10);
-      return isNaN(num) ? m : Math.max(m, num);
-    }, 0);
-    return `${prefix}${String(max + 1).padStart(4, "0")}`;
-  };
+  const nextProposalNumber = useMemo(
+    () => makeProposalNumber(proposals.map((p) => p.proposalNumber)),
+    [proposals],
+  );
 
   const buildProposal = (): Omit<Proposal, "id" | "createdAt" | "updatedAt"> & { id?: string; createdAt?: string; updatedAt?: string } => {
     const now = new Date().toISOString();
     const customer = customers.find((c) => c.id === customerId);
     const assignedUser = users.find((u) => u.id === assignedTo);
     const value = overrideFinal && finalQuoteValue ? Number(finalQuoteValue) : totals.grandTotal;
+    const companyName = (customer?.companyName ?? "").trim() || customer?.customerName || "";
     return {
       id: editingProposal?.id,
-      proposalNumber: editingProposal?.proposalNumber ?? getNextProposalNumber(),
+      proposalNumber: editingProposal?.proposalNumber ?? nextProposalNumber(companyName),
       title,
       customerId,
       customerName: customer?.customerName ?? "",

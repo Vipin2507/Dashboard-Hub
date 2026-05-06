@@ -6,9 +6,11 @@ import { useCoreEntityQueries } from '@/hooks/useCoreEntityQueries';
 import { cn } from '@/lib/utils';
 import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 function AppLayoutShell() {
   useCoreEntityQueries();
+  useRealtimeSync();
   const location = useLocation();
   const { sidebarOpen, closeSidebar, isLgUp } = useSidebarNav();
 
@@ -66,7 +68,7 @@ function AppLayoutShell() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-64">
         <MobileShellHeader />
         <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-          <div className="mx-auto w-full max-w-[1400px] p-3 sm:p-5 lg:p-6">
+          <div className="w-full p-6">
             <Outlet />
           </div>
         </main>

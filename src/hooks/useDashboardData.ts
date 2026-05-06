@@ -53,12 +53,21 @@ function filterApiCustomers(
   if (scope === "REGION") return rows.filter((c) => c.regionId === me.regionId);
   if (scope === "TEAM") {
     const regionIds = new Set(users.filter((u) => u.teamId === me.teamId).map((u) => u.regionId));
+    // If users haven't loaded yet, fall back to REGION so the dashboard doesn't appear empty.
+    if (regionIds.size === 0) return rows.filter((c) => c.regionId === me.regionId);
     return rows.filter((c) => regionIds.has(c.regionId));
   }
   if (scope === "SELF") {
     const self = users.find((u) => u.id === me.id);
-    const first = self?.name?.split(" ")[0]?.toLowerCase() ?? "";
-    return rows.filter((c) => first && (c.salesExecutive ?? "").toLowerCase().includes(first));
+    const full = (self?.name ?? "").trim().toLowerCase();
+    const first = full.split(" ")[0] ?? "";
+    // Prefer matching full name; fall back to first token.
+    return rows.filter((c) => {
+      const exec = (c.salesExecutive ?? "").trim().toLowerCase();
+      if (!exec) return false;
+      if (full && exec.includes(full)) return true;
+      return first ? exec.includes(first) : true;
+    });
   }
   return [];
 }
@@ -80,6 +89,7 @@ export function useDashboardData() {
     paymentsRemainingQuery,
     paymentHistoryQuery,
     notificationsQuery,
+    subscriptionTrackerQuery,
   } = useCoreEntityQueries();
 
   const proposalScope = getScope(role, "proposals");
@@ -205,6 +215,7 @@ export function useDashboardData() {
     paymentHistory: paymentHistoryQuery.data ?? [],
     paymentsRemaining: paymentsRemainingQuery.data,
     notificationsQuery,
+    subscriptionTrackerQuery,
     isLoading,
     isError,
     refetchAll,

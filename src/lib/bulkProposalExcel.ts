@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import type { MeContext, Proposal, ProposalLineItem, ProposalStatus, User, Region, InventoryItem } from "@/types";
 import { apiUrl } from "@/lib/api";
+import { makeProposalNumber } from "@/lib/proposalNumber";
 
 export type ParseError = { row: number; message: string };
 
@@ -264,16 +265,23 @@ function parseExcelDate(raw: string): string | undefined {
 }
 
 function makeProposalNumberGenerator(existing: Proposal[]) {
-  const year = new Date().getFullYear();
-  const prefix = `PROP-${year}-`;
-  let max = existing.reduce((m, p) => {
-    if (!p.proposalNumber.startsWith(prefix)) return m;
-    const num = parseInt(p.proposalNumber.slice(prefix.length), 10);
-    return Number.isNaN(num) ? m : Math.max(m, num);
-  }, 0);
-  return () => {
-    max += 1;
-    return `${prefix}${String(max).padStart(4, "0")}`;
+  // Deterministic sequence based on existing proposal numbers, without year.
+  const base = makeProposalNumber(existing.map((p) => p.proposalNumber));
+  let cursor = 0;
+  return (companyName?: string) => {
+    // `makeProposalNumber` always starts at (max + 1). We advance by incrementing
+    // the sequence numerically ourselves, preserving the requested "PROP-id || Company" shape.
+    cursor += 1;
+    const first = base(companyName);
+    if (cursor === 1) return first;
+
+    // Replace the numeric portion with (max + cursor).
+    const m = /^PROP-(\d+)(\s*\|\|.*)?$/i.exec(first);
+    if (!m?.[1]) return first;
+    const n = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(n)) return first;
+    const next = String(n + (cursor - 1)).padStart(m[1].length, "0");
+    return `PROP-${next}${m[2] ?? ""}`;
   };
 }
 
@@ -420,7 +428,7 @@ export async function buildProposalsFromExcelRows(
 
     const proposal: Proposal = {
       id: pid,
-      proposalNumber: nextProposalNumber(),
+      proposalNumber: nextProposalNumber(data.companyName),
       title,
       customerId: customer.id,
       customerName: customer.name,

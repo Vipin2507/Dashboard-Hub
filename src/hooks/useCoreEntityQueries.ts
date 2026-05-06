@@ -27,6 +27,26 @@ type NotificationRow = {
   at: string;
 };
 
+type SubscriptionTrackerResponse = {
+  rows: Array<{
+    id: string;
+    customerId: string;
+    customerName: string;
+    customerRegionId?: string | null;
+    planName: string;
+    expiryDate: string;
+    daysLeft: number;
+    bucket: string;
+    lastRenewedAt?: string | null;
+  }>;
+  summary: {
+    overdue: number;
+    expiring30: number;
+    upcoming31to90: number;
+    renewedThisMonth: number;
+  };
+};
+
 const NOTIF_INTERVAL = 30_000;
 
 /**
@@ -86,6 +106,14 @@ export function useCoreEntityQueries() {
     refetchInterval: NOTIF_INTERVAL,
   });
 
+  const subscriptionTrackerQuery = useQuery({
+    queryKey: QK.subscriptionTracker(),
+    queryFn: () => api.get<SubscriptionTrackerResponse>("/subscriptions/tracker"),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
+  });
+
   return {
     me,
     role,
@@ -95,5 +123,6 @@ export function useCoreEntityQueries() {
     paymentsRemainingQuery,
     paymentHistoryQuery,
     notificationsQuery,
+    subscriptionTrackerQuery,
   };
 }

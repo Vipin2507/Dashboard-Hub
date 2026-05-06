@@ -48,11 +48,14 @@ import {
   Cell,
   Legend,
 } from 'recharts';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import type { ProposalStatus } from '@/types';
 import { normalizeDealStatus } from '@/lib/dealStatus';
 import { cn } from '@/lib/utils';
 import { useSmUp } from '@/hooks/useSmUp';
+import { useRealtimeSync } from '@/hooks/useRealtimeSync';
+import { Datepicker } from '@/components/ui/datepicker';
+import { toast } from '@/components/ui/use-toast';
 
 const BUILDESK_BLUE = '#0072BC';
 
@@ -138,6 +141,7 @@ function DashboardKpiCard({
 
 export default function DashboardPage() {
   const me = useAppStore((s) => s.me);
+  const live = useRealtimeSync();
   const guidanceKey = `GuidanceMode:v1:${me.id || 'guest'}`;
   const [guidanceMode, setGuidanceMode] = useState<boolean>(() => {
     try {
@@ -156,6 +160,8 @@ export default function DashboardPage() {
     scopedCustomers,
     kpis,
     paymentHistory,
+    subscriptionTrackerQuery,
+    notificationsQuery,
     isLoading: dashboardLoading,
     refetchAll,
     proposalsQuery,
@@ -167,16 +173,57 @@ export default function DashboardPage() {
   const revenueBarSize = smUp ? 32 : 20;
   const axisTickX = smUp ? 12 : 10;
   const yAxisWidth = smUp ? 56 : 40;
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  // Applied filters (used by all sections)
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [teamFilter, setTeamFilter] = useState('all');
   const [regionFilter, setRegionFilter] = useState('all');
   const [proposalStatusFilter, setProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
+
+  // Draft filters (edit here, then click Apply)
+  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const [draftOwnerFilter, setDraftOwnerFilter] = useState('all');
+  const [draftTeamFilter, setDraftTeamFilter] = useState('all');
+  const [draftRegionFilter, setDraftRegionFilter] = useState('all');
+  const [draftProposalStatusFilter, setDraftProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState('');
   const [detailRows, setDetailRows] = useState<Array<{ key: string; label: string; value: string }>>([]);
   const [detailLink, setDetailLink] = useState('');
+
+  const dateFrom = dateRange[0] ? format(dateRange[0], 'yyyy-MM-dd') : '';
+  const dateTo = dateRange[1] ? format(dateRange[1], 'yyyy-MM-dd') : '';
+
+  const hasPendingFilterChanges =
+    draftDateRange[0]?.getTime() !== dateRange[0]?.getTime() ||
+    draftDateRange[1]?.getTime() !== dateRange[1]?.getTime() ||
+    draftOwnerFilter !== ownerFilter ||
+    draftTeamFilter !== teamFilter ||
+    draftRegionFilter !== regionFilter ||
+    draftProposalStatusFilter !== proposalStatusFilter;
+
+  const applyFilters = () => {
+    setDateRange(draftDateRange);
+    setOwnerFilter(draftOwnerFilter);
+    setTeamFilter(draftTeamFilter);
+    setRegionFilter(draftRegionFilter);
+    setProposalStatusFilter(draftProposalStatusFilter);
+  };
+
+  const clearFilters = () => {
+    const clearedRange: [Date | null, Date | null] = [null, null];
+    setDraftDateRange(clearedRange);
+    setDraftOwnerFilter('all');
+    setDraftTeamFilter('all');
+    setDraftRegionFilter('all');
+    setDraftProposalStatusFilter('all');
+
+    setDateRange(clearedRange);
+    setOwnerFilter('all');
+    setTeamFilter('all');
+    setRegionFilter('all');
+    setProposalStatusFilter('all');
+  };
 
   const ownerMeta = useMemo(() => {
     const map = new Map<string, { teamId: string; regionId: string }>();
@@ -277,16 +324,21 @@ export default function DashboardPage() {
   const thirtyDaysFromNow = new Date(now);
   thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
   const expiringSubscriptions = useMemo(() => {
-    return filteredCustomers.reduce((sum, c) => {
-      return (
-        sum +
-        (c.productLines?.filter((pl) => {
-          const exp = pl.expiryDate ? new Date(pl.expiryDate) : null;
-          return exp && exp >= now && exp <= thirtyDaysFromNow;
-        }).length ?? 0)
-      );
-    }, 0);
-  }, [filteredCustomers, now, thirtyDaysFromNow]);
+    const tracker = subscriptionTrackerQuery.data;
+    if (!tracker) return 0;
+    // Filter subscription rows by the same Region/Owner/Team filters where possible.
+    // The tracker rows include regionId but not teamId/ownerId, so we apply the reliable ones.
+    const rows = tracker.rows ?? [];
+    const regionFiltered = regionFilter !== "all" ? rows.filter((r) => r.customerRegionId === regionFilter) : rows;
+    // Date range: expiryDate within [from, to]
+    const dateFiltered = regionFiltered.filter((r) => {
+      const d = String(r.expiryDate ?? "").slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    });
+    return dateFiltered.filter((r) => r.bucket === "expiring_30").length;
+  }, [subscriptionTrackerQuery.data, regionFilter, dateFrom, dateTo]);
 
   const openSupportTickets = useMemo(() => {
     return filteredCustomers.reduce(
@@ -382,22 +434,27 @@ export default function DashboardPage() {
 
   const donutColors = ['#22c55e', '#0072BC', '#94a3b8', '#f97316', '#ef4444'];
 
-  // Recent Activity — requires rich customer records; API-only customers have no activityLog
+  // Recent Activity — from notifications API (live, cross-module)
   const recentActivity = useMemo(() => {
-    const all: { id: string; text: string; timestamp: string; action: string }[] = [];
-    for (const c of filteredCustomers) {
-      for (const log of c.activityLog ?? []) {
-        all.push({
-          id: log.id,
-          text: log.description || log.action,
-          timestamp: log.timestamp,
-          action: log.action,
-        });
-      }
-    }
-    all.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return all.slice(0, 10);
-  }, [filteredCustomers]);
+    const rows = notificationsQuery.data ?? [];
+    const items = rows
+      .map((n) => ({
+        id: n.id,
+        text: n.subject,
+        timestamp: n.at,
+        action: n.type,
+      }))
+      .filter((x) => !!x.timestamp);
+    items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    // Date range filter at minimum (per requirement)
+    const inRange = (ts: string) => {
+      const d = ts.slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    };
+    return items.filter((x) => inRange(x.timestamp)).slice(0, 10);
+  }, [notificationsQuery.data, dateFrom, dateTo]);
 
   // Recent Proposals — last 5 by updatedAt desc
   const recentProposals = useMemo(
@@ -478,6 +535,15 @@ export default function DashboardPage() {
         subtitle="Welcome back! Here's what's happening with your license management workflows."
         actions={
           <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 mr-2">
+              <span className={cn("h-2 w-2 rounded-full", live.connected ? "bg-emerald-500" : "bg-gray-300")} />
+              <span className="text-xs text-muted-foreground">{live.connected ? "Live" : "Offline"}</span>
+              {live.lastUpdatedAt && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  Last updated: {formatDistanceToNow(new Date(live.lastUpdatedAt), { addSuffix: true })}
+                </span>
+              )}
+            </div>
             <span className="text-xs text-muted-foreground">Guidance</span>
             <Switch
               checked={guidanceMode}
@@ -496,29 +562,26 @@ export default function DashboardPage() {
       <div className="space-y-4 sm:space-y-6">
         <Card className="bg-card border border-border">
           <CardContent className="p-4">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-end">
-              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3 lg:col-span-9">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">From</p>
-                  <Input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="h-9 min-w-0 w-full sm:w-[150px]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">To</p>
-                  <Input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="h-9 min-w-0 w-full sm:w-[150px]"
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
+              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+                <div className="space-y-1 min-w-[220px] flex-1">
+                  <p className="text-xs text-muted-foreground">Date range</p>
+                  <Datepicker
+                    controls={['calendar']}
+                    select="range"
+                    touchUi={true}
+                    inputComponent="input"
+                    inputProps={{
+                      placeholder: 'Please Select...',
+                      className: 'h-9 w-full',
+                    }}
+                    value={draftDateRange}
+                    onChange={(ev) => setDraftDateRange(ev.value)}
                   />
                 </div>
 
-                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[170px]">
+                <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
+                  <SelectTrigger className="h-9 w-full sm:w-[170px] shrink-0">
                     <SelectValue placeholder="All owners" />
                   </SelectTrigger>
                   <SelectContent>
@@ -531,8 +594,8 @@ export default function DashboardPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={teamFilter} onValueChange={setTeamFilter}>
-                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]">
+                <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
+                  <SelectTrigger className="h-9 w-full sm:w-[160px] shrink-0">
                     <SelectValue placeholder="All teams" />
                   </SelectTrigger>
                   <SelectContent>
@@ -545,8 +608,8 @@ export default function DashboardPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={regionFilter} onValueChange={setRegionFilter}>
-                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[160px]">
+                <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
+                  <SelectTrigger className="h-9 w-full sm:w-[160px] shrink-0">
                     <SelectValue placeholder="All regions" />
                   </SelectTrigger>
                   <SelectContent>
@@ -559,8 +622,11 @@ export default function DashboardPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={proposalStatusFilter} onValueChange={(v) => setProposalStatusFilter(v as ProposalStatus | 'all')}>
-                  <SelectTrigger className="h-9 min-w-0 w-full sm:w-[190px]">
+                <Select
+                  value={draftProposalStatusFilter}
+                  onValueChange={(v) => setDraftProposalStatusFilter(v as ProposalStatus | 'all')}
+                >
+                  <SelectTrigger className="h-9 w-full sm:w-[190px] shrink-0">
                     <SelectValue placeholder="All proposal statuses" />
                   </SelectTrigger>
                   <SelectContent>
@@ -574,34 +640,38 @@ export default function DashboardPage() {
                 </Select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 lg:col-span-3 lg:flex lg:justify-end">
+              <div className="flex flex-wrap items-center justify-start gap-2 lg:ml-auto lg:justify-end">
                 <Button
                   variant="outline"
                   className="h-9"
-                  onClick={() => {
-                    setDateFrom('');
-                    setDateTo('');
-                    setOwnerFilter('all');
-                    setTeamFilter('all');
-                    setRegionFilter('all');
-                    setProposalStatusFilter('all');
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear Filters
                 </Button>
                 <Button
+                  className="h-9"
+                  type="button"
+                  disabled={!hasPendingFilterChanges}
+                  onClick={applyFilters}
+                >
+                  Apply
+                </Button>
+                <Button
                   variant="secondary"
-                  className="h-9 gap-2"
+                  className="h-9 w-9 p-0"
                   type="button"
                   disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
-                  onClick={() => refetchAll()}
+                  onClick={() => {
+                    refetchAll();
+                    toast({ title: "Data refreshed" });
+                  }}
+                  title="Refresh data"
                 >
                   {dashboardLoading || proposalsQuery.isFetching ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <RefreshCw className="h-4 w-4" />
                   )}
-                  Refresh data
                 </Button>
               </div>
             </div>
@@ -675,7 +745,7 @@ export default function DashboardPage() {
                         width={yAxisWidth}
                         tickFormatter={(v) => `₹${v}L`}
                       />
-                      <Tooltip
+                      <RechartsTooltip
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                         formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}

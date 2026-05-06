@@ -17,6 +17,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { toast } from '@/components/ui/use-toast';
 import { PRODUCT_CATEGORIES, SUBSCRIPTION_TYPES, PROPOSAL_FORMATS } from '@/lib/masterData';
 import type { ProposalLineItem } from '@/types';
+import { makeProposalNumber } from '@/lib/proposalNumber';
 
 const STATUS_DOT: Record<string, string> = {
   PROPOSAL_DRAFT: 'bg-muted-foreground',
@@ -162,7 +163,13 @@ export default function ProposalsPage() {
     if (!newTitle || !newCustomerId) return;
     if (newLineItems.length === 0 && (!newValue || !Number.isFinite(Number(newValue)) || Number(newValue) <= 0)) return;
     if (newLineItems.length > 0 && lineItemsGrandTotal <= 0) return;
-    const proposalNo = `PROP-${new Date().getFullYear()}-${String(proposals.length + 1).padStart(4, '0')}`;
+    const companyName =
+      customers.find(c => c.id === newCustomerId)?.companyName ||
+      customers.find(c => c.id === newCustomerId)?.customerName ||
+      '';
+    const proposalNo = makeProposalNumber(
+      proposals.map(p => (p as unknown as { proposalNo?: string; proposalNumber?: string }).proposalNo ?? (p as unknown as { proposalNumber?: string }).proposalNumber ?? ''),
+    )(companyName);
     createProposal({
       proposalNo,
       customerId: newCustomerId,

@@ -15,6 +15,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { makeProposalNumber } from "@/lib/proposalNumber";
 import {
   FileText,
   Plus,
@@ -43,6 +44,8 @@ import {
   Link2,
   MessageSquarePlus,
   Truck,
+  CheckCircle,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -79,7 +82,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { apiUrl } from "@/lib/api";
@@ -375,29 +382,23 @@ export default function Proposals() {
 
   const nextStatuses = (status: ProposalStatus) => {
     if (status === "won") return [] as ProposalStatus[];
-    if (status === "shared") return ["sent", "cold", "rejected"];
-    if (status === "sent") return ["approved", "negotiation", "cold", "rejected"];
-    if (status === "approved") return ["won", "negotiation", "rejected"];
+    if (status === "shared") return ["sent", "cold", "rejected"] as ProposalStatus[];
+    if (status === "sent") return ["approved", "negotiation", "cold", "rejected"] as ProposalStatus[];
+    if (status === "approved") return ["won", "negotiation", "rejected"] as ProposalStatus[];
     return [] as ProposalStatus[];
   };
 
-  const makeNextProposalNumber = () => {
-    const year = new Date().getFullYear();
-    const prefix = `PROP-${year}-`;
-    const existing = proposals.filter((p) => p.proposalNumber.startsWith(prefix));
-    const max = existing.reduce((m, p) => {
-      const num = parseInt(p.proposalNumber.slice(prefix.length), 10);
-      return Number.isNaN(num) ? m : Math.max(m, num);
-    }, 0);
-    return `${prefix}${String(max + 1).padStart(4, "0")}`;
-  };
+  const nextProposalNumber = useMemo(
+    () => makeProposalNumber(proposals.map((p) => p.proposalNumber)),
+    [proposals],
+  );
 
   const duplicateProposal = async (p: Proposal) => {
     const now = new Date().toISOString();
     const copy: Proposal = {
       ...p,
       id: "p" + Math.random().toString(36).slice(2, 10),
-      proposalNumber: makeNextProposalNumber(),
+      proposalNumber: nextProposalNumber(p.customerCompanyName || p.customerName),
       title: `${p.title} (Copy)`,
       status: "shared",
       dealId: undefined,
@@ -821,12 +822,13 @@ export default function Proposals() {
                       <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Status
                       </th>
+                      <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        Actions
+                      </th>
                       <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell dark:text-gray-400">
                         Valid Until
                       </th>
-                      <th className="pr-5 px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Actions
-                      </th>
+                      <th className="pr-5 px-4 py-3" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -874,133 +876,66 @@ export default function Proposals() {
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <ProposalStatusBadge status={p.status} />
+                          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                            <ProposalStatusBadge status={p.status} />
+                          </div>
                         </td>
-                        <td className="hidden px-4 py-4 text-center md:table-cell">
-                          <span
-                            className={cn(
-                              "text-xs",
-                              validUntilExpired(p.validUntil, p.status) ? "font-medium text-red-500" : "text-gray-500 dark:text-gray-400",
-                            )}
-                          >
-                            {formatProposalDate(p.validUntil)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 pr-5">
-                          <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 rounded-md p-0 text-gray-400 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950/50"
-                              title="View"
-                              onClick={() => setDetailId(p.id)}
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                            {p.status === "draft" && canEditProposal(p) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 rounded-md px-2 text-xs font-medium text-blue-600 hover:bg-blue-50"
-                                title="Submit for approval"
-                                onClick={() => {
-                                  submitForApprovalAction(p.id);
-                                  void queryClient.invalidateQueries({ queryKey: QK.proposals() });
-                                  toast({ title: "Submitted for approval", description: p.proposalNumber });
-                                }}
-                              >
-                                Submit
-                              </Button>
-                            )}
-                            {p.status === "approval_pending" && canApprove && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 rounded-md px-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                                title="Approve"
-                                onClick={() => setApproveId(p.id)}
-                              >
-                                Approve
-                              </Button>
-                            )}
-                            {p.status === "approved" && canSend && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 rounded-md px-2 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:hover:bg-purple-950/40"
-                                title="Send"
-                                onClick={() => setSendId(p.id)}
-                              >
-                                Send
-                              </Button>
-                            )}
-                            {p.status === "sent" && canActOnOutcome(p) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 rounded-md px-2 text-xs font-medium text-emerald-600 hover:bg-emerald-50"
-                                title="Mark won"
-                                onClick={() => markWon(p.id)}
-                              >
-                                Won
-                              </Button>
-                            )}
-                            {p.status === "won" && !p.dealId && (canApprove || me.role === "super_admin") && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 rounded-md px-2 text-xs font-medium text-purple-600 hover:bg-purple-50"
-                                title="Create deal"
-                                onClick={() => setCreateDealId(p.id)}
-                              >
-                                → Deal
-                              </Button>
-                            )}
-
-                            {canReassign && (
-                              <Select value={p.assignedTo} onValueChange={(v) => void changeAssignedTo(p, v)}>
-                                <SelectTrigger
-                                  className="hidden h-7 w-[160px] rounded-md border-gray-200 bg-white px-2 text-xs text-gray-600 shadow-none hover:bg-gray-50 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 lg:flex"
-                                  title="Change assigned to"
-                                >
-                                  <SelectValue placeholder="Assigned to" />
-                                </SelectTrigger>
-                                <SelectContent align="end" className="max-h-[320px]">
-                                  {users.map((u) => (
-                                    <SelectItem key={u.id} value={u.id} className="text-xs">
-                                      {u.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            )}
-
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 rounded-md p-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
-                              title="Download PDF"
-                              disabled={pdfLoading}
-                              onClick={() => handleDownloadPdf(p)}
-                            >
-                              {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                            </Button>
+                        <td className="px-4 py-4 text-center">
+                          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 rounded-md p-0 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800"
-                                  title="More actions"
-                                >
-                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                <Button variant="outline" size="sm" className="h-8 px-3 text-xs">
+                                  Actions
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="start"
-                                sideOffset={6}
-                                className="min-w-[220px]"
-                              >
+                              <DropdownMenuContent align="center" sideOffset={6} className="min-w-[240px]">
+                                {/* Group 0 — Primary actions (contextual) */}
+                                {p.status === "draft" && canEditProposal(p) && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={() => {
+                                      submitForApprovalAction(p.id);
+                                      void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                                      toast({ title: "Submitted for approval", description: p.proposalNumber });
+                                    }}
+                                  >
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Submit for approval
+                                  </DropdownMenuItem>
+                                )}
+                                {p.status === "approval_pending" && canApprove && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setApproveId(p.id)}>
+                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                    Approve
+                                  </DropdownMenuItem>
+                                )}
+                                {p.status === "approval_pending" && canReject && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setRejectId(p.id)}>
+                                    <X className="mr-2 h-4 w-4" />
+                                    Reject
+                                  </DropdownMenuItem>
+                                )}
+                                {p.status === "approved" && canSend && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+                                    <Send className="mr-2 h-4 w-4" />
+                                    Send
+                                  </DropdownMenuItem>
+                                )}
+                                {p.status === "sent" && canActOnOutcome(p) && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => markWon(p.id)}>
+                                    <Trophy className="mr-2 h-4 w-4" />
+                                    Mark as won
+                                  </DropdownMenuItem>
+                                )}
+                                {p.status === "won" && !p.dealId && (canApprove || me.role === "super_admin") && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setCreateDealId(p.id)}>
+                                    <Handshake className="mr-2 h-4 w-4" />
+                                    Create deal
+                                  </DropdownMenuItem>
+                                )}
+
+                                <DropdownMenuSeparator />
+
                                 {/* Group 1 — View & Edit */}
                                 <DropdownMenuItem className="cursor-pointer" onClick={() => setDetailId(p.id)}>
                                   <Eye className="mr-2 h-4 w-4" />
@@ -1094,6 +1029,33 @@ export default function Proposals() {
                                   </DropdownMenuItem>
                                 )}
 
+                                {/* Group 3.5 — Change executive */}
+                                {canReassign && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel className="text-xs text-muted-foreground font-medium">
+                                      Change executive
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSub>
+                                      <DropdownMenuSubTrigger className="cursor-pointer">
+                                        <Users className="mr-2 h-4 w-4" />
+                                        Assign to…
+                                      </DropdownMenuSubTrigger>
+                                      <DropdownMenuSubContent className="max-h-[320px] overflow-y-auto min-w-[260px]">
+                                        {users.map((u) => (
+                                          <DropdownMenuItem
+                                            key={u.id}
+                                            className="cursor-pointer"
+                                            onClick={() => void changeAssignedTo(p, u.id)}
+                                          >
+                                            {u.name}
+                                          </DropdownMenuItem>
+                                        ))}
+                                      </DropdownMenuSubContent>
+                                    </DropdownMenuSub>
+                                  </>
+                                )}
+
                                 {/* Group 4 — Delivery */}
                                 {canMenu.assignDelivery && p.status === "won" && (
                                   <>
@@ -1128,6 +1090,17 @@ export default function Proposals() {
                             </DropdownMenu>
                           </div>
                         </td>
+                        <td className="hidden px-4 py-4 text-center md:table-cell">
+                          <span
+                            className={cn(
+                              "text-xs",
+                              validUntilExpired(p.validUntil, p.status) ? "font-medium text-red-500" : "text-gray-500 dark:text-gray-400",
+                            )}
+                          >
+                            {formatProposalDate(p.validUntil)}
+                          </span>
+                        </td>
+                        <td className="pr-5 px-4 py-4" />
                       </tr>
                     ))}
                   </tbody>
