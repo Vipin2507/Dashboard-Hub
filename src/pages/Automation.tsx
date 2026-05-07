@@ -63,6 +63,7 @@ const ALL_TRIGGERS: AutomationTrigger[] = [
   "proposal_approved_customer_notify",
   "proposal_rejected",
   "deal_created",
+  "estimate_shared",
   "deal_won",
   "deal_lost",
   "deal_follow_up",
@@ -83,6 +84,7 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   proposal_approved_customer_notify: "Proposal Approved — Customer Notify",
   proposal_rejected: "Proposal Rejected",
   deal_created: "Deal Created",
+  estimate_shared: "Estimate Shared (manual)",
   deal_won: "Deal Won",
   deal_lost: "Deal Lost",
   deal_follow_up: "Deal Follow-up Reminder",
@@ -708,7 +710,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                 text: template.body,
               }),
             })
-          : await fetchN8nWebhook(settings, "buildesk-email", {
+          : await fetchN8nWebhook(settings, template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1104,6 +1106,11 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
                 searchPlaceholder="Search triggers…"
                 triggerClassName="h-9 text-sm"
               />
+              {watchedTrigger === "estimate_shared" && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Used by Deals → Actions → Send (manual). No automatic sending unless you trigger it from UI.
+                </p>
+              )}
             </div>
             <div>
               <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Channel</p>
@@ -1499,6 +1506,7 @@ function SettingsTab() {
             <div className="space-y-1">
               {[
                 { path: "buildesk-email", desc: "Email via Gmail/SMTP" },
+                { path: "buildesk-estimate", desc: "Estimate share email (with PDF)" },
                 { path: "buildesk-health", desc: "Health check for settings tab" },
               ].map((w) => (
                 <div key={w.path} className="flex items-center gap-2">

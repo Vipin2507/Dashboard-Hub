@@ -232,6 +232,9 @@ function toDealResponse(row) {
     invoiceStatus: row.invoiceStatus ?? null,
     invoiceDate: row.invoiceDate ?? null,
     invoiceNumber: row.invoiceNumber ?? null,
+    estimateNumber: row.estimateNumber ?? null,
+    estimateDate: row.estimateDate ?? null,
+    estimateJson: row.estimateJson ?? null,
     totalAmount: row.totalAmount != null ? Number(row.totalAmount) : 0,
     taxAmount: row.taxAmount != null ? Number(row.taxAmount) : 0,
     amountWithoutTax: row.amountWithoutTax != null ? Number(row.amountWithoutTax) : 0,
@@ -255,6 +258,28 @@ function toDealResponse(row) {
     deletedByUserId: row.deletedByUserId ?? null,
     deletedByName: row.deletedByName ?? null,
   };
+}
+
+function formatEstimateNumber(n) {
+  const num = Number(n);
+  const safe = Number.isFinite(num) && num > 0 ? Math.floor(num) : 1;
+  return `EST-${String(safe).padStart(6, "0")}`;
+}
+
+function peekNextEstimateNumber() {
+  const row = db.prepare("SELECT next FROM estimate_sequence WHERE id = 1").get();
+  const next = row?.next ?? 1;
+  return formatEstimateNumber(next);
+}
+
+function allocateEstimateNumber() {
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT next FROM estimate_sequence WHERE id = 1").get();
+    const current = row?.next ?? 1;
+    db.prepare("UPDATE estimate_sequence SET next = ? WHERE id = 1").run(current + 1);
+    return formatEstimateNumber(current);
+  });
+  return tx();
 }
 
 function logDealAudit(db, dealId, action, detail, userId, userName) {
@@ -281,6 +306,28 @@ function parseJsonSafe(raw, fallback = null) {
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, db: "sqlite", dbPath: SQLITE_PATH });
+});
+
+app.get("/api/estimates/next-number", (_req, res) => {
+  // Allocate immediately so each open gets a unique number
+  res.json({ estimateNumber: allocateEstimateNumber() });
+});
+
+app.post("/api/estimates", (req, res) => {
+  let { estimateNumber, customerId, grandTotal, estimateJson } = req.body || {};
+  if (!customerId || !estimateJson) {
+    return res.status(400).json({ error: "customerId and estimateJson are required" });
+  }
+  if (!estimateNumber) estimateNumber = allocateEstimateNumber();
+  const now = new Date().toISOString();
+  try {
+    db.prepare(
+      "INSERT INTO estimates (id, estimateNumber, customerId, grandTotal, estimateJson, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run("est" + makeId(), String(estimateNumber), String(customerId), Number(grandTotal) || 0, String(estimateJson), now, now);
+    res.status(201).json({ ok: true, estimateNumber: String(estimateNumber) });
+  } catch (e) {
+    return res.status(400).json({ error: "Failed to save estimate" });
+  }
 });
 
 app.get("/api/regions", (_req, res) => {
@@ -736,6 +783,9 @@ app.post("/api/deals", (req, res) => {
     invoiceStatus,
     invoiceDate,
     invoiceNumber,
+    estimateNumber,
+    estimateDate,
+    estimateJson,
     totalAmount,
     taxAmount,
     amountWithoutTax,
@@ -807,6 +857,9 @@ app.post("/api/deals", (req, res) => {
     invoiceStatus: invoiceStatus != null && String(invoiceStatus).trim() ? String(invoiceStatus).trim() : null,
     invoiceDate: invoiceDate != null && String(invoiceDate).trim() ? String(invoiceDate).trim() : null,
     invoiceNumber: invoiceNumber != null && String(invoiceNumber).trim() ? String(invoiceNumber).trim() : null,
+    estimateNumber: estimateNumber != null && String(estimateNumber).trim() ? String(estimateNumber).trim() : null,
+    estimateDate: estimateDate != null && String(estimateDate).trim() ? String(estimateDate).trim() : null,
+    estimateJson: estimateJson != null && String(estimateJson).trim() ? String(estimateJson).trim() : null,
     totalAmount: totalAmount != null ? Number(totalAmount) || 0 : Number(value) || 0,
     taxAmount: taxAmount != null ? Number(taxAmount) || 0 : 0,
     amountWithoutTax: amountWithoutTax != null ? Number(amountWithoutTax) || 0 : 0,
@@ -827,18 +880,21 @@ app.post("/api/deals", (req, res) => {
     createdAt: now,
     updatedAt: now,
   };
+  if (deal.estimateJson && !deal.estimateNumber) {
+    deal.estimateNumber = allocateEstimateNumber();
+  }
   if (deal.dealStatus === "Closed/Lost" && (!deal.lossReason || !String(deal.lossReason).trim())) {
     return res.status(400).json({ error: "lossReason is required when status is Closed/Lost" });
   }
   db.prepare(`
     INSERT INTO deals (
       id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
-      dealStatus, invoiceStatus, invoiceDate, invoiceNumber, totalAmount, taxAmount, amountWithoutTax, placeOfSupply, balanceAmount, amountPaid, serviceName,
+      dealStatus, invoiceStatus, invoiceDate, invoiceNumber, estimateNumber, estimateDate, estimateJson, totalAmount, taxAmount, amountWithoutTax, placeOfSupply, balanceAmount, amountPaid, serviceName,
       dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
       contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt
     ) VALUES (
       @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
-      @dealStatus, @invoiceStatus, @invoiceDate, @invoiceNumber, @totalAmount, @taxAmount, @amountWithoutTax, @placeOfSupply, @balanceAmount, @amountPaid, @serviceName,
+      @dealStatus, @invoiceStatus, @invoiceDate, @invoiceNumber, @estimateNumber, @estimateDate, @estimateJson, @totalAmount, @taxAmount, @amountWithoutTax, @placeOfSupply, @balanceAmount, @amountPaid, @serviceName,
       @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
       @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt
     )
@@ -999,6 +1055,9 @@ app.put("/api/deals/:id", (req, res) => {
     invoiceStatus,
     invoiceDate,
     invoiceNumber,
+    estimateNumber,
+    estimateDate,
+    estimateJson,
     totalAmount,
     taxAmount,
     amountWithoutTax,
@@ -1068,6 +1127,9 @@ app.put("/api/deals/:id", (req, res) => {
     ...(invoiceStatus !== undefined && { invoiceStatus: invoiceStatus != null && String(invoiceStatus).trim() ? String(invoiceStatus).trim() : null }),
     ...(invoiceDate !== undefined && { invoiceDate: invoiceDate != null && String(invoiceDate).trim() ? String(invoiceDate).trim() : null }),
     ...(invoiceNumber !== undefined && { invoiceNumber: invoiceNumber != null && String(invoiceNumber).trim() ? String(invoiceNumber).trim() : null }),
+    ...(estimateNumber !== undefined && { estimateNumber: estimateNumber != null && String(estimateNumber).trim() ? String(estimateNumber).trim() : null }),
+    ...(estimateDate !== undefined && { estimateDate: estimateDate != null && String(estimateDate).trim() ? String(estimateDate).trim() : null }),
+    ...(estimateJson !== undefined && { estimateJson: estimateJson != null && String(estimateJson).trim() ? String(estimateJson).trim() : null }),
     ...(totalAmount !== undefined && { totalAmount: totalAmount != null ? Number(totalAmount) || 0 : 0 }),
     ...(taxAmount !== undefined && { taxAmount: taxAmount != null ? Number(taxAmount) || 0 : 0 }),
     ...(amountWithoutTax !== undefined && { amountWithoutTax: amountWithoutTax != null ? Number(amountWithoutTax) || 0 : 0 }),
@@ -1089,12 +1151,16 @@ app.put("/api/deals/:id", (req, res) => {
       remarks: remarks != null && String(remarks).trim() ? String(remarks).trim() : null,
     }),
   };
+  if (deal.estimateJson && !deal.estimateNumber) {
+    deal.estimateNumber = allocateEstimateNumber();
+  }
 
   db.prepare(`
     UPDATE deals SET
       name=@name, customerId=@customerId, ownerUserId=@ownerUserId, teamId=@teamId, regionId=@regionId,
       stage=@stage, value=@value, locked=@locked, proposalId=@proposalId,
       dealStatus=@dealStatus, invoiceStatus=@invoiceStatus, invoiceDate=@invoiceDate, invoiceNumber=@invoiceNumber,
+      estimateNumber=@estimateNumber, estimateDate=@estimateDate, estimateJson=@estimateJson,
       totalAmount=@totalAmount, taxAmount=@taxAmount, amountWithoutTax=@amountWithoutTax, placeOfSupply=@placeOfSupply,
       balanceAmount=@balanceAmount, amountPaid=@amountPaid, serviceName=@serviceName,
       dealSource=@dealSource, expectedCloseDate=@expectedCloseDate,

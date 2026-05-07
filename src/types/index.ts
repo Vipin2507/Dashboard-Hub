@@ -250,6 +250,8 @@ export interface ProposalLineItem {
   name: string;
   sku: string;
   description?: string;
+  /** Label for the quantity suffix in PDF, e.g. "license", "product", "seat". */
+  qtyLabel?: string;
   qty: number;
   unitPrice: number;
   taxRate: number;
@@ -309,6 +311,18 @@ export interface Proposal {
   sentAt?: string;
   dealId?: string;
   paymentTerms?: string;
+  /**
+   * Optional override for the PDF cover title block (front page).
+   * Use newline-separated lines (we render up to 2 lines).
+   * Example:
+   * "BUILDESK ANNUAL SALES\nMANAGEMENT PROPOSAL"
+   */
+  pdfCoverHeading?: string;
+  /**
+   * Optional override for Terms & Conditions in the PDF.
+   * When provided (non-empty), this replaces the default terms list.
+   */
+  termsAndConditions?: string[];
   /** Cover page heading variant for generated PDF (defaults to end-to-end when omitted). */
   pdfScope?: ProposalPdfScope;
 }
@@ -333,6 +347,12 @@ export interface Deal {
   invoiceStatus?: string | null;
   invoiceDate?: string | null;
   invoiceNumber?: string | null;
+  /** Estimate PDF number, e.g. EST-000123 */
+  estimateNumber?: string | null;
+  /** Estimate date (YYYY-MM-DD) */
+  estimateDate?: string | null;
+  /** Serialized estimate payload used to generate the PDF */
+  estimateJson?: string | null;
   totalAmount?: number;
   taxAmount?: number;
   amountWithoutTax?: number;

@@ -11,7 +11,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { dialogSmMax4xl, dialogSmMaxMd } from "@/lib/dialogLayout";
+import { dialogSmMax4xl, dialogSmMax6xl, dialogSmMaxMd } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
@@ -36,6 +36,7 @@ import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
+import { DEFAULT_TERMS, defaultCoverHeadingTextForScope, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -112,6 +113,12 @@ export function ProposalFormDialog({
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
   const [pdfScope, setPdfScope] = useState<ProposalPdfScope>("end_to_end");
+  const [pdfCoverHeading, setPdfCoverHeading] = useState("");
+  const [termsAndConditionsText, setTermsAndConditionsText] = useState("");
+  const [pdfEditorOpen, setPdfEditorOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>("");
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
+  const [didAutoSeedPdfFields, setDidAutoSeedPdfFields] = useState(false);
 
   const canOverride = can(me.role, "proposals", "override_final_value");
   const canRequestApproval = can(me.role, "proposals", "request_approval");
@@ -247,6 +254,10 @@ export function ProposalFormDialog({
     const assignedUser = users.find((u) => u.id === assignedTo);
     const value = overrideFinal && finalQuoteValue ? Number(finalQuoteValue) : totals.grandTotal;
     const companyName = (customer?.companyName ?? "").trim() || customer?.customerName || "";
+    const parsedTerms = termsAndConditionsText
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*[-•]\s*/, "").trim())
+      .filter(Boolean);
     return {
       id: editingProposal?.id,
       proposalNumber: editingProposal?.proposalNumber ?? nextProposalNumber(companyName),
@@ -277,8 +288,63 @@ export function ProposalFormDialog({
       updatedAt: now,
       createdBy: editingProposal?.createdBy ?? me.id,
       pdfScope,
+      pdfCoverHeading: pdfCoverHeading.trim() || undefined,
+      termsAndConditions: parsedTerms.length ? parsedTerms : undefined,
     };
   };
+
+  const canOpenPdfEditor = useMemo(() => {
+    if (!title.trim()) return false;
+    if (!customerId) return false;
+    if (!validUntil) return false;
+    if (!lineItems.length) return false;
+    return true;
+  }, [title, customerId, validUntil, lineItems.length]);
+
+  const buildDraftProposalForPdf = () => {
+    const now = new Date().toISOString();
+    const payload = buildProposal();
+    const id = editingProposal?.id ?? "p-preview";
+    return {
+      ...(payload as Omit<Proposal, "id" | "createdAt" | "updatedAt"> & { id?: string; createdAt?: string; updatedAt?: string }),
+      id,
+      createdAt: payload.createdAt ?? now,
+      updatedAt: payload.updatedAt ?? now,
+    } as Proposal;
+  };
+
+  const refreshPdfPreview = async () => {
+    if (!canOpenPdfEditor) return;
+    setPdfPreviewLoading(true);
+    try {
+      const draft = buildDraftProposalForPdf();
+      const blob = await generateProposalPdfBlob(draft);
+      const url = URL.createObjectURL(blob);
+      setPdfPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return url;
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to generate PDF preview";
+      toast({ title: "PDF preview failed", description: message, variant: "destructive" });
+    } finally {
+      setPdfPreviewLoading(false);
+    }
+  };
+
+  const seedPdfEditorDefaultsIfNeeded = () => {
+    if (didAutoSeedPdfFields) return;
+    // Show the "current" PDF values even when the user hasn't overridden yet.
+    if (!pdfCoverHeading.trim()) setPdfCoverHeading(defaultCoverHeadingTextForScope(pdfScope));
+    if (!termsAndConditionsText.trim()) setTermsAndConditionsText(DEFAULT_TERMS.join("\n"));
+    setDidAutoSeedPdfFields(true);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    };
+  }, [pdfPreviewUrl]);
 
   const handleSaveDraft = () => {
     if (!title || !customerId) {
@@ -370,6 +436,9 @@ export function ProposalFormDialog({
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
       setPdfScope(editingProposal.pdfScope ?? "end_to_end");
+      setPdfCoverHeading(editingProposal.pdfCoverHeading ?? "");
+      setTermsAndConditionsText((editingProposal.termsAndConditions ?? []).join("\n"));
+      setDidAutoSeedPdfFields(true);
     } else {
       const createdAt = new Date();
       setTitleAutoCreatedAt(createdAt);
@@ -385,6 +454,9 @@ export function ProposalFormDialog({
       setOverrideFinal(false);
       setFinalQuoteValue("");
       setPdfScope("end_to_end");
+      setPdfCoverHeading("");
+      setTermsAndConditionsText("");
+      setDidAutoSeedPdfFields(false);
     }
   }, [open, editingProposal?.id, initialCustomerId]);
 
@@ -574,6 +646,13 @@ export function ProposalFormDialog({
                               onChange={(e) => updateLineItem(li.id, { name: e.target.value })}
                               placeholder="Item name"
                             />
+                            <Textarea
+                              className="mt-2 text-xs"
+                              value={li.description ?? ""}
+                              onChange={(e) => updateLineItem(li.id, { description: e.target.value })}
+                              placeholder="Description (shows in PDF product table)"
+                              rows={2}
+                            />
                             <span className="font-mono text-[10px] text-muted-foreground">{li.sku}</span>
                           </TableCell>
                           <TableCell>
@@ -671,10 +750,169 @@ export function ProposalFormDialog({
 
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!canOpenPdfEditor}
+              onClick={async () => {
+                setPdfEditorOpen(true);
+                seedPdfEditorDefaultsIfNeeded();
+                await refreshPdfPreview();
+              }}
+              title={!canOpenPdfEditor ? "Fill Title, Customer, Valid Until and add at least 1 line item" : "Preview and edit PDF fields"}
+            >
+              Edit PDF
+            </Button>
             <Button variant="outline" onClick={handleSaveDraft}>Save as draft</Button>
             {canRequestApproval && <Button variant="outline" onClick={handleSubmitForApproval}>Save & submit for approval</Button>}
             {canSend && <Button onClick={handleSaveAndSend}>Save & send</Button>}
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PDF editor / live preview */}
+      <Dialog open={pdfEditorOpen} onOpenChange={(o) => { setPdfEditorOpen(o); }}>
+        <DialogContent className={cn(dialogSmMax6xl, "h-[92vh] overflow-hidden")}>
+          <DialogHeader>
+            <DialogTitle>Edit PDF</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="grid h-full grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[520px_1fr]">
+            <div className="flex h-full flex-col overflow-hidden rounded-md border bg-background">
+              <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-5">
+                <div className="space-y-2">
+                <Label>Cover heading (current)</Label>
+                <Textarea
+                  value={pdfCoverHeading}
+                  onChange={(e) => setPdfCoverHeading(e.target.value)}
+                  rows={2}
+                  placeholder={"Example:\nBUILDESK ANNUAL SALES\nMANAGEMENT PROPOSAL"}
+                />
+                <p className="text-xs text-muted-foreground">Edit 1–2 lines. This is what the PDF will show on the cover.</p>
+              </div>
+                <div className="space-y-2">
+                  <Label>Terms &amp; Conditions (current)</Label>
+                  <Textarea
+                    value={termsAndConditionsText}
+                    onChange={(e) => setTermsAndConditionsText(e.target.value)}
+                    rows={10}
+                    placeholder={"One point per line.\nYou can start lines with - or • (we’ll clean it)."}
+                  />
+                </div>
+              <div className="space-y-2">
+                <Label>Products table (edit description)</Label>
+                <div className="space-y-3">
+                  {lineItems.map((li) => (
+                    <div key={li.id} className="rounded-md border p-4 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Item name</Label>
+                          <Input value={li.name} onChange={(e) => updateLineItem(li.id, { name: e.target.value })} />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Item code</Label>
+                          <Input value={li.sku} readOnly className="font-mono" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Description (shows in PDF)</Label>
+                        <Textarea
+                          value={li.description ?? ""}
+                          onChange={(e) => updateLineItem(li.id, { description: e.target.value })}
+                          rows={3}
+                          placeholder="Add description…"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Qty label (for bracket)</Label>
+                          <Input
+                            value={(li as any).qtyLabel ?? "license"}
+                            onChange={(e) => updateLineItem(li.id, { qtyLabel: e.target.value })}
+                            placeholder="license"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Bracket preview</Label>
+                          <Input
+                            value={`(${li.qty} ${((li as any).qtyLabel ?? "license").trim() || "license"}${li.qty === 1 ? "" : (((li as any).qtyLabel ?? "license").trim() || "license").endsWith("s") ? "" : "s"})`}
+                            readOnly
+                            className="font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {lineItems.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Add at least 1 line item to edit product descriptions.</p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Values used in PDF</Label>
+                <div className="rounded-md border p-4 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Setup &amp; Deployment Charges</Label>
+                      <NumericInput
+                        className="h-10"
+                        min={0}
+                        emptyOnBlur={0}
+                        value={setupDeploymentCharges}
+                        onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                      />
+                    </div>
+                    {canOverride && (
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Final Quote Override</Label>
+                        <div className="flex items-center gap-2">
+                          <Switch checked={overrideFinal} onCheckedChange={setOverrideFinal} />
+                          <Input
+                            type="number"
+                            className="h-10"
+                            value={finalQuoteValue}
+                            onChange={(e) => setFinalQuoteValue(e.target.value)}
+                            placeholder={String(totals.grandTotal)}
+                            disabled={!overrideFinal}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <div className="flex justify-between"><span>Subtotal (excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
+                    <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
+                    <div className="flex justify-between"><span>Grand Total (incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
+                    {overrideFinal && finalQuoteValue ? (
+                      <div className="flex justify-between font-medium text-primary"><span>Final Quote (override)</span><span className="font-mono">{formatINR(Number(finalQuoteValue) || totals.grandTotal)}</span></div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              </div>
+
+              <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t bg-background p-3 sm:p-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={refreshPdfPreview}
+                  disabled={pdfPreviewLoading || !canOpenPdfEditor}
+                >
+                  {pdfPreviewLoading ? "Refreshing..." : "Refresh preview"}
+                </Button>
+                <Button type="button" onClick={() => setPdfEditorOpen(false)}>Done</Button>
+              </div>
+            </div>
+
+            <div className="h-full overflow-hidden rounded-md border bg-muted/20">
+              {pdfPreviewUrl ? (
+                <iframe title="PDF preview" src={pdfPreviewUrl} className="h-full w-full" />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  {pdfPreviewLoading ? "Generating preview..." : "No preview yet"}
+                </div>
+              )}
+            </div>
+          </DialogBody>
         </DialogContent>
       </Dialog>
 

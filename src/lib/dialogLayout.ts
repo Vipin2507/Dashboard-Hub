@@ -9,6 +9,9 @@ export const dialogSmMax2xl = 'sm:max-w-2xl';
 /** Extra-wide proposal / data-heavy dialogs */
 export const dialogSmMax4xl = 'sm:max-w-4xl';
 
+/** Ultra-wide editor dialogs (PDF editor / heavy side-by-side) */
+export const dialogSmMax6xl = 'sm:max-w-6xl';
+
 /** Side panels — merge onto SheetContent (widths come from `ui/sheet` right variant) */
 export const sheetContentDetail = 'flex flex-col overflow-y-auto p-6 pt-14';
 

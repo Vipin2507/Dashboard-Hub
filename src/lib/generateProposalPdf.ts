@@ -128,6 +128,17 @@ function getPdfScope(proposal: Proposal): ProposalPdfScope {
 
 /** Two-line cover title (uppercase) to match legacy layout. */
 function getCoverTitleLines(proposal: Proposal): [string, string] {
+  const override = (proposal.pdfCoverHeading ?? "").trim();
+  if (override) {
+    const lines = override
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((l) => l.toUpperCase());
+    if (lines.length === 1) return [lines[0], ""];
+    if (lines.length >= 2) return [lines[0], lines[1]];
+  }
   switch (getPdfScope(proposal)) {
     case "sales":
       return ["BUILDESK ANNUAL SALES", "MANAGEMENT PROPOSAL"];
@@ -165,7 +176,8 @@ function getCoverLetterSubject(proposal: Proposal): string {
 }
 
 function getTermsForProposal(proposal: Proposal): string[] {
-  const terms = [...DEFAULT_TERMS];
+  const custom = (proposal.termsAndConditions ?? []).map((t) => String(t ?? "").trim()).filter(Boolean);
+  const terms = custom.length ? custom : [...DEFAULT_TERMS];
   if (proposal.paymentTerms) terms[1] = proposal.paymentTerms;
   // Remove "third from last" point as requested.
   if (terms.length >= 3) terms.splice(terms.length - 3, 1);
@@ -209,7 +221,10 @@ function getServiceLabel(_item: ProposalLineItem): string {
 function formatLicenseSuffix(item: ProposalLineItem): string {
   const qty = Number(item.qty) || 0;
   if (qty <= 0) return "";
-  return ` (${qty} license${qty === 1 ? "" : "s"})`;
+  const raw = String((item as unknown as { qtyLabel?: string }).qtyLabel ?? "license").trim() || "license";
+  const singular = raw;
+  const plural = raw.endsWith("s") ? raw : raw + "s";
+  return ` (${qty} ${qty === 1 ? singular : plural})`;
 }
 
 function baseAmount(item: ProposalLineItem): number {
@@ -804,7 +819,7 @@ function renderCommercialSection(
   return currentPageNum;
 }
 
-const DEFAULT_TERMS = [
+export const DEFAULT_TERMS = [
   "18% GST is included in the final total.",
   "100% payment has to be done in advance.",
   "Post sales are offered as an individual service, and it will need to be renewed annually.",
@@ -821,6 +836,12 @@ const DEFAULT_TERMS = [
   "If there is any change in scope other than agreed line items/content, then Buildesk shall be liable to charge extra for the efforts involved with due discussion with client.",
   "Billing will be done under the Cravingcode Technologies Pvt Ltd.",
 ];
+
+export function defaultCoverHeadingTextForScope(scope: ProposalPdfScope): string {
+  if (scope === "sales") return "BUILDESK ANNUAL SALES\nMANAGEMENT PROPOSAL";
+  if (scope === "post") return "BUILDESK ANNUAL POST SALES\nMANAGEMENT PROPOSAL";
+  return "BUILDESK ANNUAL END TO END SALES\nMANAGEMENT PROPOSAL";
+}
 
 function renderTermsPage(doc: jsPDF, proposal: Proposal, pageNum: number): void {
   addPageHeader(doc);

@@ -23,6 +23,13 @@ async function loadProposalForPdf(proposalId: string): Promise<Proposal> {
   return p;
 }
 
+async function loadDealForEstimatePdf(dealId: string) {
+  const list = await api.get<any[]>("/deals");
+  const d = list.find((x) => x.id === dealId);
+  if (!d) throw new Error("Deal not found");
+  return d as any;
+}
+
 async function refreshTemplatesIfStale(): Promise<void> {
   const now = Date.now();
   if (now - lastTemplateRefreshAt < TEMPLATE_REFRESH_TTL_MS) return;
@@ -165,6 +172,9 @@ export interface AutomationContext {
   dealId?: string;
   dealTitle?: string;
   dealValue?: number;
+  estimateNumber?: string;
+  /** Optional Deal.estimateJson to build PDF without refetching the deal list. */
+  estimateJson?: string;
   nextFollowUpDate?: string;
   lossReason?: string;
   // Customer
@@ -272,6 +282,7 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{deal_id}}": ctx.dealId ?? "",
     "{{deal_title}}": ctx.dealTitle ?? "",
     "{{deal_value}}": formatINRInline(ctx.dealValue),
+    "{{estimate_number}}": ctx.estimateNumber ?? "",
     "{{next_follow_up_date}}": ctx.nextFollowUpDate ?? "",
     "{{loss_reason}}": ctx.lossReason ?? ctx.rejectionReason ?? "",
     "{{invoice_number}}": ctx.invoiceNumber ?? "",
@@ -410,6 +421,10 @@ async function fireN8nWebhook(
     !!ctx.proposalId &&
     String(template.trigger || "").toLowerCase().startsWith("proposal");
 
+  // For estimate share emails, attach the estimate PDF as binary (n8n expects `estimate_pdf`).
+  const shouldAttachEstimatePdf =
+    template.channel === "email" && template.trigger === "estimate_shared" && (!!ctx.estimateJson || !!ctx.dealId);
+
   let proposalPdfBlob: Blob | null = null;
   let proposalPdfName = "proposal.pdf";
   if (shouldAttachProposalPdf) {
@@ -424,8 +439,25 @@ async function fireN8nWebhook(
     }
   }
 
+  let estimatePdfBlob: Blob | null = null;
+  let estimatePdfName = "estimate.pdf";
+  if (shouldAttachEstimatePdf) {
+    try {
+      const deal =
+        ctx.estimateJson
+          ? ({ id: ctx.dealId ?? "deal", estimateJson: ctx.estimateJson, estimateNumber: ctx.estimateNumber } as any)
+          : await loadDealForEstimatePdf(ctx.dealId as string);
+      const { generateEstimatePdfBlob } = await import("@/lib/generateEstimatePdf");
+      estimatePdfBlob = await generateEstimatePdfBlob(deal);
+      const num = (ctx.estimateNumber || deal.estimateNumber || "").trim();
+      estimatePdfName = num ? `Estimate-${num}.pdf` : `Estimate-${ctx.dealId}.pdf`;
+    } catch {
+      estimatePdfBlob = null;
+    }
+  }
+
   for (const recipient of recipients) {
-    const webhookPath = "buildesk-email";
+    const webhookPath = template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email";
     const normalizedPhone =
       template.channel === "whatsapp" || template.channel === "sms"
         ? normalizeIndiaPhone(recipient.phone)
@@ -483,7 +515,7 @@ async function fireN8nWebhook(
 
     try {
       const init: RequestInit =
-        proposalPdfBlob && template.channel === "email"
+        (proposalPdfBlob || estimatePdfBlob) && template.channel === "email"
           ? (() => {
               const formData = new FormData();
               // Keep backward compatibility with existing n8n mappings like:
@@ -496,7 +528,8 @@ async function fireN8nWebhook(
                 // n8n webhook parses multipart fields as strings
                 formData.append(k, typeof v === "string" ? v : String(v));
               }
-              formData.append("proposal_pdf", proposalPdfBlob, proposalPdfName);
+              if (proposalPdfBlob) formData.append("proposal_pdf", proposalPdfBlob, proposalPdfName);
+              if (estimatePdfBlob) formData.append("estimate_pdf", estimatePdfBlob, estimatePdfName);
               return { method: "POST", body: formData };
             })()
           : {

@@ -93,6 +93,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useCustomerPaymentSummary } from "@/hooks/usePayments";
 import { triggerAutomation } from "@/lib/automationService";
 import { getCustomerBrief } from "@/lib/aiMemoryService";
+import { GenerateEstimateDialog } from "@/components/GenerateEstimateDialog";
 
 const STATUS_PILL: Record<string, string> = {
   active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -471,6 +472,7 @@ export default function CustomerProfile() {
   const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [addProductLineOpen, setAddProductLineOpen] = useState(false);
   const [logActivityOpen, setLogActivityOpen] = useState(false);
+  const [showEstimateDialog, setShowEstimateDialog] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteContent, setEditingNoteContent] = useState("");
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
@@ -712,6 +714,17 @@ export default function CustomerProfile() {
                 variant="outline"
                 size="sm"
                 className="h-8 flex-1 rounded-lg text-xs"
+                onClick={() => setShowEstimateDialog(true)}
+              >
+                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                Estimate
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 rounded-lg text-xs"
                 onClick={() => setLogActivityOpen(true)}
               >
                 <Activity className="mr-1.5 h-3.5 w-3.5" /> Log
@@ -746,6 +759,7 @@ export default function CustomerProfile() {
                             ? "border-blue-600 text-blue-600"
                             : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
                         )}
+
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
                         {tab.label}
@@ -1614,6 +1628,12 @@ export default function CustomerProfile() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <GenerateEstimateDialog
+        open={showEstimateDialog}
+        onClose={() => setShowEstimateDialog(false)}
+        customer={customer}
+      />
     </>
   );
 }

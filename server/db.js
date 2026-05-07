@@ -57,6 +57,9 @@ function migrateDealSchema() {
   if (!names.has("invoiceStatus")) add("ALTER TABLE deals ADD COLUMN invoiceStatus TEXT");
   if (!names.has("invoiceDate")) add("ALTER TABLE deals ADD COLUMN invoiceDate TEXT");
   if (!names.has("invoiceNumber")) add("ALTER TABLE deals ADD COLUMN invoiceNumber TEXT");
+  if (!names.has("estimateNumber")) add("ALTER TABLE deals ADD COLUMN estimateNumber TEXT");
+  if (!names.has("estimateDate")) add("ALTER TABLE deals ADD COLUMN estimateDate TEXT");
+  if (!names.has("estimateJson")) add("ALTER TABLE deals ADD COLUMN estimateJson TEXT");
   if (!names.has("totalAmount")) add("ALTER TABLE deals ADD COLUMN totalAmount REAL NOT NULL DEFAULT 0");
   if (!names.has("taxAmount")) add("ALTER TABLE deals ADD COLUMN taxAmount REAL NOT NULL DEFAULT 0");
   if (!names.has("amountWithoutTax")) add("ALTER TABLE deals ADD COLUMN amountWithoutTax REAL NOT NULL DEFAULT 0");
@@ -93,6 +96,37 @@ function migrateDealSchema() {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_dealStatus ON deals(dealStatus)`);
 }
 migrateDealSchema();
+
+function migrateEstimateSequence() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimate_sequence (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next INTEGER NOT NULL
+    );
+  `);
+  const row = db.prepare("SELECT id, next FROM estimate_sequence WHERE id = 1").get();
+  if (!row) {
+    db.prepare("INSERT INTO estimate_sequence (id, next) VALUES (1, 1)").run();
+  }
+}
+migrateEstimateSequence();
+
+function migrateEstimatesTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS estimates (
+      id TEXT PRIMARY KEY,
+      estimateNumber TEXT NOT NULL UNIQUE,
+      customerId TEXT NOT NULL,
+      grandTotal REAL NOT NULL DEFAULT 0,
+      estimateJson TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_estimates_customerId ON estimates(customerId)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_estimates_createdAt ON estimates(createdAt)`);
+}
+migrateEstimatesTable();
 
 function migrateDeliveryAndHistorySchema() {
   db.exec(`

@@ -5,6 +5,7 @@ export type AutomationTrigger =
   | "proposal_approved_customer_notify"
   | "proposal_rejected"
   | "deal_created"
+  | "estimate_shared"
   | "deal_won"
   | "deal_lost"
   | "deal_follow_up"
@@ -122,6 +123,19 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
     "{{grand_total}}",
     "{{customer_phone}}",
     "{{customer_email}}",
+    "{{sales_rep_name}}",
+    "{{sales_rep_phone}}",
+    "{{sales_rep_email}}",
+    "{{company_name}}",
+  ],
+  estimate_shared: [
+    "{{customer_name}}",
+    "{{customer_phone}}",
+    "{{customer_email}}",
+    "{{deal_id}}",
+    "{{deal_title}}",
+    "{{deal_value}}",
+    "{{estimate_number}}",
     "{{sales_rep_name}}",
     "{{sales_rep_phone}}",
     "{{sales_rep_email}}",

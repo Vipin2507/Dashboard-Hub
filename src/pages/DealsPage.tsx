@@ -27,12 +27,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload } from "lucide-react";
-import type { Deal } from "@/types";
+import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload, FileDown, Mail, MessageCircle } from "lucide-react";
+import type { Deal, Proposal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { Topbar } from "@/components/Topbar";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useCreateDealPaymentPlan, useDealPaymentSummary, useRecordPayment } from "@/hooks/usePayments";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,6 +53,8 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
+import { generateEstimatePdf } from "@/lib/generateEstimatePdf";
+import { SendEstimateDialog } from "@/components/SendEstimateDialog";
 
 type DealAuditRow = {
   id: string;
@@ -131,10 +140,117 @@ function formatDealListDate(iso: string | null | undefined) {
   }
 }
 
+function formatDDMMYYYY(iso: string | null | undefined) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso.includes("T") ? iso : iso + "T00:00:00");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = String(d.getFullYear());
+    return `${dd}-${mm}-${yyyy}`;
+  } catch {
+    return "—";
+  }
+}
+
 function formatINRAmount(n: number | null | undefined) {
   const v = Number(n ?? 0);
   if (!Number.isFinite(v)) return "—";
   return `₹${v.toLocaleString("en-IN")}`;
+}
+
+type DealStatusKey = "Active" | "Closed/Won" | "Closed/Lost" | "In Progress" | "Pending";
+function normalizeDealStatusKey(s: unknown): DealStatusKey {
+  const raw = String(s ?? "").trim();
+  if (raw === "Closed/Won") return "Closed/Won";
+  if (raw === "Closed/Lost") return "Closed/Lost";
+  if (raw.toLowerCase() === "in progress") return "In Progress";
+  if (raw.toLowerCase() === "pending") return "Pending";
+  return "Active";
+}
+
+function dealStatusPillClass(s: DealStatusKey) {
+  switch (s) {
+    case "Active":
+      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+    case "Closed/Won":
+      return "bg-blue-500/15 text-blue-700 dark:text-blue-300";
+    case "Closed/Lost":
+      return "bg-red-500/15 text-red-700 dark:text-red-300";
+    case "In Progress":
+      return "bg-orange-500/15 text-orange-700 dark:text-orange-300";
+    case "Pending":
+    default:
+      return "bg-gray-500/15 text-gray-700 dark:text-gray-300";
+  }
+}
+
+function dealDisplayId(deal: Deal): string {
+  const id = String(deal.id ?? "");
+  if (/^DEAL-\\d{4}-\\d{4}$/.test(id)) return id;
+  const m = /^d(\\d+)$/.exec(id);
+  if (m) {
+    const seq = String(Number(m[1]) || 0).padStart(4, "0");
+    const year = (() => {
+      const base = deal.createdAt ?? deal.updatedAt ?? new Date().toISOString();
+      try {
+        return new Date(base).getFullYear();
+      } catch {
+        return new Date().getFullYear();
+      }
+    })();
+    return `DEAL-${year}-${seq}`;
+  }
+  return id || "—";
+}
+
+function safeParseJson<T>(raw: unknown): T | null {
+  try {
+    const s = String(raw ?? "");
+    if (!s.trim()) return null;
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
+type EstimateJson = {
+  billTo?: { placeOfSupply?: string };
+  tax?: { subTotal?: number; cgstAmount?: number; sgstAmount?: number; igstAmount?: number; total?: number };
+  items?: Array<{ name?: string }>;
+};
+
+function deriveDealFinanceFromEstimateOrProposal(deal: Deal, proposal: Proposal | undefined) {
+  const est = safeParseJson<EstimateJson>((deal as any).estimateJson);
+  const subTotal =
+    est?.tax?.subTotal ??
+    (deal.amountWithoutTax != null && Number.isFinite(Number(deal.amountWithoutTax)) ? Number(deal.amountWithoutTax) : undefined) ??
+    (proposal?.subtotal ?? undefined);
+  const taxAmount =
+    (est?.tax
+      ? Number(est.tax.cgstAmount ?? 0) + Number(est.tax.sgstAmount ?? 0) + Number(est.tax.igstAmount ?? 0)
+      : undefined) ??
+    (deal.taxAmount != null && Number.isFinite(Number(deal.taxAmount)) ? Number(deal.taxAmount) : undefined) ??
+    (proposal?.totalTax ?? undefined);
+  const totalAmount =
+    est?.tax?.total ??
+    (deal.totalAmount != null && Number.isFinite(Number(deal.totalAmount)) ? Number(deal.totalAmount) : undefined) ??
+    (proposal ? (proposal.finalQuoteValue ?? proposal.grandTotal) : undefined) ??
+    (deal.value ?? undefined);
+  const placeOfSupply = est?.billTo?.placeOfSupply ?? (deal.placeOfSupply ?? undefined) ?? undefined;
+  const serviceName =
+    (deal.serviceName ?? undefined) ??
+    est?.items?.find((x) => x?.name)?.name ??
+    (proposal?.title ?? undefined) ??
+    undefined;
+  const amountPaid = deal.amountPaid != null ? Number(deal.amountPaid) : undefined;
+  const balanceAmount =
+    deal.balanceAmount != null
+      ? Number(deal.balanceAmount)
+      : totalAmount != null && amountPaid != null
+        ? Math.max(0, totalAmount - amountPaid)
+        : undefined;
+  return { subTotal, taxAmount, totalAmount, placeOfSupply, balanceAmount, amountPaid, serviceName };
 }
 
 function formatDueDate(iso: string) {
@@ -214,6 +330,7 @@ export default function DealsPage() {
   const deals = useAppStore((s) => s.deals);
   const setDeals = useAppStore((s) => s.setDeals);
   const customers = useAppStore((s) => s.customers);
+  const proposals = useAppStore((s) => s.proposals);
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
@@ -246,6 +363,7 @@ export default function DealsPage() {
   const [lossReasonDraft, setLossReasonDraft] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [sendEstimateOpen, setSendEstimateOpen] = useState<null | { deal: Deal; channel: "email" | "whatsapp" }>(null);
 
   const [paymentPlanOpen, setPaymentPlanOpen] = useState(false);
   const [paymentPlanType, setPaymentPlanType] = useState<"one_time" | "monthly" | "quarterly" | "custom">("monthly");
@@ -1303,10 +1421,20 @@ export default function DealsPage() {
                         className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
                       >
                         <td className="px-4 py-3.5 pl-5 text-sm font-medium">
-                          {deal.invoiceStatus ?? "—"}
+                          {(() => {
+                            const st = normalizeDealStatusKey(deal.dealStatus);
+                            return (
+                              <Badge variant="secondary" className={cn("whitespace-nowrap", dealStatusPillClass(st))}>
+                                {st}
+                              </Badge>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-sm tabular-nums">
-                          {formatDealListDate(deal.invoiceDate)}
+                          {(() => {
+                            const d = deal.invoiceDate ?? (deal as any).estimateDate ?? deal.createdAt ?? deal.updatedAt ?? null;
+                            return formatDDMMYYYY(d);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5">
                           <button
@@ -1315,7 +1443,7 @@ export default function DealsPage() {
                             className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left"
                             title={deal.id}
                           >
-                            {deal.invoiceNumber ?? deal.id}
+                            {deal.invoiceNumber ?? dealDisplayId(deal)}
                           </button>
                         </td>
                         <td className="px-4 py-3.5">
@@ -1338,42 +1466,62 @@ export default function DealsPage() {
                           )}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm font-semibold text-gray-900 dark:text-gray-100">
-                          {formatINRAmount(deal.totalAmount ?? deal.value)}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return formatINRAmount(d.totalAmount ?? deal.value);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
-                          {formatINRAmount(deal.taxAmount)}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return formatINRAmount(d.taxAmount);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
-                          {formatINRAmount(deal.amountWithoutTax)}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return formatINRAmount(d.subTotal);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-sm hidden md:table-cell">
-                          {deal.placeOfSupply ?? "—"}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return d.placeOfSupply ?? "—";
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm">
-                          {formatINRAmount(deal.balanceAmount)}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return formatINRAmount(d.balanceAmount);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm">
-                          {formatINRAmount(deal.amountPaid)}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return formatINRAmount(d.amountPaid);
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 text-sm hidden md:table-cell">
-                          {deal.serviceName ?? "—"}
+                          {(() => {
+                            const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                            const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                            return d.serviceName ?? "—";
+                          })()}
                         </td>
                         <td className="px-4 py-3.5 pr-5">
-                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                          <div className="flex items-center justify-center gap-2 flex-wrap">
                             {deal.locked && (
                               <span title="Locked" className="text-emerald-600">
                                 <Lock className="h-3.5 w-3.5" />
                               </span>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 rounded-md text-gray-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50"
-                              onClick={() => openDeal(deal)}
-                              title="View"
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
+
                             <DealStageSelector
                               deal={deal}
                               options={stageSelectOptions}
@@ -1387,32 +1535,69 @@ export default function DealsPage() {
                                 })
                               }
                             />
-                            {canUpdateDeal && !deal.locked && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 rounded-md text-gray-400 hover:text-gray-700"
-                                title="Edit"
-                                onClick={() => {
-                                  setSheetDeal(deal);
-                                  setSheetMode("edit");
-                                  setSheetOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
-                            {canRemoveDeal && !deal.locked && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                                title="Archive"
-                                onClick={() => setDeleteTarget(deal)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            )}
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+                                  Actions
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" sideOffset={6} className="min-w-[220px]">
+                                <DropdownMenuItem className="cursor-pointer" onClick={() => openDeal(deal)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View
+                                </DropdownMenuItem>
+
+                                {deal.estimateNumber && deal.estimateJson && (
+                                  <DropdownMenuItem className="cursor-pointer" onClick={() => void generateEstimatePdf(deal)}>
+                                    <FileDown className="mr-2 h-4 w-4" />
+                                    Download Estimate PDF
+                                  </DropdownMenuItem>
+                                )}
+
+                                {deal.estimateNumber && deal.estimateJson && (
+                                  <>
+                                    <DropdownMenuItem
+                                      className="cursor-pointer"
+                                      onClick={() => setSendEstimateOpen({ deal, channel: "email" })}
+                                    >
+                                      <Mail className="mr-2 h-4 w-4" />
+                                      Send via Email
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="cursor-pointer"
+                                      onClick={() => setSendEstimateOpen({ deal, channel: "whatsapp" })}
+                                    >
+                                      <MessageCircle className="mr-2 h-4 w-4" />
+                                      Send via WhatsApp
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+
+                                {(canUpdateDeal || canRemoveDeal) && <DropdownMenuSeparator />}
+
+                                {canUpdateDeal && !deal.locked && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    onClick={() => {
+                                      setSheetDeal(deal);
+                                      setSheetMode("edit");
+                                      setSheetOpen(true);
+                                    }}
+                                  >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit
+                                  </DropdownMenuItem>
+                                )}
+
+                                {canRemoveDeal && !deal.locked && (
+                                  <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600" onClick={() => setDeleteTarget(deal)}>
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Archive
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </div>
                         </td>
                       </tr>
@@ -2051,6 +2236,28 @@ export default function DealsPage() {
           await dealsQuery.refetch();
         }}
       />
+
+      {sendEstimateOpen && (
+        <SendEstimateDialog
+          open={!!sendEstimateOpen}
+          onClose={() => setSendEstimateOpen(null)}
+          deal={sendEstimateOpen.deal}
+          channel={sendEstimateOpen.channel}
+          defaultCustomerName={customers.find((c) => c.id === sendEstimateOpen.deal.customerId)?.companyName}
+          defaultEmail={
+            customers
+              .find((c) => c.id === sendEstimateOpen.deal.customerId)
+              ?.contacts?.find((ct) => ct.isPrimary)?.email ??
+            customers.find((c) => c.id === sendEstimateOpen.deal.customerId)?.contacts?.[0]?.email
+          }
+          defaultPhone={
+            customers
+              .find((c) => c.id === sendEstimateOpen.deal.customerId)
+              ?.contacts?.find((ct) => ct.isPrimary)?.phone ??
+            customers.find((c) => c.id === sendEstimateOpen.deal.customerId)?.contacts?.[0]?.phone
+          }
+        />
+      )}
     </>
   );
 }
