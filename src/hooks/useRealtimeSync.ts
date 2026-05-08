@@ -73,6 +73,10 @@ export function useRealtimeSync(): SyncState {
         if (entity === "notifications") qc.invalidateQueries({ queryKey: QK.notifications() });
         if (entity === "subscriptions") qc.invalidateQueries({ queryKey: QK.subscriptionTracker() });
         if (entity === "delivery") qc.invalidateQueries({ queryKey: ["deals"] });
+        if (entity === "deal_installments" || entity === "deal_payment_plans") {
+          qc.invalidateQueries({ queryKey: ["deal-creation-plan"] });
+          qc.invalidateQueries({ queryKey: ["deals"] });
+        }
         if (entity === "users") qc.invalidateQueries({ queryKey: QK.users() });
         if (entity === "teams") qc.invalidateQueries({ queryKey: QK.teams() });
         if (entity === "regions") qc.invalidateQueries({ queryKey: QK.regions() });

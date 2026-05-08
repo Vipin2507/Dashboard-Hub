@@ -623,31 +623,31 @@ export function ProposalFormDialog({
               </div>
               {lineItems.length > 0 && (
                 <div className="border rounded-md overflow-x-auto">
-                  <Table>
+                  <Table className="min-w-[980px]">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-xs">Item / code</TableHead>
-                        <TableHead className="text-xs w-20">No. of License</TableHead>
-                        <TableHead className="text-xs w-24">Unit Price</TableHead>
-                        <TableHead className="text-xs w-20">Disc %</TableHead>
-                        <TableHead className="text-xs w-16">GST %</TableHead>
-                        <TableHead className="text-xs text-right">Deal Value (Excl. GST)</TableHead>
-                        <TableHead className="text-xs text-right">GST Amount</TableHead>
+                        <TableHead className="text-xs min-w-[320px]">Item / code</TableHead>
+                        <TableHead className="text-xs whitespace-nowrap w-[130px]">No. of License</TableHead>
+                        <TableHead className="text-xs whitespace-nowrap w-[140px]">Unit Price</TableHead>
+                        <TableHead className="text-xs whitespace-nowrap w-[110px]">Disc %</TableHead>
+                        <TableHead className="text-xs whitespace-nowrap w-[100px]">GST %</TableHead>
+                        <TableHead className="text-xs text-right whitespace-nowrap w-[180px]">Deal Value (Excl. GST)</TableHead>
+                        <TableHead className="text-xs text-right whitespace-nowrap w-[140px]">GST Amount</TableHead>
                         <TableHead className="w-10" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {lineItems.map((li) => (
                         <TableRow key={li.id}>
-                          <TableCell>
+                          <TableCell className="align-top min-w-[320px]">
                             <Input
-                              className="text-xs h-8"
+                              className="text-xs h-8 w-full min-w-[260px]"
                               value={li.name}
                               onChange={(e) => updateLineItem(li.id, { name: e.target.value })}
                               placeholder="Item name"
                             />
                             <Textarea
-                              className="mt-2 text-xs"
+                              className="mt-2 text-xs w-full min-w-[260px]"
                               value={li.description ?? ""}
                               onChange={(e) => updateLineItem(li.id, { description: e.target.value })}
                               placeholder="Description (shows in PDF product table)"
@@ -657,7 +657,7 @@ export function ProposalFormDialog({
                           </TableCell>
                           <TableCell>
                             <NumericInput
-                              className="h-8 w-20"
+                              className="h-8 w-full min-w-[110px]"
                               min={1}
                               integer
                               emptyOnBlur={1}
@@ -667,7 +667,7 @@ export function ProposalFormDialog({
                           </TableCell>
                           <TableCell>
                             <NumericInput
-                              className="h-8 w-24"
+                              className="h-8 w-full min-w-[120px]"
                               min={0}
                               emptyOnBlur={0}
                               value={li.unitPrice}
@@ -676,7 +676,7 @@ export function ProposalFormDialog({
                           </TableCell>
                           <TableCell>
                             <NumericInput
-                              className="h-8 w-16"
+                              className="h-8 w-full min-w-[90px]"
                               min={0}
                               max={100}
                               emptyOnBlur={0}
@@ -686,7 +686,7 @@ export function ProposalFormDialog({
                           </TableCell>
                           <TableCell>
                             <NumericInput
-                              className="h-8 w-14"
+                              className="h-8 w-full min-w-[80px]"
                               min={0}
                               emptyOnBlur={0}
                               value={li.taxRate}
@@ -834,7 +834,7 @@ export function ProposalFormDialog({
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">Bracket preview</Label>
                           <Input
-                            value={`(${li.qty} ${((li as any).qtyLabel ?? "license").trim() || "license"}${li.qty === 1 ? "" : (((li as any).qtyLabel ?? "license").trim() || "license").endsWith("s") ? "" : "s"})`}
+                            value={`(${li.qty} ${((li as any).qtyLabel ?? "license").trim() || "license"})`}
                             readOnly
                             className="font-mono text-xs"
                           />

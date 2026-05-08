@@ -57,7 +57,7 @@ import { ProposalFormDialog } from "@/components/ProposalFormDialog";
 import { ApproveProposalDialog } from "@/components/ApproveProposalDialog";
 import { RejectProposalDialog } from "@/components/RejectProposalDialog";
 import { SendProposalDialog } from "@/components/SendProposalDialog";
-import { CreateDealDialog } from "@/components/CreateDealDialog";
+import { ConvertToDealDialog } from "@/components/ConvertToDealDialog";
 import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import {
@@ -1161,7 +1161,13 @@ export default function Proposals() {
       {approveId && <ApproveProposalDialog proposalId={approveId} onClose={() => setApproveId(null)} />}
       {rejectId && <RejectProposalDialog proposalId={rejectId} onClose={() => setRejectId(null)} />}
       {sendId && <SendProposalDialog proposalId={sendId} onClose={() => setSendId(null)} />}
-      {createDealId && <CreateDealDialog proposalId={createDealId} onClose={() => setCreateDealId(null)} />}
+      <ConvertToDealDialog
+        open={!!createDealId}
+        proposal={
+          createDealId ? proposals.find((p) => p.id === createDealId) ?? null : null
+        }
+        onClose={() => setCreateDealId(null)}
+      />
 
       <Dialog open={!!noteForId} onOpenChange={(o) => !o && (setNoteForId(null), setNoteDraft(""))}>
         <DialogContent className="max-w-lg">

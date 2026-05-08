@@ -327,6 +327,93 @@ CREATE INDEX IF NOT EXISTS idx_installments_due_date
 CREATE INDEX IF NOT EXISTS idx_plans_deal
   ON customer_payment_plans(deal_id);
 
+-- =============================================================
+-- Deal-creation payment plans (Feature: Payment Plan on Deal Creation)
+-- Distinct from customer_payment_plans/payment_installments: this
+-- flow is initiated at deal creation/conversion time and pairs each
+-- installment with a generated estimate PDF.
+-- =============================================================
+
+-- Payment plan types master
+CREATE TABLE IF NOT EXISTS payment_plan_types (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  -- 'quarterly'|'monthly'|'half_yearly'|'annual'|'custom'
+  slug TEXT UNIQUE NOT NULL,
+  installments INTEGER NOT NULL,
+  -- interval in months between payments
+  interval_months INTEGER NOT NULL,
+  is_active INTEGER DEFAULT 1
+);
+
+-- Insert default plan types
+INSERT OR IGNORE INTO payment_plan_types
+  (id, name, slug, installments, interval_months)
+VALUES
+  ('pt-1', 'Annual (1 payment)',     'annual',      1,  12),
+  ('pt-2', 'Half-Yearly (2 payments)','half_yearly', 2,  6),
+  ('pt-3', 'Quarterly (4 payments)', 'quarterly',   4,  3),
+  ('pt-4', 'Monthly (12 payments)',  'monthly',     12, 1),
+  ('pt-5', 'Custom',                 'custom',      0,  0);
+
+-- Deal payment plans
+CREATE TABLE IF NOT EXISTS deal_payment_plans (
+  id TEXT PRIMARY KEY,
+  deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  plan_type_id TEXT REFERENCES payment_plan_types(id),
+  plan_slug TEXT NOT NULL,
+  plan_name TEXT NOT NULL,
+  total_amount REAL NOT NULL,
+  installment_count INTEGER NOT NULL,
+  distribution_mode TEXT NOT NULL,
+  -- 'even' | 'custom_percent' | 'advance_then_equal'
+  advance_percent REAL DEFAULT 0,
+  -- used only for 'advance_then_equal' mode
+  start_date TEXT NOT NULL,
+  currency TEXT DEFAULT 'INR',
+  notes TEXT,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Individual installments
+CREATE TABLE IF NOT EXISTS deal_installments (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL
+    REFERENCES deal_payment_plans(id) ON DELETE CASCADE,
+  deal_id TEXT NOT NULL REFERENCES deals(id),
+  customer_id TEXT NOT NULL REFERENCES customers(id),
+  installment_number INTEGER NOT NULL, -- 1, 2, 3...
+  label TEXT NOT NULL,
+  -- "Q1 Payment", "Advance", "Installment 1"
+  due_date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  percentage REAL NOT NULL,
+  estimate_number TEXT,
+  -- set after estimate is generated
+  estimate_generated INTEGER DEFAULT 0,
+  estimate_generated_at TEXT,
+  payment_status TEXT DEFAULT 'pending',
+  -- 'pending'|'paid'|'overdue'
+  paid_date TEXT,
+  paid_amount REAL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_deal_payment_plans_deal
+  ON deal_payment_plans(deal_id);
+CREATE INDEX IF NOT EXISTS idx_deal_payment_plans_customer
+  ON deal_payment_plans(customer_id);
+CREATE INDEX IF NOT EXISTS idx_deal_installments_plan
+  ON deal_installments(plan_id);
+CREATE INDEX IF NOT EXISTS idx_deal_installments_deal
+  ON deal_installments(deal_id);
+CREATE INDEX IF NOT EXISTS idx_deal_installments_due_date
+  ON deal_installments(due_date);
+CREATE INDEX IF NOT EXISTS idx_deal_installments_status
+  ON deal_installments(payment_status);
+
 CREATE TABLE IF NOT EXISTS receipt_sequence (
   year INTEGER PRIMARY KEY,
   lastSeq INTEGER NOT NULL DEFAULT 0

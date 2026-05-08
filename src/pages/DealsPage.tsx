@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "@/store/useAppStore";
@@ -27,10 +27,30 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Lock, Plus, Pencil, Trash2, Search, Eye, Calendar, Upload, FileDown, Mail, MessageCircle } from "lucide-react";
+import {
+  Lock,
+  Plus,
+  Pencil,
+  Trash2,
+  Search,
+  Eye,
+  Calendar,
+  Upload,
+  FileDown,
+  Mail,
+  MessageCircle,
+  Download,
+  FileText,
+  ReceiptText,
+  CheckCircle2,
+  Send,
+  Receipt,
+  AlertTriangle,
+} from "lucide-react";
 import type { Deal, Proposal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { Topbar } from "@/components/Topbar";
+import { DataTablePagination } from "@/components/DataTablePagination";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useCreateDealPaymentPlan, useDealPaymentSummary, useRecordPayment } from "@/hooks/usePayments";
 import {
@@ -53,7 +73,9 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
-import { generateEstimatePdf } from "@/lib/generateEstimatePdf";
+import { generateEstimatePdf, generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
+import { generateInvoicePdfFromData, type InvoiceData } from "@/lib/generateInvoicePdf";
+import type { EstimateData } from "@/types/estimate";
 import { SendEstimateDialog } from "@/components/SendEstimateDialog";
 
 type DealAuditRow = {
@@ -64,6 +86,64 @@ type DealAuditRow = {
   userId: string;
   userName: string;
   at: string;
+};
+
+type DealInstallmentRow = {
+  id: string;
+  plan_id: string;
+  deal_id: string;
+  customer_id: string;
+  installment_number: number;
+  label: string;
+  due_date: string;
+  amount: number;
+  percentage: number;
+  estimate_number: string | null;
+  estimate_generated: number;
+  estimate_generated_at: string | null;
+  payment_status: "pending" | "paid" | "overdue";
+  paid_date: string | null;
+  paid_amount: number;
+  created_at: string;
+  invoice_number: string | null;
+  invoice_generated: number;
+  invoice_generated_at: string | null;
+};
+
+type DealInvoiceDetail = {
+  invoiceNumber: string;
+  invoiceGeneratedAt: string | null;
+  paidDate: string | null;
+  paidAmount: number;
+  invoiceData: InvoiceData;
+};
+
+type DealCreationPlanRow = {
+  id: string;
+  deal_id: string;
+  customer_id: string;
+  plan_type_id: string | null;
+  plan_slug: string;
+  plan_name: string;
+  total_amount: number;
+  installment_count: number;
+  distribution_mode: "even" | "custom_percent" | "advance_then_equal";
+  advance_percent: number;
+  start_date: string;
+  currency: string;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  installments: DealInstallmentRow[];
+};
+
+type DealEstimateDetail = {
+  estimateNumber: string;
+  customerId: string;
+  grandTotal: number;
+  createdAt: string;
+  updatedAt: string;
+  estimateData: EstimateData | null;
 };
 
 function formatShortDate(iso: string | null | undefined) {
@@ -78,6 +158,8 @@ function formatShortDate(iso: string | null | undefined) {
 const DEFAULT_SALES_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"];
 
 const DASHBOARD_STAGES = DEFAULT_SALES_STAGES.slice(0, 3);
+
+const LIST_PAGE_SIZE = 20;
 
 type StageVisual = { key: string; label: string; pillColor: string; dotColor: string };
 
@@ -395,6 +477,150 @@ export default function DealsPage() {
   const createDealPlanM = useCreateDealPaymentPlan();
   const recordPaymentM = useRecordPayment();
 
+  const dealCreationPlanQ = useQuery({
+    queryKey: ["deal-creation-plan", sheetDeal?.id],
+    queryFn: async () => {
+      const res = await fetch(apiUrl(`/api/deals/${sheetDeal!.id}/payment-plan`));
+      if (!res.ok) throw new Error("Failed to load deal payment plan");
+      return (await res.json()) as DealCreationPlanRow | null;
+    },
+    enabled: sheetOpen && !!sheetDeal?.id && sheetMode !== "create",
+    staleTime: 10_000,
+  });
+
+  const markInstallmentPaidM = useMutation({
+    mutationFn: async (installmentId: string) => {
+      const res = await fetch(apiUrl(`/api/deal-installments/${installmentId}/payment`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentStatus: "paid" }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Failed to mark paid");
+      }
+      return (await res.json()) as DealInstallmentRow;
+    },
+    onSuccess: async (row) => {
+      void dealCreationPlanQ.refetch();
+      if (row?.invoice_number) {
+        toast({
+          title: "Payment recorded",
+          description: `Invoice ${row.invoice_number} generated and downloaded.`,
+        });
+        // Auto-download the freshly generated invoice PDF.
+        try {
+          const detailRes = await fetch(
+            apiUrl(`/api/deal-installments/${row.id}/invoice`),
+          );
+          if (detailRes.ok) {
+            const detail = (await detailRes.json()) as DealInvoiceDetail;
+            if (detail.invoiceData) {
+              await generateInvoicePdfFromData(detail.invoiceData);
+            }
+          }
+        } catch {
+          // Silent: user can re-download from the row's "Invoice" button.
+        }
+      } else {
+        toast({ title: "Installment marked as paid" });
+      }
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Couldn't update installment",
+        description: err instanceof Error ? err.message : "Try again",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const fetchInstallmentEstimate = useCallback(async (estimateNumber: string) => {
+    const res = await fetch(apiUrl(`/api/estimates/${encodeURIComponent(estimateNumber)}`));
+    if (!res.ok) {
+      throw new Error(res.status === 404 ? "Estimate not found" : "Failed to load estimate");
+    }
+    const detail = (await res.json()) as DealEstimateDetail;
+    if (!detail.estimateData) {
+      throw new Error("Saved estimate is missing its rendered data");
+    }
+    return detail;
+  }, []);
+
+  const downloadInstallmentEstimate = useCallback(async (estimateNumber: string | null) => {
+    if (!estimateNumber) {
+      toast({
+        title: "Estimate not generated yet",
+        description: "Generate the estimate first from the deal-creation flow.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const detail = await fetchInstallmentEstimate(estimateNumber);
+      await generateEstimatePdfFromData(detail.estimateData!);
+    } catch (err) {
+      toast({
+        title: "Couldn't download estimate",
+        description: err instanceof Error ? err.message : "Try again",
+        variant: "destructive",
+      });
+    }
+  }, [fetchInstallmentEstimate]);
+
+  const downloadInstallmentInvoice = useCallback(async (installmentId: string) => {
+    try {
+      const res = await fetch(apiUrl(`/api/deal-installments/${installmentId}/invoice`));
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Failed to load invoice");
+      }
+      const detail = (await res.json()) as DealInvoiceDetail;
+      if (!detail.invoiceData) {
+        throw new Error("Invoice data unavailable");
+      }
+      await generateInvoicePdfFromData(detail.invoiceData);
+    } catch (err) {
+      toast({
+        title: "Couldn't download invoice",
+        description: err instanceof Error ? err.message : "Try again",
+        variant: "destructive",
+      });
+    }
+  }, []);
+
+  const sendInstallmentEstimate = useCallback(
+    async (estimateNumber: string | null, channel: "email" | "whatsapp") => {
+      if (!sheetDeal) return;
+      if (!estimateNumber) {
+        toast({
+          title: "Estimate not generated yet",
+          description: "Generate the estimate first from the deal-creation flow.",
+          variant: "destructive",
+        });
+        return;
+      }
+      try {
+        const detail = await fetchInstallmentEstimate(estimateNumber);
+        const dealProxy: Deal = {
+          ...sheetDeal,
+          estimateNumber,
+          estimateJson: JSON.stringify(detail.estimateData),
+          totalAmount: detail.grandTotal ?? sheetDeal.totalAmount ?? sheetDeal.value,
+          value: detail.grandTotal ?? sheetDeal.value,
+        };
+        setSendEstimateOpen({ deal: dealProxy, channel });
+      } catch (err) {
+        toast({
+          title: "Couldn't load estimate",
+          description: err instanceof Error ? err.message : "Try again",
+          variant: "destructive",
+        });
+      }
+    },
+    [fetchInstallmentEstimate, sheetDeal],
+  );
+
   const statusOptions = useMemo(() => [...dealStatusOptionsForRole(me.role)], [me.role]);
 
   const eligibleForPaymentPlan = useMemo(() => {
@@ -709,6 +935,47 @@ export default function DealsPage() {
       return true;
     });
   }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter, customers]);
+
+  const [listPage, setListPage] = useState(1);
+  useEffect(() => {
+    setListPage(1);
+  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter]);
+
+  const listTotalPages = Math.max(1, Math.ceil(visible.length / LIST_PAGE_SIZE));
+  const listCurrentPage = Math.min(listPage, listTotalPages);
+  const listItems = useMemo(() => {
+    const start = (listCurrentPage - 1) * LIST_PAGE_SIZE;
+    return visible.slice(start, start + LIST_PAGE_SIZE);
+  }, [visible, listCurrentPage]);
+
+  const topHScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomHScrollRef = useRef<HTMLDivElement | null>(null);
+  const [listScrollWidth, setListScrollWidth] = useState(1320);
+  const syncingHScrollRef = useRef<"top" | "bottom" | null>(null);
+
+  useEffect(() => {
+    const bottom = bottomHScrollRef.current;
+    if (!bottom) return;
+    const update = () => setListScrollWidth(bottom.scrollWidth || 1320);
+    update();
+    const ro = new ResizeObserver(() => update());
+    ro.observe(bottom);
+    return () => ro.disconnect();
+  }, []);
+
+  const syncListHScroll = (from: "top" | "bottom") => {
+    const top = topHScrollRef.current;
+    const bottom = bottomHScrollRef.current;
+    if (!top || !bottom) return;
+    if (syncingHScrollRef.current && syncingHScrollRef.current !== from) return;
+    syncingHScrollRef.current = from;
+    const left = from === "top" ? top.scrollLeft : bottom.scrollLeft;
+    if (from === "top") bottom.scrollLeft = left;
+    else top.scrollLeft = left;
+    window.setTimeout(() => {
+      if (syncingHScrollRef.current === from) syncingHScrollRef.current = null;
+    }, 0);
+  };
 
   const serviceOptions = useMemo(() => {
     const set = new Set<string>();
@@ -1371,8 +1638,23 @@ export default function DealsPage() {
         {/* List view */}
         {viewMode === "list" && (
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            {/* Top horizontal scrollbar (synced with table) */}
+            <div
+              ref={topHScrollRef}
+              className="overflow-x-scroll"
+              style={{ scrollbarGutter: "stable" }}
+              onScroll={() => syncListHScroll("top")}
+            >
+              <div style={{ width: listScrollWidth, height: 1 }} />
+            </div>
+
+            <div
+              ref={bottomHScrollRef}
+              className="overflow-x-scroll pb-2"
+              style={{ scrollbarGutter: "stable" }}
+              onScroll={() => syncListHScroll("bottom")}
+            >
+              <table className="w-full min-w-[1320px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
                     {[
@@ -1400,9 +1682,17 @@ export default function DealsPage() {
                             h === "Balance" ||
                             h === "Amount Paid") &&
                             "text-right",
-                          (h === "Tax Amount" || h === "Amount Without Tax") && "hidden lg:table-cell",
-                          (h === "Place of Supply" || h === "Service") && "hidden md:table-cell",
-                          h === "Actions" && "text-center pr-5",
+                          // Keep columns visible; use horizontal scroll instead of hiding.
+                          (h === "Invoice Date" ||
+                            h === "Invoice#" ||
+                            h === "Total" ||
+                            h === "Tax Amount" ||
+                            h === "Amount Without Tax" ||
+                            h === "Balance" ||
+                            h === "Amount Paid") &&
+                            "whitespace-nowrap",
+                          h === "Service" && "min-w-[180px]",
+                          h === "Actions" && "text-center pr-5 min-w-[170px] whitespace-nowrap",
                         )}
                       >
                         {h}
@@ -1411,7 +1701,7 @@ export default function DealsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {visible.map((deal) => {
+                  {listItems.map((deal) => {
                     const custObj = customers.find((c) => c.id === deal.customerId);
                     const comp = custObj?.companyName || custObj?.customerName || "—";
                     const cust = custObj?.customerName || custObj?.companyName || "—";
@@ -1436,7 +1726,7 @@ export default function DealsPage() {
                             return formatDDMMYYYY(d);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-3.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => openDeal(deal)}
@@ -1472,21 +1762,21 @@ export default function DealsPage() {
                             return formatINRAmount(d.totalAmount ?? deal.value);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return formatINRAmount(d.taxAmount);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm hidden lg:table-cell">
+                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return formatINRAmount(d.subTotal);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-sm hidden md:table-cell">
+                        <td className="px-4 py-3.5 text-sm">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
@@ -1507,14 +1797,14 @@ export default function DealsPage() {
                             return formatINRAmount(d.amountPaid);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-sm hidden md:table-cell">
+                        <td className="px-4 py-3.5 text-sm min-w-[180px]">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return d.serviceName ?? "—";
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 pr-5">
+                        <td className="px-4 py-3.5 pr-5 min-w-[170px]">
                           <div className="flex items-center justify-center gap-2 flex-wrap">
                             {deal.locked && (
                               <span title="Locked" className="text-emerald-600">
@@ -1613,6 +1903,14 @@ export default function DealsPage() {
                 </tbody>
               </table>
             </div>
+
+            <DataTablePagination
+              page={listCurrentPage}
+              totalPages={listTotalPages}
+              total={visible.length}
+              perPage={LIST_PAGE_SIZE}
+              onPageChange={setListPage}
+            />
           </div>
         )}
 
@@ -1691,7 +1989,13 @@ export default function DealsPage() {
           setSheetOpen(o);
         }}
       >
-        <SheetContent side="right" className={cn(sheetContentDetail, "max-h-[100dvh]")}>
+        <SheetContent
+          side="right"
+          className={cn(
+            sheetContentDetail,
+            "max-h-[100dvh] sm:w-[640px] sm:max-w-[640px] md:w-[860px] md:max-w-[860px] lg:w-[1080px] lg:max-w-[1080px] xl:w-[1200px] xl:max-w-[1200px]",
+          )}
+        >
           <SheetHeader>
             <SheetTitle>
               {sheetMode === "view" ? "Deal details" : sheetMode === "edit" ? "Edit deal" : "New deal"}
@@ -1990,6 +2294,342 @@ export default function DealsPage() {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {sheetDeal?.id && sheetMode !== "create" && (
+                <div className="rounded-md border border-border p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold flex items-center gap-1.5">
+                        <ReceiptText className="h-4 w-4 text-muted-foreground" /> Deal payment plan &amp; estimates
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Installments and per-installment estimate PDFs created at deal-creation time.
+                      </p>
+                    </div>
+                  </div>
+
+                  {dealCreationPlanQ.isLoading && (
+                    <p className="text-xs text-muted-foreground">Loading deal payment plan…</p>
+                  )}
+
+                  {!dealCreationPlanQ.isLoading && !dealCreationPlanQ.data && (
+                    <p className="text-xs text-muted-foreground">
+                      No deal-creation payment plan yet. Use the Convert-to-Deal flow on a proposal to set one up.
+                    </p>
+                  )}
+
+                  {dealCreationPlanQ.data && (() => {
+                    const plan = dealCreationPlanQ.data;
+                    const totalPaid = (plan.installments ?? []).reduce(
+                      (acc, i) => acc + (i.payment_status === "paid" ? Number(i.paid_amount || 0) : 0),
+                      0,
+                    );
+                    const totalGenerated = (plan.installments ?? []).filter(
+                      (i) => i.estimate_generated === 1 && i.estimate_number,
+                    ).length;
+                    const remaining = Math.max(0, Number(plan.total_amount || 0) - totalPaid);
+
+                    // "Payments due soon" = pending/overdue installments whose due date is
+                    // within the next 15 days (or already overdue).
+                    const todayMs = new Date().setHours(0, 0, 0, 0);
+                    const dueSoon = (plan.installments ?? [])
+                      .filter((i) => i.payment_status !== "paid")
+                      .map((i) => {
+                        const due = new Date(
+                          i.due_date.includes("T") ? i.due_date : `${i.due_date}T00:00:00`,
+                        ).setHours(0, 0, 0, 0);
+                        const days = Math.round((due - todayMs) / 86_400_000);
+                        return { i, days };
+                      })
+                      .filter(({ days }) => days <= 15)
+                      .sort((a, b) => a.days - b.days);
+
+                    return (
+                      <div className="space-y-3">
+                        {dueSoon.length > 0 && (
+                          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/40">
+                            <div className="mb-2 flex items-center gap-1.5 font-semibold text-amber-800 dark:text-amber-200">
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              Payments due soon ({dueSoon.length})
+                            </div>
+                            <ul className="space-y-1.5">
+                              {dueSoon.map(({ i, days }) => {
+                                const overdueDays = days < 0 ? -days : 0;
+                                return (
+                                  <li
+                                    key={i.id}
+                                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-white px-2 py-1.5 dark:border-amber-800 dark:bg-amber-950/20"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="outline" className="text-[10px]">
+                                        #{i.installment_number}
+                                      </Badge>
+                                      <span className="font-medium">{i.label}</span>
+                                      <span className="text-muted-foreground">
+                                        {formatDDMMYYYY(i.due_date)}
+                                      </span>
+                                      <span className="font-medium tabular-nums">
+                                        {formatINRAmount(i.amount)}
+                                      </span>
+                                      {days < 0 ? (
+                                        <Badge
+                                          variant="outline"
+                                          className="border-red-300 bg-red-50 text-[10px] text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+                                        >
+                                          Overdue {overdueDays}d
+                                        </Badge>
+                                      ) : days === 0 ? (
+                                        <Badge
+                                          variant="outline"
+                                          className="border-orange-300 bg-orange-50 text-[10px] text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300"
+                                        >
+                                          Due today
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[10px]">
+                                          {days}d left
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 px-2 text-[11px]"
+                                      disabled={markInstallmentPaidM.isPending}
+                                      onClick={() => markInstallmentPaidM.mutate(i.id)}
+                                    >
+                                      <CheckCircle2 className="mr-1 h-3 w-3" />
+                                      Mark paid
+                                    </Button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            <p className="mt-2 text-[10px] text-muted-foreground">
+                              On marking paid, the invoice is auto-generated and downloaded.
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          <div className="rounded border border-border p-2">
+                            <div className="text-muted-foreground">Plan</div>
+                            <div className="font-medium">{plan.plan_name}</div>
+                          </div>
+                          <div className="rounded border border-border p-2">
+                            <div className="text-muted-foreground">Total</div>
+                            <div className="font-medium tabular-nums">{formatINRAmount(plan.total_amount)}</div>
+                          </div>
+                          <div className="rounded border border-border p-2">
+                            <div className="text-muted-foreground">Paid</div>
+                            <div className="font-medium tabular-nums">{formatINRAmount(totalPaid)}</div>
+                          </div>
+                          <div className="rounded border border-border p-2">
+                            <div className="text-muted-foreground">Remaining</div>
+                            <div className="font-medium tabular-nums">{formatINRAmount(remaining)}</div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                          <Badge variant="outline" className="text-[10px]">
+                            {plan.installment_count} installments
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px] capitalize">
+                            {plan.distribution_mode.replace(/_/g, " ")}
+                          </Badge>
+                          {plan.distribution_mode === "advance_then_equal" && (
+                            <Badge variant="outline" className="text-[10px]">
+                              Advance {Number(plan.advance_percent || 0)}%
+                            </Badge>
+                          )}
+                          <Badge variant="outline" className="text-[10px]">
+                            Start {formatDDMMYYYY(plan.start_date)}
+                          </Badge>
+                          <Badge variant="outline" className="text-[10px]">
+                            <FileText className="mr-1 h-3 w-3" />
+                            {totalGenerated}/{plan.installments?.length ?? 0} estimates
+                          </Badge>
+                          {plan.notes && (
+                            <span className="ml-1 italic">{plan.notes}</span>
+                          )}
+                        </div>
+
+                        <div className="rounded-md border border-border overflow-x-auto">
+                          <Table className="min-w-[860px]">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs w-[40px]">#</TableHead>
+                                <TableHead className="text-xs">Installment</TableHead>
+                                <TableHead className="text-xs whitespace-nowrap">Due</TableHead>
+                                <TableHead className="text-xs text-right">Amount</TableHead>
+                                <TableHead className="text-xs text-right">%</TableHead>
+                                <TableHead className="text-xs">Estimate</TableHead>
+                                <TableHead className="text-xs">Payment</TableHead>
+                                <TableHead className="text-xs text-right whitespace-nowrap">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(plan.installments ?? []).map((i) => {
+                                const isPaid = i.payment_status === "paid";
+                                const isOverdue = i.payment_status === "overdue";
+                                const hasEstimate = !!i.estimate_number && i.estimate_generated === 1;
+                                return (
+                                  <TableRow key={i.id}>
+                                    <TableCell className="text-xs tabular-nums">
+                                      {i.installment_number}
+                                    </TableCell>
+                                    <TableCell className="text-xs">{i.label}</TableCell>
+                                    <TableCell className="text-xs whitespace-nowrap">
+                                      {formatDDMMYYYY(i.due_date)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right tabular-nums">
+                                      {formatINRAmount(i.amount)}
+                                    </TableCell>
+                                    <TableCell className="text-xs text-right tabular-nums">
+                                      {Number(i.percentage || 0).toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="text-xs">
+                                      {hasEstimate ? (
+                                        <span className="font-mono text-[11px]">{i.estimate_number}</span>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[10px]">
+                                          Not generated
+                                        </Badge>
+                                      )}
+                                      {!!i.invoice_number && (
+                                        <div className="mt-0.5 font-mono text-[10px] text-emerald-700 dark:text-emerald-300">
+                                          {i.invoice_number}
+                                        </div>
+                                      )}
+                                      {hasEstimate && i.estimate_generated_at && (
+                                        <div className="text-[10px] text-muted-foreground">
+                                          {formatShortDate(i.estimate_generated_at)}
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-xs">
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          "text-[10px] capitalize",
+                                          isPaid &&
+                                            "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                          isOverdue &&
+                                            "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+                                        )}
+                                      >
+                                        {i.payment_status}
+                                      </Badge>
+                                      {isPaid && i.paid_date && (
+                                        <div className="text-[10px] text-muted-foreground">
+                                          {formatDDMMYYYY(i.paid_date)}
+                                        </div>
+                                      )}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="h-7 px-2 text-[11px]"
+                                          disabled={!hasEstimate}
+                                          onClick={() => downloadInstallmentEstimate(i.estimate_number)}
+                                          title={
+                                            hasEstimate
+                                              ? "Download estimate PDF"
+                                              : "Estimate not generated yet"
+                                          }
+                                        >
+                                          <Download className="mr-1 h-3 w-3" />
+                                          PDF
+                                        </Button>
+                                        {!!i.invoice_number && (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 px-2 text-[11px] border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                                            onClick={() => downloadInstallmentInvoice(i.id)}
+                                            title={`Download invoice ${i.invoice_number}`}
+                                          >
+                                            <Receipt className="mr-1 h-3 w-3" />
+                                            Invoice
+                                          </Button>
+                                        )}
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 px-2 text-[11px]"
+                                              disabled={!hasEstimate}
+                                              title={
+                                                hasEstimate
+                                                  ? "Send estimate to customer"
+                                                  : "Estimate not generated yet"
+                                              }
+                                            >
+                                              <Send className="mr-1 h-3 w-3" />
+                                              Send
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="min-w-[180px]">
+                                            <DropdownMenuItem
+                                              className="cursor-pointer"
+                                              onClick={() =>
+                                                sendInstallmentEstimate(i.estimate_number, "email")
+                                              }
+                                            >
+                                              <Mail className="mr-2 h-3.5 w-3.5" />
+                                              Send via Email
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                              className="cursor-pointer"
+                                              onClick={() =>
+                                                sendInstallmentEstimate(
+                                                  i.estimate_number,
+                                                  "whatsapp",
+                                                )
+                                              }
+                                            >
+                                              <MessageCircle className="mr-2 h-3.5 w-3.5" />
+                                              Send via WhatsApp
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                        {!isPaid ? (
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 px-2 text-[11px]"
+                                            disabled={markInstallmentPaidM.isPending}
+                                            onClick={() => markInstallmentPaidM.mutate(i.id)}
+                                          >
+                                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                                            Paid
+                                          </Button>
+                                        ) : (
+                                          <span className="text-[10px] text-muted-foreground">—</span>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                              {(plan.installments?.length ?? 0) === 0 && (
+                                <TableRow>
+                                  <TableCell colSpan={8} className="text-xs text-muted-foreground">
+                                    No installments configured.
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

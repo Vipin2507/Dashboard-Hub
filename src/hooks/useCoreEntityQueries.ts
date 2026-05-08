@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal, Proposal } from "@/types";
+import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
 
 type PaymentRemainingRow = {
   customerId: string;
@@ -57,6 +59,9 @@ const NOTIF_INTERVAL = 30_000;
 export function useCoreEntityQueries() {
   const me = useAppStore((s) => s.me);
   const role = me.role;
+  const regions = useAppStore((s) => s.regions);
+  const users = useAppStore((s) => s.users);
+  const setCustomers = useAppStore((s) => s.setCustomers);
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -83,6 +88,11 @@ export function useCoreEntityQueries() {
   });
 
   const customersQuery = useCustomersListQuery();
+
+  useEffect(() => {
+    if (!customersQuery.data) return;
+    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+  }, [customersQuery.data, regions, users, me, setCustomers]);
 
   const paymentsRemainingQuery = useQuery({
     queryKey: QK.paymentRemaining(),

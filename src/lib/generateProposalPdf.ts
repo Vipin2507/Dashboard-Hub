@@ -222,9 +222,8 @@ function formatLicenseSuffix(item: ProposalLineItem): string {
   const qty = Number(item.qty) || 0;
   if (qty <= 0) return "";
   const raw = String((item as unknown as { qtyLabel?: string }).qtyLabel ?? "license").trim() || "license";
-  const singular = raw;
-  const plural = raw.endsWith("s") ? raw : raw + "s";
-  return ` (${qty} ${qty === 1 ? singular : plural})`;
+  // Keep exactly what the user typed in the PDF editor (no auto pluralization).
+  return ` (${qty} ${raw})`;
 }
 
 function baseAmount(item: ProposalLineItem): number {

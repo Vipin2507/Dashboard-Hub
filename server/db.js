@@ -263,6 +263,121 @@ function migratePaymentsSchema() {
 }
 migratePaymentsSchema();
 
+/**
+ * Install deal-creation payment-plan tables (Feature: Payment Plan on Deal Creation).
+ * Distinct from customer_payment_plans / payment_installments — these tables back the
+ * deal-creation flow where each installment maps to a generated estimate PDF.
+ */
+function migrateDealPaymentPlansSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_plan_types (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      installments INTEGER NOT NULL,
+      interval_months INTEGER NOT NULL,
+      is_active INTEGER DEFAULT 1
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_payment_plans (
+      id TEXT PRIMARY KEY,
+      deal_id TEXT NOT NULL REFERENCES deals(id) ON DELETE CASCADE,
+      customer_id TEXT NOT NULL REFERENCES customers(id),
+      plan_type_id TEXT REFERENCES payment_plan_types(id),
+      plan_slug TEXT NOT NULL,
+      plan_name TEXT NOT NULL,
+      total_amount REAL NOT NULL,
+      installment_count INTEGER NOT NULL,
+      distribution_mode TEXT NOT NULL,
+      advance_percent REAL DEFAULT 0,
+      start_date TEXT NOT NULL,
+      currency TEXT DEFAULT 'INR',
+      notes TEXT,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS deal_installments (
+      id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL REFERENCES deal_payment_plans(id) ON DELETE CASCADE,
+      deal_id TEXT NOT NULL REFERENCES deals(id),
+      customer_id TEXT NOT NULL REFERENCES customers(id),
+      installment_number INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      amount REAL NOT NULL,
+      percentage REAL NOT NULL,
+      estimate_number TEXT,
+      estimate_generated INTEGER DEFAULT 0,
+      estimate_generated_at TEXT,
+      payment_status TEXT DEFAULT 'pending',
+      paid_date TEXT,
+      paid_amount REAL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_payment_plans_deal ON deal_payment_plans(deal_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_payment_plans_customer ON deal_payment_plans(customer_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_installments_plan ON deal_installments(plan_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_installments_deal ON deal_installments(deal_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_installments_due_date ON deal_installments(due_date)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_installments_status ON deal_installments(payment_status)`);
+
+  // Add invoice columns on existing DBs (CREATE TABLE above is for fresh installs only and now also
+  // includes them via the ALTERs below — we keep it idempotent so existing data isn't lost).
+  const installmentCols = db.prepare("PRAGMA table_info(deal_installments)").all();
+  const installmentNames = new Set(installmentCols.map((c) => c.name));
+  if (!installmentNames.has("invoice_number"))
+    db.exec(`ALTER TABLE deal_installments ADD COLUMN invoice_number TEXT`);
+  if (!installmentNames.has("invoice_generated"))
+    db.exec(`ALTER TABLE deal_installments ADD COLUMN invoice_generated INTEGER DEFAULT 0`);
+  if (!installmentNames.has("invoice_generated_at"))
+    db.exec(`ALTER TABLE deal_installments ADD COLUMN invoice_generated_at TEXT`);
+  if (!installmentNames.has("invoice_json"))
+    db.exec(`ALTER TABLE deal_installments ADD COLUMN invoice_json TEXT`);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invoice_sequence (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next INTEGER NOT NULL
+    );
+  `);
+  const invoiceSeqRow = db.prepare("SELECT id, next FROM invoice_sequence WHERE id = 1").get();
+  if (!invoiceSeqRow) {
+    db.prepare("INSERT INTO invoice_sequence (id, next) VALUES (1, 1)").run();
+  } else if (Number(invoiceSeqRow.next) === 1476) {
+    // Older builds seeded the sequence at 1476 to mirror the sample PDF — reset it back
+    // to 1 so production invoices start from CCT-000001 (only if no invoice has been
+    // allocated yet, i.e. the counter is still at the original seed value).
+    const usedAlready = db
+      .prepare("SELECT 1 FROM deal_installments WHERE invoice_number IS NOT NULL LIMIT 1")
+      .get();
+    if (!usedAlready) {
+      db.prepare("UPDATE invoice_sequence SET next = 1 WHERE id = 1").run();
+    }
+  }
+
+  // Seed default plan types (idempotent — slug is UNIQUE, INSERT OR IGNORE is a no-op on re-runs).
+  const insertPlanType = db.prepare(`
+    INSERT OR IGNORE INTO payment_plan_types (id, name, slug, installments, interval_months)
+    VALUES (@id, @name, @slug, @installments, @interval_months)
+  `);
+  const defaultPlanTypes = [
+    { id: "pt-1", name: "Annual (1 payment)",      slug: "annual",      installments: 1,  interval_months: 12 },
+    { id: "pt-2", name: "Half-Yearly (2 payments)", slug: "half_yearly", installments: 2,  interval_months: 6 },
+    { id: "pt-3", name: "Quarterly (4 payments)",  slug: "quarterly",   installments: 4,  interval_months: 3 },
+    { id: "pt-4", name: "Monthly (12 payments)",   slug: "monthly",     installments: 12, interval_months: 1 },
+    { id: "pt-5", name: "Custom",                  slug: "custom",      installments: 0,  interval_months: 0 },
+  ];
+  db.transaction((rows) => rows.forEach((r) => insertPlanType.run(r)))(defaultPlanTypes);
+}
+migrateDealPaymentPlansSchema();
+
 function migrateDataControlColumns() {
   const addCol = (table, col, sqlType) => {
     const cols = db.prepare(`PRAGMA table_info(${table})`).all();

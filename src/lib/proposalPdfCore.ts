@@ -199,7 +199,9 @@ function getServiceLabel(_item: ProposalLineItem): string {
 function formatLicenseSuffix(item: ProposalLineItem): string {
   const qty = Number(item.qty) || 0;
   if (qty <= 0) return "";
-  return ` (${qty} license${qty === 1 ? "" : "s"})`;
+  const raw = String((item as unknown as { qtyLabel?: string }).qtyLabel ?? "license").trim() || "license";
+  // Keep exactly what the user typed in the PDF editor (no auto pluralization).
+  return ` (${qty} ${raw})`;
 }
 
 function baseAmount(item: ProposalLineItem): number {

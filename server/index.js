@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import http from "http";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { db, SQLITE_PATH, USERS_TEAMS_SEED_KEY, forceReseedUsersAndTeams } from "./db.js";
 import { registerPaymentsApi } from "./paymentsApi.js";
@@ -282,6 +283,60 @@ function allocateEstimateNumber() {
   return tx();
 }
 
+function formatInvoiceNumber(n) {
+  const num = Number(n);
+  const safe = Number.isFinite(num) && num > 0 ? Math.floor(num) : 1;
+  return `CCT-${String(safe).padStart(6, "0")}`;
+}
+
+function allocateInvoiceNumber() {
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT next FROM invoice_sequence WHERE id = 1").get();
+    const current = row?.next ?? 1476;
+    db.prepare("UPDATE invoice_sequence SET next = ? WHERE id = 1").run(current + 1);
+    return formatInvoiceNumber(current);
+  });
+  return tx();
+}
+
+/**
+ * Build an invoice JSON for a paid installment by cloning its estimate JSON
+ * and appending payment info (amount paid, balance due, dates, terms…).
+ * Returns null if the underlying estimate row can't be found / parsed.
+ */
+function buildInvoiceJsonForInstallment(installment) {
+  if (!installment?.estimate_number) return null;
+  const estRow = db
+    .prepare("SELECT estimateJson, grandTotal FROM estimates WHERE estimateNumber = ?")
+    .get(String(installment.estimate_number));
+  if (!estRow?.estimateJson) return null;
+  let estimateData;
+  try {
+    estimateData = JSON.parse(estRow.estimateJson);
+  } catch {
+    return null;
+  }
+
+  const grandTotal = Number(estRow.grandTotal) || Number(installment.amount) || 0;
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const invoiceDate = installment.paid_date || todayIso;
+  const dueDate = installment.due_date || invoiceDate;
+
+  // Invoices are only issued AFTER an installment is marked paid in full,
+  // so payment_made == grand_total and balance_due == 0 by design.
+  return {
+    ...estimateData,
+    invoiceNumber: installment.invoice_number,
+    invoiceDate,
+    dueDate,
+    terms: "Due on Receipt",
+    totalDealValue: grandTotal,
+    paymentMade: grandTotal,
+    balanceDue: 0,
+    notes: "Thank you for the payment. You just made our day.",
+  };
+}
+
 function logDealAudit(db, dealId, action, detail, userId, userName) {
   db.prepare(
     `INSERT INTO deal_audit (id, dealId, action, detailJson, userId, userName, at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -311,6 +366,28 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/estimates/next-number", (_req, res) => {
   // Allocate immediately so each open gets a unique number
   res.json({ estimateNumber: allocateEstimateNumber() });
+});
+
+app.get("/api/estimates/:estimateNumber", (req, res) => {
+  const row = db
+    .prepare("SELECT * FROM estimates WHERE estimateNumber = ?")
+    .get(String(req.params.estimateNumber));
+  if (!row) return res.status(404).json({ error: "Not found" });
+  let payload = null;
+  try {
+    payload = row.estimateJson ? JSON.parse(row.estimateJson) : null;
+  } catch {
+    payload = null;
+  }
+  res.json({
+    id: row.id,
+    estimateNumber: row.estimateNumber,
+    customerId: row.customerId,
+    grandTotal: Number(row.grandTotal) || 0,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    estimateData: payload,
+  });
 });
 
 app.post("/api/estimates", (req, res) => {
@@ -1232,6 +1309,502 @@ app.delete("/api/deals/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// =============================================================
+// Deal-creation payment plans (Feature: Payment Plan on Deal Creation)
+// Distinct from /api/payments/* which is the customer-level plan stack
+// (payment_plan_catalog / customer_payment_plans / payment_installments).
+// These endpoints back the dialog where, at deal creation time, the user
+// picks a plan, previews installments, and triggers per-installment PDFs.
+// =============================================================
+
+app.get("/api/payment-plan-types", (_req, res) => {
+  const types = db
+    .prepare("SELECT * FROM payment_plan_types WHERE is_active = 1 ORDER BY installments")
+    .all();
+  res.json(types);
+});
+
+app.get("/api/deals/:id/payment-plan", (req, res) => {
+  const plan = db.prepare("SELECT * FROM deal_payment_plans WHERE deal_id = ?").get(req.params.id);
+  if (!plan) return res.json(null);
+  const installments = db
+    .prepare("SELECT * FROM deal_installments WHERE plan_id = ? ORDER BY installment_number")
+    .all(plan.id);
+  res.json({ ...plan, installments });
+});
+
+app.put("/api/deal-installments/:id/payment", (req, res) => {
+  const { paymentStatus, paidDate, paidAmount } = req.body || {};
+  const status = String(paymentStatus || "").trim();
+  if (!["pending", "paid", "overdue"].includes(status)) {
+    return res.status(400).json({ error: "paymentStatus must be pending|paid|overdue" });
+  }
+  const existing = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+
+  const now = new Date().toISOString();
+  const nextPaidDate =
+    status === "paid"
+      ? (paidDate && String(paidDate).trim()) || now.slice(0, 10)
+      : null;
+  const nextPaidAmount =
+    status === "paid"
+      ? Number(paidAmount ?? existing.amount) || Number(existing.amount) || 0
+      : Number(paidAmount) || 0;
+
+  // 1. Update payment fields
+  db.prepare(
+    `UPDATE deal_installments
+       SET payment_status = ?, paid_date = ?, paid_amount = ?
+     WHERE id = ?`,
+  ).run(status, nextPaidDate, nextPaidAmount, req.params.id);
+
+  // 2. Auto-generate invoice on first transition to "paid" (idempotent — only allocates once).
+  let invoiceAllocated = null;
+  if (status === "paid" && !existing.invoice_number && existing.estimate_number) {
+    try {
+      const invoiceNumber = allocateInvoiceNumber();
+      const refreshed = db
+        .prepare("SELECT * FROM deal_installments WHERE id = ?")
+        .get(req.params.id);
+      const invoiceJson = buildInvoiceJsonForInstallment({
+        ...refreshed,
+        invoice_number: invoiceNumber,
+      });
+      if (invoiceJson) {
+        db.prepare(
+          `UPDATE deal_installments
+             SET invoice_number = ?, invoice_generated = 1, invoice_generated_at = ?, invoice_json = ?
+           WHERE id = ?`,
+        ).run(invoiceNumber, now, JSON.stringify(invoiceJson), req.params.id);
+        invoiceAllocated = invoiceNumber;
+        logDealAudit(
+          db,
+          existing.deal_id,
+          "deal_invoice_generated",
+          {
+            installmentId: req.params.id,
+            invoiceNumber,
+            estimateNumber: existing.estimate_number,
+            paidAmount: nextPaidAmount,
+          },
+          null,
+          null,
+        );
+      }
+    } catch (err) {
+      console.error("[buildesk] failed to auto-generate invoice:", err);
+    }
+  }
+
+  const row = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(req.params.id);
+  logDealAudit(
+    db,
+    existing.deal_id,
+    "deal_installment_payment_updated",
+    {
+      installmentId: req.params.id,
+      previousStatus: existing.payment_status,
+      paymentStatus: status,
+      paidDate: nextPaidDate,
+      paidAmount: nextPaidAmount,
+      invoiceNumber: invoiceAllocated || row.invoice_number || null,
+    },
+    null,
+    null,
+  );
+  broadcast({
+    type: "change",
+    entity: "deal_installments",
+    action: "payment_updated",
+    id: req.params.id,
+  });
+  res.json(row);
+});
+
+app.get("/api/deal-installments/:id/invoice", (req, res) => {
+  const row = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  if (!row.invoice_number) {
+    return res.status(404).json({ error: "Invoice not generated" });
+  }
+  let invoiceData = null;
+  try {
+    invoiceData = row.invoice_json ? JSON.parse(row.invoice_json) : null;
+  } catch {
+    invoiceData = null;
+  }
+  // Backfill on demand if invoice_json is missing or unparseable.
+  if (!invoiceData) {
+    invoiceData = buildInvoiceJsonForInstallment(row);
+    if (invoiceData) {
+      db.prepare("UPDATE deal_installments SET invoice_json = ? WHERE id = ?").run(
+        JSON.stringify(invoiceData),
+        row.id,
+      );
+    }
+  }
+  if (!invoiceData) {
+    return res.status(404).json({ error: "Invoice data unavailable (missing source estimate)" });
+  }
+  res.json({
+    invoiceNumber: row.invoice_number,
+    invoiceGeneratedAt: row.invoice_generated_at,
+    paidDate: row.paid_date,
+    paidAmount: Number(row.paid_amount) || 0,
+    invoiceData,
+  });
+});
+
+app.put("/api/deal-installments/:id/estimate-generated", (req, res) => {
+  const { estimateNumber } = req.body || {};
+  if (!estimateNumber || !String(estimateNumber).trim()) {
+    return res.status(400).json({ error: "estimateNumber is required" });
+  }
+  const existing = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  db.prepare(
+    `UPDATE deal_installments
+       SET estimate_number = ?, estimate_generated = 1, estimate_generated_at = ?
+     WHERE id = ?`,
+  ).run(String(estimateNumber).trim(), new Date().toISOString(), req.params.id);
+  const row = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(req.params.id);
+  broadcast({
+    type: "change",
+    entity: "deal_installments",
+    action: "estimate_generated",
+    id: req.params.id,
+  });
+  res.json(row);
+});
+
+app.post("/api/deals/with-payment-plan", (req, res) => {
+  const {
+    // Deal fields (accept spec aliases AND the actual column names so callers
+    // can use either set without translating on the client side).
+    title,
+    name,
+    customerId,
+    customerName,
+    proposalId,
+    assignedTo,
+    assignedToName,
+    regionId,
+    teamId,
+    stage,
+    dealValue,
+    value: valueAlias,
+    dealStatus,
+    expectedCloseDate,
+    source,
+    dealSource,
+    notes,
+    remarks,
+    createdBy,
+    createdByUserId,
+    createdByName,
+    // Plan fields
+    planTypeId,
+    planSlug,
+    planName,
+    installmentCount,
+    distributionMode,
+    advancePercent,
+    startDate,
+    currency,
+    planNotes,
+    installments,
+    // Auth (mirrors POST /api/deals)
+    actorRole,
+    actorUserId,
+    actorTeamId,
+    actorRegionId,
+    changedByUserId,
+    changedByName,
+  } = req.body || {};
+
+  // ----- Auth -----
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  if (!canDealAction(normRole, "create")) {
+    return res.status(403).json({ error: "Your role cannot create deals" });
+  }
+
+  // ----- Deal field normalization -----
+  const dealName = String(name || title || "").trim();
+  const ownerUserId = String(assignedTo || "").trim();
+  const customerIdNorm = String(customerId || "").trim();
+  const regionIdNorm = String(regionId || "").trim();
+  const teamIdNorm = String(teamId || "").trim();
+  const dealValNum = Number(dealValue ?? valueAlias);
+  const stageVal = stage || "Negotiation";
+  const sourceVal = dealSource || source || "proposal";
+  const remarksVal = remarks ?? notes ?? null;
+  const creatorId = createdByUserId || createdBy || changedByUserId || null;
+  const creatorName = createdByName || changedByName || assignedToName || null;
+  const ds = dealStatus || "Active";
+
+  if (!dealName || !customerIdNorm || !ownerUserId || !regionIdNorm || !teamIdNorm) {
+    return res
+      .status(400)
+      .json({ error: "title/name, customerId, assignedTo, regionId, teamId are required" });
+  }
+  if (!Number.isFinite(dealValNum) || dealValNum <= 0) {
+    return res.status(400).json({ error: "dealValue must be a positive number" });
+  }
+  if (normRole === "sales_rep" && actor.userId && ownerUserId !== String(actor.userId)) {
+    return res.status(403).json({ error: "Sales rep can only create deals assigned to self" });
+  }
+  if ((normRole === "sales_manager" || normRole === "support") && actor.teamId && actor.regionId) {
+    if (teamIdNorm !== String(actor.teamId) && regionIdNorm !== String(actor.regionId)) {
+      return res.status(403).json({ error: "Out of scope" });
+    }
+  }
+  if (ds === "Closed/Lost" && !isSuperAdminRole(actorRole)) {
+    return res.status(403).json({ error: "Only super admin can create a deal with status Closed/Lost" });
+  }
+
+  // ----- Plan field validation -----
+  const validModes = new Set(["even", "custom_percent", "advance_then_equal"]);
+  if (!planSlug) return res.status(400).json({ error: "planSlug is required" });
+  if (!planName) return res.status(400).json({ error: "planName is required" });
+  if (!startDate) return res.status(400).json({ error: "startDate is required" });
+  if (!Number.isInteger(installmentCount) || installmentCount <= 0) {
+    return res.status(400).json({ error: "installmentCount must be a positive integer" });
+  }
+  if (!validModes.has(String(distributionMode))) {
+    return res
+      .status(400)
+      .json({ error: "distributionMode must be one of even|custom_percent|advance_then_equal" });
+  }
+  if (!Array.isArray(installments) || installments.length !== installmentCount) {
+    return res.status(400).json({
+      error: `installments must be an array of length installmentCount (${installmentCount})`,
+    });
+  }
+  for (let i = 0; i < installments.length; i++) {
+    const inst = installments[i] || {};
+    if (
+      !inst.label ||
+      !inst.dueDate ||
+      !Number.isFinite(Number(inst.amount)) ||
+      !Number.isFinite(Number(inst.percentage))
+    ) {
+      return res
+        .status(400)
+        .json({ error: `installments[${i}] requires label, dueDate, amount, percentage` });
+    }
+  }
+  // Tolerance scales with count to absorb rounding when auto-distributing (e.g.
+  // 12 monthly installments × 0.01 INR cumulative drift). Hard floor of ₹0.50
+  // catches genuine mismatches.
+  const sumAmounts = installments.reduce((s, x) => s + Number(x.amount), 0);
+  if (Math.abs(sumAmounts - dealValNum) > Math.max(0.5, installments.length * 0.01)) {
+    return res.status(400).json({
+      error: `Sum of installment amounts (${sumAmounts}) does not match dealValue (${dealValNum})`,
+    });
+  }
+
+  const dealId = nextDealId();
+  const now = new Date().toISOString();
+
+  const createAll = db.transaction(() => {
+    // 1. Create deal
+    const deal = {
+      id: dealId,
+      name: dealName,
+      customerId: customerIdNorm,
+      ownerUserId,
+      teamId: teamIdNorm,
+      regionId: regionIdNorm,
+      stage: stageVal,
+      value: dealValNum,
+      locked: 0,
+      proposalId: proposalId || null,
+      dealStatus: ds,
+      invoiceStatus: null,
+      invoiceDate: null,
+      invoiceNumber: null,
+      estimateNumber: null,
+      estimateDate: null,
+      estimateJson: null,
+      totalAmount: dealValNum,
+      taxAmount: 0,
+      amountWithoutTax: 0,
+      placeOfSupply: null,
+      balanceAmount: dealValNum,
+      amountPaid: 0,
+      serviceName: null,
+      dealSource: sourceVal,
+      expectedCloseDate: expectedCloseDate || null,
+      priority: "Medium",
+      lastActivityAt: now,
+      nextFollowUpDate: null,
+      lossReason: null,
+      contactPhone: null,
+      remarks: remarksVal,
+      createdByUserId: creatorId,
+      createdByName: creatorName,
+      createdAt: now,
+      updatedAt: now,
+    };
+    db.prepare(`
+      INSERT INTO deals (
+        id, name, customerId, ownerUserId, teamId, regionId, stage, value, locked, proposalId,
+        dealStatus, invoiceStatus, invoiceDate, invoiceNumber, estimateNumber, estimateDate, estimateJson,
+        totalAmount, taxAmount, amountWithoutTax, placeOfSupply, balanceAmount, amountPaid, serviceName,
+        dealSource, expectedCloseDate, priority, lastActivityAt, nextFollowUpDate, lossReason,
+        contactPhone, remarks, createdByUserId, createdByName, createdAt, updatedAt
+      ) VALUES (
+        @id, @name, @customerId, @ownerUserId, @teamId, @regionId, @stage, @value, @locked, @proposalId,
+        @dealStatus, @invoiceStatus, @invoiceDate, @invoiceNumber, @estimateNumber, @estimateDate, @estimateJson,
+        @totalAmount, @taxAmount, @amountWithoutTax, @placeOfSupply, @balanceAmount, @amountPaid, @serviceName,
+        @dealSource, @expectedCloseDate, @priority, @lastActivityAt, @nextFollowUpDate, @lossReason,
+        @contactPhone, @remarks, @createdByUserId, @createdByName, @createdAt, @updatedAt
+      )
+    `).run(deal);
+
+    logDealAudit(
+      db,
+      dealId,
+      "deal_created",
+      {
+        dealId,
+        name: deal.name,
+        value: deal.value,
+        customerId: customerIdNorm,
+        customerName: customerName ?? null,
+        ownerUserId,
+        ownerUserName: assignedToName ?? null,
+        source: "with_payment_plan",
+      },
+      creatorId,
+      creatorName,
+    );
+
+    // 2. Create payment plan
+    const planId = randomUUID();
+    db.prepare(`
+      INSERT INTO deal_payment_plans (
+        id, deal_id, customer_id, plan_type_id, plan_slug, plan_name, total_amount,
+        installment_count, distribution_mode, advance_percent, start_date,
+        currency, notes, created_by, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      planId,
+      dealId,
+      customerIdNorm,
+      planTypeId ?? null,
+      String(planSlug),
+      String(planName),
+      dealValNum,
+      installmentCount,
+      String(distributionMode),
+      Number(advancePercent) || 0,
+      String(startDate),
+      currency || "INR",
+      planNotes ?? null,
+      creatorId,
+      now,
+    );
+
+    logDealAudit(
+      db,
+      dealId,
+      "deal_payment_plan_created",
+      {
+        planId,
+        planSlug,
+        planName,
+        installmentCount,
+        distributionMode,
+        totalAmount: dealValNum,
+        startDate,
+      },
+      creatorId,
+      creatorName,
+    );
+
+    // 3. Create installment records
+    const insertInstallment = db.prepare(`
+      INSERT INTO deal_installments (
+        id, plan_id, deal_id, customer_id, installment_number, label, due_date,
+        amount, percentage, created_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?)
+    `);
+    installments.forEach((inst, idx) => {
+      insertInstallment.run(
+        randomUUID(),
+        planId,
+        dealId,
+        customerIdNorm,
+        idx + 1,
+        String(inst.label),
+        String(inst.dueDate),
+        Number(inst.amount),
+        Number(inst.percentage),
+        now,
+      );
+    });
+
+    // 4. Link proposal → deal (camelCase, JSON-blob model — no proposals.deal_id column).
+    if (proposalId) {
+      const propRow = db.prepare("SELECT data FROM proposals WHERE id = ?").get(proposalId);
+      if (propRow) {
+        let dataStr = propRow.data;
+        try {
+          const dataObj = JSON.parse(propRow.data);
+          if (dataObj && typeof dataObj === "object") {
+            dataObj.status = "deal_created";
+            dataObj.dealId = dealId;
+            dataObj.updatedAt = now;
+            dataStr = JSON.stringify(dataObj);
+          }
+        } catch {
+          /* keep raw blob if unparseable */
+        }
+        db.prepare(
+          "UPDATE proposals SET status = ?, updatedAt = ?, data = ? WHERE id = ?",
+        ).run("deal_created", now, dataStr, proposalId);
+      }
+    }
+
+    return {
+      deal: db.prepare("SELECT * FROM deals WHERE id = ?").get(dealId),
+      plan: db.prepare("SELECT * FROM deal_payment_plans WHERE id = ?").get(planId),
+      installments: db
+        .prepare("SELECT * FROM deal_installments WHERE plan_id = ? ORDER BY installment_number")
+        .all(planId),
+      planId,
+    };
+  });
+
+  try {
+    const result = createAll();
+    broadcast({ type: "change", entity: "deals", action: "created", id: dealId });
+    broadcast({
+      type: "change",
+      entity: "deal_payment_plans",
+      action: "created",
+      id: result.planId,
+    });
+    if (proposalId) {
+      broadcast({ type: "change", entity: "proposals", action: "updated", id: proposalId });
+    }
+    res.status(201).json({
+      deal: toDealResponse(result.deal),
+      plan: result.plan,
+      installments: result.installments,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Failed to create deal with payment plan" });
+  }
+});
+
 app.get("/api/automation/templates", (_req, res) => {
   const rows = db
     .prepare("SELECT data FROM automation_templates ORDER BY updatedAt DESC")
@@ -1605,6 +2178,20 @@ registerPaymentsApi(app, db, { broadcast });
 registerDeliveryApi(app, db, { broadcast });
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
+
+server.on("error", (err) => {
+  if (err && err.code === "EADDRINUSE") {
+    console.error(
+      `[buildesk] Port ${PORT} is already in use (another API server or app is running).\n` +
+        `  • Stop the other process, or run on another port, e.g. PowerShell:\n` +
+        `      $env:PORT=4001; node server/index.js\n` +
+        `  • To free port ${PORT} on Windows (kill listener):\n` +
+        `      Get-NetTCPConnection -LocalPort ${PORT} | Select-Object -ExpandProperty OwningProcess -Unique | Stop-Process -Force`,
+    );
+    process.exit(1);
+  }
+  throw err;
+});
 
 server.listen(PORT, () => {
   console.log(`API server listening on http://localhost:${PORT}`);
