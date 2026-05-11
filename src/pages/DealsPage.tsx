@@ -1593,47 +1593,60 @@ export default function DealsPage() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button type="button" variant="outline" className="h-9" onClick={clearFilters} disabled={!hasPendingFilterChanges}>
-                Clear
-              </Button>
-              <Button type="button" className="h-9 bg-blue-600 hover:bg-blue-700 text-white" onClick={applyFilters} disabled={!hasPendingFilterChanges}>
-                Apply
-              </Button>
-            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex gap-2 overflow-x-auto pb-1 pt-1 sm:flex-1">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilterAndUrl("all")}
+                  className={cn(
+                    "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    statusFilter === "all"
+                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
+                      : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                  )}
+                >
+                  All
+                </button>
+                {DEAL_STATUSES.map((st) => {
+                  const meta = DEAL_STATUS_META[st];
+                  const active = statusFilter === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        active
+                          ? cn("ring-2 ring-blue-500", meta.cardClass)
+                          : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                      )}
+                    >
+                      {dealStatusLabel(st)} ({statusCounts[st]})
+                    </button>
+                  );
+                })}
+              </div>
 
-            <div className="flex gap-2 overflow-x-auto pb-1 pt-1">
-              <button
-                type="button"
-                onClick={() => setStatusFilterAndUrl("all")}
-                className={cn(
-                  "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                  statusFilter === "all"
-                    ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
-                    : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
-                )}
-              >
-                All
-              </button>
-              {DEAL_STATUSES.map((st) => {
-                const meta = DEAL_STATUS_META[st];
-                const active = statusFilter === st;
-                return (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
-                    className={cn(
-                      "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                      active
-                        ? cn("ring-2 ring-blue-500", meta.cardClass)
-                        : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
-                    )}
-                  >
-                    {dealStatusLabel(st)} ({statusCounts[st]})
-                  </button>
-                );
-              })}
+              <div className="flex items-center justify-end gap-2 sm:shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-[140px]"
+                  onClick={clearFilters}
+                  disabled={!hasPendingFilterChanges}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  className="h-9 w-[140px] bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={applyFilters}
+                  disabled={!hasPendingFilterChanges}
+                >
+                  Apply
+                </Button>
+              </div>
             </div>
           </div>
         </div>

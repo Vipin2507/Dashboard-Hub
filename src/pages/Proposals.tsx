@@ -830,33 +830,19 @@ export default function Proposals() {
                 </SelectContent>
               </Select>
 
-              <Button
-                type="button"
-                variant="outline"
-                className={cn(
-                  "h-9 w-full text-sm",
-                  // keep it on the far right on wider screens
-                  "sm:col-start-4 sm:justify-self-end sm:w-[160px]",
-                  (me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-6",
-                  !(me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-5",
-                )}
-                onClick={clearFilters}
-              >
-                Clear filters
-              </Button>
-              <Button
-                type="button"
-                className={cn(
-                  "h-9 w-full text-sm bg-blue-600 hover:bg-blue-700 text-white",
-                  "sm:col-start-3 sm:justify-self-end sm:w-[160px]",
-                  (me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-5",
-                  !(me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-4",
-                )}
-                disabled={!hasPendingFilterChanges}
-                onClick={applyFilters}
-              >
-                Apply
-              </Button>
+              <div className="col-span-2 flex flex-wrap items-center justify-end gap-2">
+                <Button type="button" variant="outline" className="h-9 w-[140px]" onClick={clearFilters}>
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  className="h-9 w-[140px] bg-blue-600 hover:bg-blue-700 text-white"
+                  disabled={!hasPendingFilterChanges}
+                  onClick={applyFilters}
+                >
+                  Apply
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -896,6 +882,9 @@ export default function Proposals() {
                       </th>
                       <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Actions
+                      </th>
+                      <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 lg:table-cell dark:text-gray-400">
+                        Created
                       </th>
                       <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell dark:text-gray-400">
                         Valid Until
@@ -1170,6 +1159,11 @@ export default function Proposals() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
+                        </td>
+                        <td className="hidden px-4 py-4 text-center lg:table-cell">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
+                          </span>
                         </td>
                         <td className="hidden px-4 py-4 text-center md:table-cell">
                           <span
