@@ -165,7 +165,7 @@ const DEFAULT_SALES_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiati
 
 const DASHBOARD_STAGES = DEFAULT_SALES_STAGES.slice(0, 3);
 
-const LIST_PAGE_SIZE = 20;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 
 type StageVisual = { key: string; label: string; pillColor: string; dotColor: string };
 
@@ -1011,16 +1011,33 @@ export default function DealsPage() {
   }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter, customers]);
 
   const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem("ui:deals:pageSize");
+      const n = raw ? Number(raw) : 20;
+      return PAGE_SIZE_OPTIONS.includes(n as any) ? n : 20;
+    } catch {
+      return 20;
+    }
+  });
   useEffect(() => {
     setListPage(1);
   }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter]);
 
-  const listTotalPages = Math.max(1, Math.ceil(visible.length / LIST_PAGE_SIZE));
+  const listTotalPages = Math.max(1, Math.ceil(visible.length / listPageSize));
   const listCurrentPage = Math.min(listPage, listTotalPages);
   const listItems = useMemo(() => {
-    const start = (listCurrentPage - 1) * LIST_PAGE_SIZE;
-    return visible.slice(start, start + LIST_PAGE_SIZE);
-  }, [visible, listCurrentPage]);
+    const start = (listCurrentPage - 1) * listPageSize;
+    return visible.slice(start, start + listPageSize);
+  }, [visible, listCurrentPage, listPageSize]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ui:deals:pageSize", String(listPageSize));
+    } catch {
+      // ignore
+    }
+  }, [listPageSize]);
 
   const topHScrollRef = useRef<HTMLDivElement | null>(null);
   const bottomHScrollRef = useRef<HTMLDivElement | null>(null);
@@ -2057,13 +2074,38 @@ export default function DealsPage() {
               </table>
             </div>
 
-            <DataTablePagination
-              page={listCurrentPage}
-              totalPages={listTotalPages}
-              total={visible.length}
-              perPage={LIST_PAGE_SIZE}
-              onPageChange={setListPage}
-            />
+            <div className="border-t border-gray-100 dark:border-gray-800">
+              <div className="flex items-center justify-end gap-2 px-5 py-3">
+                <span className="text-xs text-muted-foreground">Rows</span>
+                <Select
+                  value={String(listPageSize)}
+                  onValueChange={(v) => {
+                    const n = Number(v);
+                    setListPageSize(n);
+                    setListPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[96px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <DataTablePagination
+                className="border-t-0 px-5 py-0 dark:border-gray-800"
+                page={listCurrentPage}
+                totalPages={listTotalPages}
+                total={visible.length}
+                perPage={listPageSize}
+                onPageChange={setListPage}
+              />
+            </div>
           </div>
         )}
 

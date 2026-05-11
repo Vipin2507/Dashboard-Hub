@@ -93,7 +93,7 @@ import {
 import { apiUrl } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
 const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "draft", label: "Draft" },
@@ -287,6 +287,15 @@ export default function Proposals() {
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem("ui:proposals:pageSize");
+      const n = raw ? Number(raw) : 10;
+      return PAGE_SIZE_OPTIONS.includes(n as any) ? n : 10;
+    } catch {
+      return 10;
+    }
+  });
   // Draft filters (edit, then Apply)
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">("all");
@@ -560,9 +569,17 @@ export default function Proposals() {
     return list;
   }, [visible, search, statusFilter, suspectWonOnly, dateFrom, dateTo, assignedToFilter, teamQueryFilter, regionQueryFilter, sortBy, users]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ui:proposals:pageSize", String(pageSize));
+    } catch {
+      // ignore
+    }
+  }, [pageSize]);
 
   const kpiMetrics = useMemo((): ProposalKPIData => {
     const now = new Date();
@@ -1182,14 +1199,38 @@ export default function Proposals() {
                 </table>
               </div>
               {totalPages > 1 && (
-                <DataTablePagination
-                  className="border-t border-gray-100 px-5 py-3 dark:border-gray-800"
-                  page={currentPage}
-                  totalPages={totalPages}
-                  total={filtered.length}
-                  perPage={PAGE_SIZE}
-                  onPageChange={setPage}
-                />
+                <div className="border-t border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center justify-end gap-2 px-5 py-3">
+                    <span className="text-xs text-muted-foreground">Rows</span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(v) => {
+                        const n = Number(v);
+                        setPageSize(n);
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[96px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAGE_SIZE_OPTIONS.map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DataTablePagination
+                    className="border-t-0 px-5 py-0 dark:border-gray-800"
+                    page={currentPage}
+                    totalPages={totalPages}
+                    total={filtered.length}
+                    perPage={pageSize}
+                    onPageChange={setPage}
+                  />
+                </div>
               )}
             </>
           )}

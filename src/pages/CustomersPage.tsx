@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
@@ -98,7 +98,24 @@ export default function CustomersPage() {
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('ui:customers:pageSize');
+      const n = raw ? Number(raw) : 50;
+      return (PAGE_SIZE_OPTIONS as readonly number[]).includes(n) ? n : 50;
+    } catch {
+      return 50;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ui:customers:pageSize', String(pageSize));
+    } catch {
+      // ignore
+    }
+  }, [pageSize]);
 
   const [companyName, setCompanyName] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -426,13 +443,38 @@ export default function CustomersPage() {
                 </TableBody>
               </Table>
               {visible.length > pageSize && (
-                <DataTablePagination
-                  page={currentPage}
-                  totalPages={totalPages}
-                  total={visible.length}
-                  perPage={pageSize}
-                  onPageChange={setPage}
-                />
+                <div className="border-t border-border">
+                  <div className="flex items-center justify-end gap-2 px-4 py-3">
+                    <span className="text-xs text-muted-foreground">Rows</span>
+                    <Select
+                      value={String(pageSize)}
+                      onValueChange={(v) => {
+                        const n = Number(v);
+                        setPageSize(n);
+                        setPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-[96px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAGE_SIZE_OPTIONS.map((n) => (
+                          <SelectItem key={n} value={String(n)}>
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <DataTablePagination
+                    className="border-t-0 px-4 py-0"
+                    page={currentPage}
+                    totalPages={totalPages}
+                    total={visible.length}
+                    perPage={pageSize}
+                    onPageChange={setPage}
+                  />
+                </div>
               )}
             </CardContent>
           </Card>
