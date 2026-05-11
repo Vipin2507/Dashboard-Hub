@@ -1365,6 +1365,46 @@ app.delete("/api/deals/:id", (req, res) => {
   res.json({ ok: true });
 });
 
+// HARD DELETE (permanent) — Super Admin only
+app.delete("/api/deals/:id/hard", (req, res) => {
+  let body = req.body;
+  if (!body || typeof body !== "object") body = {};
+  const { actorRole, actorUserId, actorTeamId, actorRegionId } = body;
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  if (normRole !== "super_admin") {
+    return res.status(403).json({ error: "Only Super Admin can permanently delete deals" });
+  }
+  const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  if (!dealInScopeFor(normRole, actor, toDealResponse(existing))) {
+    return res.status(403).json({ error: "Out of scope" });
+  }
+
+  try {
+    db.transaction(() => {
+      // Remove related records first (no FK constraints guaranteed in older sqlite files).
+      db.prepare("DELETE FROM deal_installments WHERE deal_id = ?").run(req.params.id);
+      db.prepare("DELETE FROM deal_payment_plans WHERE deal_id = ?").run(req.params.id);
+      db.prepare("DELETE FROM delivery_logs WHERE dealId = ?").run(req.params.id);
+      db.prepare("DELETE FROM deal_audit WHERE dealId = ?").run(req.params.id);
+      // central_history_db includes deal actions/logs
+      db.prepare("DELETE FROM central_history_db WHERE entityType = 'deal' AND entityId = ?").run(req.params.id);
+      // Finally delete the deal row
+      db.prepare("DELETE FROM deals WHERE id = ?").run(req.params.id);
+    })();
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+
+  broadcast({ type: "change", entity: "deals", action: "hard_deleted", id: req.params.id });
+  res.json({ ok: true });
+});
+
 // =============================================================
 // Deal-creation payment plans (Feature: Payment Plan on Deal Creation)
 // Distinct from /api/payments/* which is the customer-level plan stack

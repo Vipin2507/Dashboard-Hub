@@ -455,6 +455,7 @@ export default function DealsPage() {
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Deal | null>(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState<Deal | null>(null);
   const [lossTarget, setLossTarget] = useState<Deal | null>(null);
   const [lossReasonDraft, setLossReasonDraft] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
@@ -972,6 +973,26 @@ export default function DealsPage() {
     onSuccess: () => dealsQuery.refetch(),
   });
 
+  const hardDeleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(apiUrl(`/api/deals/${id}/hard`), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to permanently delete deal");
+      }
+    },
+    onSuccess: () => dealsQuery.refetch(),
+  });
+
   const statusCounts = useMemo(() => {
     const c = {} as Record<DealPipelineStatus, number>;
     DEAL_STATUSES.forEach((s) => {
@@ -1415,6 +1436,17 @@ export default function DealsPage() {
       toast({ title: "Delete failed", description: (e as Error).message, variant: "destructive" });
     }
     setDeleteTarget(null);
+  };
+
+  const handleHardDeleteDeal = async () => {
+    if (!hardDeleteTarget) return;
+    try {
+      await hardDeleteMutation.mutateAsync(hardDeleteTarget.id);
+      toast({ title: "Deal deleted permanently", description: `${hardDeleteTarget.name} was removed from the database.` });
+    } catch (e) {
+      toast({ title: "Permanent delete failed", description: (e as Error).message, variant: "destructive" });
+    }
+    setHardDeleteTarget(null);
   };
 
   const onInlineStatusChange = (d: Deal, value: string) => {
@@ -2054,6 +2086,16 @@ export default function DealsPage() {
                                   <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600" onClick={() => setDeleteTarget(deal)}>
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Archive
+                                  </DropdownMenuItem>
+                                )}
+
+                                {me.role === "super_admin" && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer text-red-600 focus:text-red-600"
+                                    onClick={() => setHardDeleteTarget(deal)}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete permanently
                                   </DropdownMenuItem>
                                 )}
                               </DropdownMenuContent>
@@ -3125,6 +3167,24 @@ export default function DealsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={handleDeleteDeal}>
               Archive
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!hardDeleteTarget} onOpenChange={(open) => !open && setHardDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{hardDeleteTarget?.name}</strong> from the database, including related
+              payment installments, delivery logs, and audit history. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={handleHardDeleteDeal}>
+              Delete permanently
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
