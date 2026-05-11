@@ -680,7 +680,26 @@ async function fireN8nWebhook(
       const num = (ctx.estimateNumber || deal.estimateNumber || "").trim();
       estimatePdfName = num ? `Estimate-${num}.pdf` : `Estimate-${ctx.dealId}.pdf`;
     } catch {
-      estimatePdfBlob = null;
+      // Fallback: fetch estimate JSON from API and retry PDF generation.
+      try {
+        const num = String(ctx.estimateNumber || "").trim();
+        if (num) {
+          const res = await fetch(apiUrl(`/api/estimates/${encodeURIComponent(num)}`));
+          if (res.ok) {
+            const detail = (await res.json()) as { estimateData?: unknown | null };
+            const payloadOverride = detail?.estimateData ?? null;
+            if (payloadOverride) {
+              const deal = { id: ctx.dealId ?? "deal", estimateJson: "{}", estimateNumber: num } as any;
+              const { generateEstimatePdfBlob } = await import("@/lib/generateEstimatePdf");
+              estimatePdfBlob = await generateEstimatePdfBlob(deal, payloadOverride as any);
+              estimatePdfName = `Estimate-${num}.pdf`;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      if (!estimatePdfBlob) estimatePdfBlob = null;
     }
   }
 
