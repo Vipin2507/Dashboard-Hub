@@ -393,27 +393,59 @@ export async function generateEstimatePdfBlobFromData(estimate: EstimateData): P
   return new Blob([bytes], { type: "application/pdf" });
 }
 
-function normalizeEstimatePayload(deal: Deal): DealEstimatePayload | null {
+function isDealEstimatePayload(x: any): x is DealEstimatePayload {
+  return (
+    !!x &&
+    typeof x === "object" &&
+    !!x.billTo &&
+    typeof x.billTo === "object" &&
+    !!x.estimate &&
+    typeof x.estimate === "object" &&
+    Array.isArray((x as any).items)
+  );
+}
+
+function isEstimateData(x: any): x is EstimateData {
+  return (
+    !!x &&
+    typeof x === "object" &&
+    typeof (x as any).estimateNumber === "string" &&
+    typeof (x as any).estimateDate === "string" &&
+    Array.isArray((x as any).lineItems)
+  );
+}
+
+function normalizeEstimatePayload(deal: Deal): DealEstimatePayload | EstimateData | null {
   const raw = (deal.estimateJson ?? "").trim();
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as DealEstimatePayload;
+    const parsed = JSON.parse(raw);
+    // Deals can store either DealEstimatePayload (billTo/estimate/items) or EstimateData directly.
+    if (isDealEstimatePayload(parsed) || isEstimateData(parsed)) return parsed;
+    return parsed as any;
   } catch {
     return null;
   }
 }
 
 export async function generateEstimatePdf(deal: Deal, payloadOverride?: DealEstimatePayload): Promise<void> {
-  const payload = payloadOverride ?? normalizeEstimatePayload(deal);
+  const payload = (payloadOverride as any) ?? normalizeEstimatePayload(deal);
   if (!payload) throw new Error("Estimate data not found on deal");
-  const estimate = estimateDataFromDealPayload(payload);
+  if (isEstimateData(payload)) {
+    await generateEstimatePdfFromData(payload);
+    return;
+  }
+  const estimate = estimateDataFromDealPayload(payload as DealEstimatePayload);
   await generateEstimatePdfFromData(estimate);
 }
 
 export async function generateEstimatePdfBlob(deal: Deal, payloadOverride?: DealEstimatePayload): Promise<Blob> {
-  const payload = payloadOverride ?? normalizeEstimatePayload(deal);
+  const payload = (payloadOverride as any) ?? normalizeEstimatePayload(deal);
   if (!payload) throw new Error("Estimate data not found on deal");
-  const estimate = estimateDataFromDealPayload(payload);
+  if (isEstimateData(payload)) {
+    return generateEstimatePdfBlobFromData(payload);
+  }
+  const estimate = estimateDataFromDealPayload(payload as DealEstimatePayload);
   return generateEstimatePdfBlobFromData(estimate);
 }
 
