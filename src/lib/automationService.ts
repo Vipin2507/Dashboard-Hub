@@ -178,9 +178,22 @@ function updateAutomationLog(logId: string, updates: Partial<AutomationLog>): vo
   }
 }
 
+export type TriggerAutomationOptions = {
+  /**
+   * Skip n8n email/SMS sends for matched templates. Used after `sendDealInvoiceN8n` already posted to
+   * `buildesk-invoice` so “Send invoice” does not immediately fire a second webhook (`buildesk-email`).
+   * In-app + WhatsApp + rules still run.
+   */
+  skipEmailSmsN8n?: boolean;
+};
+
 // Call this from anywhere in the app when a triggerable event occurs.
 // e.g. triggerAutomation('proposal_sent', { proposalId: 'p-001' })
-export async function triggerAutomation(trigger: AutomationTrigger, context: AutomationContext): Promise<void> {
+export async function triggerAutomation(
+  trigger: AutomationTrigger,
+  context: AutomationContext,
+  options?: TriggerAutomationOptions,
+): Promise<void> {
   // Ensure we don't use stale templates (common when templates are edited in backend/other tab
   // and the user sends immediately without visiting the Automation page).
   await refreshTemplatesIfStale();
@@ -198,6 +211,7 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
     } else if (template.channel === "whatsapp") {
       await fireWhatsAppDirect(template, resolvedBody, ctx, automationSettings);
     } else if (template.channel === "email" || template.channel === "sms") {
+      if (options?.skipEmailSmsN8n) continue;
       await fireN8nWebhook(template, resolvedBody, resolvedSubject, ctx, automationSettings);
     }
   }
@@ -214,14 +228,51 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
 const BUILDESK_INVOICE_WEBHOOK = "buildesk-invoice";
 
 /**
- * POSTs deal/invoice payload to n8n `buildesk-invoice`, then runs `deal_invoice_sent` automations (templates + rules).
+ * POSTs deal/invoice payload (+ optional PDF) to n8n `buildesk-invoice`, merged with the primary active
+ * `deal_invoice_sent` **email** template (recipientEmail, emailSubject, messageBody, emailCc) so one webhook
+ * carries everything n8n needs to send mail. Then runs other side-effects with **no second** email/SMS webhook.
+ * In-app templates, WhatsApp, and automation rules still run.
  * Use from Deals UI when the user clicks “Send invoice”.
  */
 export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ ok: boolean; error?: string }> {
-  const { automationSettings, appendAutomationLog } = useAppStore.getState();
+  await refreshTemplatesIfStale();
+  const { automationSettings, appendAutomationLog, automationTemplates } = useAppStore.getState();
   const ctx = enrichAutomationContext(context);
   const entityId = ctx.dealId ?? "";
   const entityName = ctx.dealTitle ?? ctx.customerName ?? "";
+
+  /** Match `fireN8nWebhook` so n8n `buildesk-invoice` receives the same delay as post-send email templates. */
+  const delayHoursForWebhook = automationTemplates
+    .filter((t) => t.trigger === "deal_invoice_sent" && t.isActive)
+    .reduce((max, t) => Math.max(max, Number(t.delayHours ?? 0)), 0);
+
+  const dealInvoiceEmailTemplates = automationTemplates.filter(
+    (t) => t.trigger === "deal_invoice_sent" && t.isActive && t.channel === "email",
+  );
+  const primaryInvoiceEmailTemplate =
+    dealInvoiceEmailTemplates.find((t) => t.recipients.includes("customer")) ?? dealInvoiceEmailTemplates[0];
+
+  let recipientEmail = ctx.customerEmail ?? "";
+  let recipientName = ctx.customerName ?? "";
+  let recipientPhone = ctx.customerPhone ?? "";
+  let emailSubject = ctx.invoiceNumber ? `Invoice — ${ctx.invoiceNumber}` : "Invoice";
+  let messageBody = "";
+  let emailCc = resolveMergedEmailCc(automationSettings, { emailCc: "" }, ctx);
+
+  if (primaryInvoiceEmailTemplate) {
+    messageBody = resolveVariables(primaryInvoiceEmailTemplate.body, ctx);
+    emailSubject = primaryInvoiceEmailTemplate.subject
+      ? resolveVariables(primaryInvoiceEmailTemplate.subject, ctx)
+      : emailSubject;
+    emailCc = resolveMergedEmailCc(automationSettings, primaryInvoiceEmailTemplate, ctx);
+    const resolvedRecipients = resolveRecipients(primaryInvoiceEmailTemplate.recipients, ctx);
+    const first = resolvedRecipients[0];
+    if (first) {
+      recipientEmail = first.email ?? recipientEmail;
+      recipientName = first.name ?? recipientName;
+      recipientPhone = first.phone ?? recipientPhone;
+    }
+  }
 
   const logEntry: AutomationLog = {
     id: crypto.randomUUID(),
@@ -229,8 +280,8 @@ export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ 
     templateName: "Send invoice (n8n)",
     trigger: "deal_invoice_sent",
     channel: "email",
-    recipient: ctx.customerEmail ?? ctx.customerPhone ?? "",
-    recipientName: ctx.customerName ?? "",
+    recipient: recipientEmail || recipientPhone || ctx.customerPhone || "",
+    recipientName: recipientName || ctx.customerName || "",
     entityType: "deal",
     entityId,
     entityName,
@@ -260,6 +311,26 @@ export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ 
     salesRepPhone: ctx.salesRepPhone,
     salesRepEmail: ctx.salesRepEmail,
     companyName: ctx.companyName,
+    delayHours: delayHoursForWebhook,
+    channel: "email",
+    recipientEmail,
+    recipientName,
+    recipientPhone,
+    emailSubject,
+    messageBody,
+    emailCc,
+    entityType: "deal" as const,
+    entityId: ctx.dealId ?? "",
+    entityName: ctx.dealTitle ?? ctx.customerName ?? "",
+    wahaApiUrl: automationSettings.wahaApiUrl,
+    wahaApiKey: automationSettings.wahaApiKey,
+    wahaSession: automationSettings.wahaSession,
+    ...(primaryInvoiceEmailTemplate
+      ? {
+          automationTemplateId: primaryInvoiceEmailTemplate.id,
+          automationTemplateName: primaryInvoiceEmailTemplate.name,
+        }
+      : {}),
   };
 
   try {
@@ -281,7 +352,7 @@ export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ 
       errorMessage: ok ? undefined : `HTTP ${res.status}${errShort ? ` — ${errShort}` : ""}`,
     });
     if (ok) {
-      await triggerAutomation("deal_invoice_sent", context);
+      await triggerAutomation("deal_invoice_sent", context, { skipEmailSmsN8n: true });
     }
     return { ok, error: ok ? undefined : `HTTP ${res.status}` };
   } catch (err) {
@@ -628,12 +699,9 @@ async function fireN8nWebhook(
   }
 
   for (const recipient of recipients) {
-    const webhookPath =
-      template.trigger === "estimate_shared"
-        ? "buildesk-estimate"
-        : template.trigger === "deal_invoice_sent"
-          ? "buildesk-invoice"
-          : "buildesk-email";
+    // `sendDealInvoiceN8n` already POSTs deal + PDF to `buildesk-invoice`. Templated email/SMS for
+    // `deal_invoice_sent` uses `buildesk-email` so we do not hit `buildesk-invoice` twice per click.
+    const webhookPath = template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email";
     const normalizedPhone =
       template.channel === "whatsapp" || template.channel === "sms"
         ? normalizeIndiaPhone(recipient.phone)

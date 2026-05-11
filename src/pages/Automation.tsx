@@ -714,11 +714,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
             })
           : await fetchN8nWebhook(
               settings,
-              template.trigger === "deal_invoice_sent"
-                ? "buildesk-invoice"
-                : template.trigger === "estimate_shared"
-                  ? "buildesk-estimate"
-                  : "buildesk-email",
+              template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email",
               {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1122,7 +1118,9 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
               )}
               {watchedTrigger === "deal_invoice_sent" && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Fires after Deals → Send invoice posts to n8n <code className="text-[10px]">buildesk-invoice</code>.
+                  Deals → Send invoice merges this email template (subject/body/recipient/CC) into the single{" "}
+                  <code className="text-[10px]">buildesk-invoice</code> payload; it is not sent again to{" "}
+                  <code className="text-[10px]">buildesk-email</code>.
                   Email automations include multipart field <code className="text-[10px]">invoice_pdf</code> when the
                   installment invoice can be loaded (same pattern as <code className="text-[10px]">estimate_pdf</code>).
                 </p>

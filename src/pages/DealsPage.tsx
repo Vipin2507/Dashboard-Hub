@@ -2001,9 +2001,9 @@ export default function DealsPage() {
             <p>
               <strong className="text-foreground">Follow-up:</strong> Set “Next follow-up” to trigger{" "}
               <strong>deal_follow_up</strong> automation 1 day before and on that date. New deals fire{" "}
-              <strong>deal_created</strong> for the assignee. <strong>Send invoice</strong> posts to n8n{" "}
-              <code className="text-[10px]">buildesk-invoice</code> and runs <strong>deal_invoice_sent</strong>{" "}
-              templates.
+              <strong>deal_created</strong> for the assignee.               <strong>Send invoice</strong> posts once to n8n{" "}
+              <code className="text-[10px]">buildesk-invoice</code> (deal + PDF + recipient/subject/body from your active{" "}
+              <strong>deal_invoice_sent</strong> email template). In-app / WhatsApp / rules still run; no second webhook.
             </p>
             <p>
               <strong className="text-foreground">Roles:</strong> Super Admin can edit, archive (soft delete), and set{" "}
