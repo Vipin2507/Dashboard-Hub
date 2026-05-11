@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
@@ -61,6 +61,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import {
   Building2,
@@ -85,7 +86,7 @@ import {
   AlertCircle,
   Bot,
 } from "lucide-react";
-import type { Customer, CustomerStatus, Proposal } from "@/types";
+import type { Customer, CustomerStatus, CustomerSupportTicket, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
@@ -126,6 +127,26 @@ const INVOICE_STATUS_BADGE: Record<string, string> = {
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+/** API payloads may omit nested arrays; avoid runtime crashes on `.map` / `.filter`. */
+function ensureCustomerArrays(raw: Customer): Customer {
+  return {
+    ...raw,
+    contacts: Array.isArray(raw.contacts) ? raw.contacts : [],
+    notes: Array.isArray(raw.notes) ? raw.notes : [],
+    attachments: Array.isArray(raw.attachments) ? raw.attachments : [],
+    productLines: Array.isArray(raw.productLines) ? raw.productLines : [],
+    payments: Array.isArray(raw.payments) ? raw.payments : [],
+    invoices: Array.isArray(raw.invoices) ? raw.invoices : [],
+    supportTickets: Array.isArray(raw.supportTickets) ? raw.supportTickets : [],
+    activityLog: Array.isArray(raw.activityLog) ? raw.activityLog : [],
+    tags: Array.isArray(raw.tags) ? raw.tags : [],
+    totalRevenue: Number(raw.totalRevenue) || 0,
+    totalDealValue: Number(raw.totalDealValue) || 0,
+    activeProposalsCount: Number(raw.activeProposalsCount) || 0,
+    activeDealsCount: Number(raw.activeDealsCount) || 0,
+  };
 }
 
 const PROFILE_TABS: {
@@ -195,6 +216,7 @@ function SupportWorkflowTab({
 }) {
   const { data: paymentSummary } = useCustomerPaymentSummary(customerId);
   const addProposal = useAppStore((s) => s.addProposal);
+  const proposals = useAppStore((s) => s.proposals);
   const me = useAppStore((s) => s.me);
 
   const wonDateIso = activeDeal?.createdAt ?? null;
@@ -222,16 +244,24 @@ function SupportWorkflowTab({
   const pct = total > 0 ? Math.min(100, (Number(paymentSummary?.summary?.totalPaid ?? 0) / total) * 100) : 0;
 
   const sendPaymentReminder = async () => {
-    await triggerAutomation("invoice_overdue", {
-      customerId,
-      customerName: customer.customerName,
-      customerPhone: primaryPhone ?? undefined,
-      customerEmail: primaryEmail ?? undefined,
-      amountDue: paymentSummary?.summary?.overdueAmount ?? 0,
-      daysOverdue: 1,
-      companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
-    });
-    toast({ title: "Reminder triggered", description: "Automation trigger fired for overdue reminder." });
+    try {
+      await triggerAutomation("invoice_overdue", {
+        customerId,
+        customerName: customer.customerName,
+        customerPhone: primaryPhone ?? undefined,
+        customerEmail: primaryEmail ?? undefined,
+        amountDue: paymentSummary?.summary?.overdueAmount ?? 0,
+        daysOverdue: 1,
+        companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
+      });
+      toast({ title: "Reminder triggered", description: "Automation trigger fired for overdue reminder." });
+    } catch (e) {
+      toast({
+        title: "Reminder failed",
+        description: e instanceof Error ? e.message : "Could not trigger automation",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -291,7 +321,7 @@ function SupportWorkflowTab({
             <div className="flex justify-between text-xs text-gray-500 mb-1.5">
               <span>Collected</span>
               <span>
-                ₹{Number(paymentSummary.summary.totalPaid ?? 0).toLocaleString("en-IN")} / ₹{Number(total).toLocaleString("en-IN")}
+                ₹{Number(paymentSummary.summary?.totalPaid ?? 0).toLocaleString("en-IN")} / ₹{Number(total).toLocaleString("en-IN")}
               </span>
             </div>
             <div className="h-2 bg-gray-100 dark:bg-gray-800 rounded-full">
@@ -299,11 +329,11 @@ function SupportWorkflowTab({
             </div>
           </div>
 
-          {paymentSummary.summary.overdueCount > 0 && (
+          {(paymentSummary.summary?.overdueCount ?? 0) > 0 && (
             <div className="flex items-center gap-2 p-2.5 bg-red-50 dark:bg-red-950 rounded-lg border border-red-200 dark:border-red-800">
               <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
               <p className="text-xs text-red-700 dark:text-red-300">
-                {paymentSummary.summary.overdueCount} overdue installments — ₹{Number(paymentSummary.summary.overdueAmount ?? 0).toLocaleString("en-IN")}
+                {paymentSummary.summary?.overdueCount ?? 0} overdue installments — ₹{Number(paymentSummary.summary?.overdueAmount ?? 0).toLocaleString("en-IN")}
               </p>
               <Button
                 size="sm"
@@ -331,9 +361,9 @@ function SupportWorkflowTab({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Open: {customer.supportTickets.filter((t) => t.status === "open").length} · In Progress:{" "}
-          {customer.supportTickets.filter((t) => t.status === "in_progress").length} · Resolved:{" "}
-          {customer.supportTickets.filter((t) => t.status === "resolved").length}
+          Open: {(customer.supportTickets ?? []).filter((t) => t.status === "open").length} · In Progress:{" "}
+          {(customer.supportTickets ?? []).filter((t) => t.status === "in_progress").length} · Resolved:{" "}
+          {(customer.supportTickets ?? []).filter((t) => t.status === "resolved").length}
         </p>
       </div>
 
@@ -373,7 +403,7 @@ function SupportWorkflowTab({
                 const proposalNumber = makeProposalNumber(proposals.map((p) => p.proposalNumber))(
                   customer.companyName || customer.customerName,
                 );
-                const lineItems = customer.productLines.map((pl) => {
+                const lineItems = (customer.productLines ?? []).map((pl) => {
                   const qty = Number(pl.qty ?? 1) || 1;
                   const unitPrice = Number(pl.unitPrice ?? 0) || 0;
                   const discount = 0;
@@ -467,7 +497,8 @@ export default function CustomerProfile() {
   const users = useAppStore((s) => s.users);
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
-  const customer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
+  const rawCustomer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
+  const customer = rawCustomer ? ensureCustomerArrays(rawCustomer) : null;
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -489,6 +520,24 @@ export default function CustomerProfile() {
   const [briefLines, setBriefLines] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState("overview");
   const [productLineFilter, setProductLineFilter] = useState<string>("all");
+  const [newContactForm, setNewContactForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    designation: "",
+    setPrimary: false,
+  });
+  const [newTicketForm, setNewTicketForm] = useState({
+    subject: "",
+    description: "",
+    priority: "medium" as CustomerSupportTicket["priority"],
+    assignedTo: "",
+  });
+  const [logActivityForm, setLogActivityForm] = useState({
+    action: "",
+    description: "",
+    entityType: "",
+  });
 
   const canUpdate = can(me.role, "customers", "update");
   const canDelete = can(me.role, "customers", "delete");
@@ -504,9 +553,63 @@ export default function CustomerProfile() {
     refetchOnMount: "always",
   });
 
-  const openTicketsCount = customer?.supportTickets.filter(
-    (t) => t.status === "open" || t.status === "in_progress"
-  ).length ?? 0;
+  const openTicketsCount =
+    (customer?.supportTickets ?? []).filter((t) => t.status === "open" || t.status === "in_progress").length;
+
+  const dealScope = getScope(me.role, "deals");
+  const visibleDeals = visibleWithScope(dealScope, me, deals);
+  const customerDeals = customer
+    ? visibleDeals.filter((d) => d.customerId === customer.id && !d.deletedAt)
+    : [];
+  const wonDeal =
+    customerDeals.find((d) => d.dealStatus === "Closed/Won") ??
+    customerDeals.find((d) => String(d.stage || "").toLowerCase() === "won") ??
+    null;
+
+  useEffect(() => {
+    if (!customer) return;
+    const key = `AIBriefSeen:v1:${me.id}:${customer.id}`;
+    let seen = false;
+    try {
+      seen = localStorage.getItem(key) === "1";
+    } catch {
+      seen = false;
+    }
+    if (seen) return;
+    void (async () => {
+      const brief = await getCustomerBrief({
+        customerId: customer.id,
+        wonDeal: wonDeal ? { id: wonDeal.id, name: wonDeal.name } : null,
+      }).catch(() => null);
+      if (!brief) return;
+      const lines: string[] = [];
+      if (brief.lastInteraction) {
+        lines.push(
+          `Last: ${new Date(brief.lastInteraction.at).toLocaleString("en-IN")} — ${brief.lastInteraction.summary}`,
+        );
+      }
+      if (brief.delivery?.status) lines.push(`Delivery: ${brief.delivery.dealTitle} — ${brief.delivery.status}`);
+      if (brief.payments) {
+        lines.push(
+          `Payments: collected ₹${brief.payments.collected.toLocaleString("en-IN")}, pending ₹${brief.payments.pending.toLocaleString("en-IN")}`,
+        );
+        if (brief.payments.overdueCount > 0) {
+          lines.push(
+            `Overdue: ${brief.payments.overdueCount} installments (₹${brief.payments.overdueAmount.toLocaleString("en-IN")})`,
+          );
+        }
+      }
+      brief.nextSteps.forEach((s) => lines.push(`Next: ${s}`));
+      brief.risks.forEach((s) => lines.push(`Risk: ${s}`));
+      setBriefLines(lines);
+      setBriefOpen(true);
+      try {
+        localStorage.setItem(key, "1");
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [customer?.id, me.id, wonDeal?.id]);
 
   if (!customer) {
     return (
@@ -558,58 +661,6 @@ export default function CustomerProfile() {
             .map((pl) => pl.dealId)
             .filter((x): x is string => !!x && String(x).trim() !== ""),
         );
-
-  const dealScope = getScope(me.role, "deals");
-  const visibleDeals = visibleWithScope(dealScope, me, deals);
-  const customerDeals = visibleDeals.filter((d) => d.customerId === customer.id && !d.deletedAt);
-  const wonDeal =
-    customerDeals.find((d) => d.dealStatus === "Closed/Won") ??
-    customerDeals.find((d) => String(d.stage || "").toLowerCase() === "won") ??
-    null;
-
-  useEffect(() => {
-    const key = `AIBriefSeen:v1:${me.id}:${customer.id}`;
-    let seen = false;
-    try {
-      seen = localStorage.getItem(key) === "1";
-    } catch {
-      seen = false;
-    }
-    if (seen) return;
-    void (async () => {
-      const brief = await getCustomerBrief({
-        customerId: customer.id,
-        wonDeal: wonDeal ? { id: wonDeal.id, name: wonDeal.name } : null,
-      }).catch(() => null);
-      if (!brief) return;
-      const lines: string[] = [];
-      if (brief.lastInteraction) {
-        lines.push(
-          `Last: ${new Date(brief.lastInteraction.at).toLocaleString("en-IN")} — ${brief.lastInteraction.summary}`,
-        );
-      }
-      if (brief.delivery?.status) lines.push(`Delivery: ${brief.delivery.dealTitle} — ${brief.delivery.status}`);
-      if (brief.payments) {
-        lines.push(
-          `Payments: collected ₹${brief.payments.collected.toLocaleString("en-IN")}, pending ₹${brief.payments.pending.toLocaleString("en-IN")}`,
-        );
-        if (brief.payments.overdueCount > 0) {
-          lines.push(
-            `Overdue: ${brief.payments.overdueCount} installments (₹${brief.payments.overdueAmount.toLocaleString("en-IN")})`,
-          );
-        }
-      }
-      brief.nextSteps.forEach((s) => lines.push(`Next: ${s}`));
-      brief.risks.forEach((s) => lines.push(`Risk: ${s}`));
-      setBriefLines(lines);
-      setBriefOpen(true);
-      try {
-        localStorage.setItem(key, "1");
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, [customer.id, me.id, wonDeal]);
 
   return (
     <>
@@ -1369,9 +1420,8 @@ export default function CustomerProfile() {
                 </TableHeader>
                 <TableBody>
                   {customer.supportTickets.map((t) => (
-                    <>
+                    <Fragment key={t.id}>
                       <TableRow
-                        key={t.id}
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => setExpandedTicketId(expandedTicketId === t.id ? null : t.id)}
                       >
@@ -1379,39 +1429,117 @@ export default function CustomerProfile() {
                         <TableCell className="text-sm">{t.subject}</TableCell>
                         <TableCell>
                           <Badge variant="secondary" className={TICKET_PRIORITY_BADGE[t.priority] ?? "bg-muted"}>
-                            {t.priority}
+                            {t.priority ?? "—"}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className={TICKET_STATUS_BADGE[t.status] ?? "bg-muted"}>
-                            {t.status.replace("_", " ")}
+                            {String(t.status ?? "").replace(/_/g, " ") || "—"}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs">{t.assignedToName ?? "—"}</TableCell>
-                        <TableCell className="text-xs">{t.createdAt.slice(0, 10)}</TableCell>
-                        <TableCell className="text-xs">{t.updatedAt.slice(0, 10)}</TableCell>
+                        <TableCell className="text-xs">{t.createdAt?.slice(0, 10) ?? "—"}</TableCell>
+                        <TableCell className="text-xs">{t.updatedAt?.slice(0, 10) ?? "—"}</TableCell>
                         <TableCell>
                           {canManageTickets && (
-                            <Button variant="ghost" size="sm" className="h-7" onClick={(e) => e.stopPropagation()}>
-                              Edit
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedTicketId(expandedTicketId === t.id ? null : t.id);
+                              }}
+                            >
+                              {expandedTicketId === t.id ? "Collapse" : "Manage"}
                             </Button>
                           )}
                         </TableCell>
                       </TableRow>
                       {expandedTicketId === t.id && (
-                        <TableRow key={`${t.id}-detail`}>
+                        <TableRow>
                           <TableCell colSpan={8} className="bg-muted/30">
-                            <div className="p-3 space-y-2 text-sm">
-                              <p><strong>Description:</strong></p>
-                              <p className="text-muted-foreground whitespace-pre-wrap">{t.description}</p>
+                            <div className="p-3 space-y-4 text-sm">
+                              <div>
+                                <p className="font-medium mb-1">Description</p>
+                                <p className="text-muted-foreground whitespace-pre-wrap">{t.description || "—"}</p>
+                              </div>
                               {t.resolvedAt && (
                                 <p className="text-xs text-muted-foreground">Resolved: {formatDate(t.resolvedAt)}</p>
+                              )}
+                              {canManageTickets && (
+                                <div className="flex flex-wrap items-end gap-3 pt-1 border-t border-border/60">
+                                  <div className="space-y-1.5 min-w-[160px]">
+                                    <Label className="text-xs text-muted-foreground">Status</Label>
+                                    <Select
+                                      value={
+                                        ["open", "in_progress", "resolved", "closed"].includes(String(t.status))
+                                          ? t.status
+                                          : "open"
+                                      }
+                                      onValueChange={(v) => {
+                                        const status = v as CustomerSupportTicket["status"];
+                                        const patch: Partial<CustomerSupportTicket> = { status };
+                                        if (status === "resolved" || status === "closed") {
+                                          patch.resolvedAt = new Date().toISOString();
+                                        }
+                                        useAppStore.getState().updateSupportTicket(customer.id, t.id, patch);
+                                        useAppStore.getState().appendActivityLog(customer.id, {
+                                          id: "cal-" + makeId(),
+                                          action: "Ticket status updated",
+                                          description: `${t.ticketNumber}: ${status.replace(/_/g, " ")}`,
+                                          performedBy: me.id,
+                                          performedByName: me.name,
+                                          timestamp: new Date().toISOString(),
+                                          entityType: "support_ticket",
+                                          entityId: t.id,
+                                        });
+                                        toast({ title: "Ticket updated" });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-9 w-full sm:w-[200px]">
+                                        <SelectValue placeholder="Status" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="open">Open</SelectItem>
+                                        <SelectItem value="in_progress">In progress</SelectItem>
+                                        <SelectItem value="resolved">Resolved</SelectItem>
+                                        <SelectItem value="closed">Closed</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div className="space-y-1.5 min-w-[160px]">
+                                    <Label className="text-xs text-muted-foreground">Priority</Label>
+                                    <Select
+                                      value={
+                                        ["low", "medium", "high", "critical"].includes(String(t.priority))
+                                          ? t.priority
+                                          : "medium"
+                                      }
+                                      onValueChange={(v) => {
+                                        const priority = v as CustomerSupportTicket["priority"];
+                                        useAppStore.getState().updateSupportTicket(customer.id, t.id, { priority });
+                                        toast({ title: "Priority updated" });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-9 w-full sm:w-[200px]">
+                                        <SelectValue placeholder="Priority" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="low">Low</SelectItem>
+                                        <SelectItem value="medium">Medium</SelectItem>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="critical">Critical</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
                               )}
                             </div>
                           </TableCell>
                         </TableRow>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                   {customer.supportTickets.length === 0 && (
                     <TableRow>
@@ -1430,29 +1558,44 @@ export default function CustomerProfile() {
             <TabsContent value="activity" className="mt-6 space-y-4">
               <Card className="border border-border overflow-hidden">
                 <CardHeader className="flex flex-row items-center justify-between px-6 py-4 border-b border-border">
-                  <CardTitle className="text-base font-semibold">Activity (live)</CardTitle>
+                  <CardTitle className="text-base font-semibold">Activity</CardTitle>
                   <Button size="sm" variant="outline" className="shrink-0" onClick={() => setLogActivityOpen(true)}>
                     <Plus className="w-4 h-4 mr-1" /> Log Activity
                   </Button>
                 </CardHeader>
-                <CardContent className="p-6">
-                  <CustomerActivityLiveFeed customerId={customer.id} dealIdAllowlist={dealIdAllowlist} />
+                <CardContent className="p-6 space-y-8">
                   {customer.activityLog.length > 0 && (
-                    <div className="mt-8 space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase">Local notes</p>
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        CRM activity log
+                      </p>
                       <div className="space-y-3">
-                        {customer.activityLog.slice(0, 10).map((entry) => (
-                          <div key={entry.id} className="flex gap-3 items-start text-sm">
-                            <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-muted" />
-                            <div>
-                              <p className="font-medium">{entry.action}</p>
-                              <p className="text-xs text-muted-foreground">{entry.description}</p>
+                        {customer.activityLog
+                          .slice()
+                          .sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""))
+                          .slice(0, 50)
+                          .map((entry) => (
+                            <div key={entry.id} className="flex gap-3 items-start border-b border-border/60 pb-3 last:border-0 text-sm">
+                              <div className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0 bg-blue-500/80" />
+                              <div className="min-w-0">
+                                <p className="font-medium">{entry.action}</p>
+                                <p className="text-xs text-muted-foreground whitespace-pre-wrap">{entry.description}</p>
+                                <p className="text-[11px] text-muted-foreground mt-1">
+                                  {entry.performedByName} · {entry.timestamp ? formatDate(entry.timestamp) : "—"}
+                                  {entry.entityType ? ` · ${entry.entityType}` : ""}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
                       </div>
                     </div>
                   )}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Live feed (proposals, deals, payments)
+                    </p>
+                    <CustomerActivityLiveFeed customerId={customer.id} dealIdAllowlist={dealIdAllowlist} />
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1522,28 +1665,236 @@ export default function CustomerProfile() {
         isPdfLoading={pdfLoading}
       />
 
-      {/* Placeholder dialogs - can be expanded with full forms */}
-      <Dialog open={addContactOpen} onOpenChange={setAddContactOpen}>
+      <Dialog
+        open={addContactOpen}
+        onOpenChange={(open) => {
+          setAddContactOpen(open);
+          if (open) {
+            setNewContactForm({ name: "", email: "", phone: "", designation: "", setPrimary: false });
+          }
+        }}
+      >
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Contact</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Add contact form (Name, Email, Phone, Set as Primary).</p>
+          <DialogHeader>
+            <DialogTitle>Add Contact</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-contact-name">Name</Label>
+              <Input
+                id="new-contact-name"
+                value={newContactForm.name}
+                onChange={(e) => setNewContactForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Full name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-contact-email">Email</Label>
+              <Input
+                id="new-contact-email"
+                type="email"
+                value={newContactForm.email}
+                onChange={(e) => setNewContactForm((f) => ({ ...f, email: e.target.value }))}
+                placeholder="name@company.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-contact-phone">Phone</Label>
+              <Input
+                id="new-contact-phone"
+                value={newContactForm.phone}
+                onChange={(e) => setNewContactForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-contact-role">Designation</Label>
+              <Input
+                id="new-contact-role"
+                value={newContactForm.designation}
+                onChange={(e) => setNewContactForm((f) => ({ ...f, designation: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="new-contact-primary"
+                checked={newContactForm.setPrimary}
+                onCheckedChange={(c) => setNewContactForm((f) => ({ ...f, setPrimary: c === true }))}
+              />
+              <Label htmlFor="new-contact-primary" className="text-sm font-normal cursor-pointer">
+                Set as primary contact
+              </Label>
+            </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddContactOpen(false)}>Cancel</Button>
-            <Button onClick={() => setAddContactOpen(false)}>Save</Button>
+            <Button variant="outline" onClick={() => setAddContactOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!newContactForm.name.trim() || !newContactForm.email.trim()) {
+                  toast({ title: "Name and email are required", variant: "destructive" });
+                  return;
+                }
+                const cid = "cc-" + makeId();
+                const wantPrimary = newContactForm.setPrimary || customer.contacts.length === 0;
+                useAppStore.getState().addContact(customer.id, {
+                  id: cid,
+                  name: newContactForm.name.trim(),
+                  email: newContactForm.email.trim(),
+                  phone: newContactForm.phone.trim() || undefined,
+                  designation: newContactForm.designation.trim() || undefined,
+                  isPrimary: false,
+                });
+                if (wantPrimary) useAppStore.getState().setPrimaryContact(customer.id, cid);
+                useAppStore.getState().appendActivityLog(customer.id, {
+                  id: "cal-" + makeId(),
+                  action: "Contact added",
+                  description: newContactForm.name.trim(),
+                  performedBy: me.id,
+                  performedByName: me.name,
+                  timestamp: new Date().toISOString(),
+                  entityType: "contact",
+                  entityId: cid,
+                });
+                toast({ title: "Contact added" });
+                setAddContactOpen(false);
+              }}
+            >
+              Save
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={addTicketOpen} onOpenChange={setAddTicketOpen}>
+      <Dialog
+        open={addTicketOpen}
+        onOpenChange={(open) => {
+          setAddTicketOpen(open);
+          if (open) {
+            setNewTicketForm({
+              subject: "",
+              description: "",
+              priority: "medium",
+              assignedTo: "",
+            });
+          }
+        }}
+      >
         <DialogContent>
-          <DialogHeader><DialogTitle>New Ticket</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Subject, Description, Priority, Assigned To.</p>
+          <DialogHeader>
+            <DialogTitle>New Support Ticket</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="new-ticket-subject">Subject</Label>
+              <Input
+                id="new-ticket-subject"
+                value={newTicketForm.subject}
+                onChange={(e) => setNewTicketForm((f) => ({ ...f, subject: e.target.value }))}
+                placeholder="Short summary"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-ticket-desc">Description</Label>
+              <Textarea
+                id="new-ticket-desc"
+                rows={4}
+                value={newTicketForm.description}
+                onChange={(e) => setNewTicketForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="What should support know?"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select
+                  value={newTicketForm.priority}
+                  onValueChange={(v) =>
+                    setNewTicketForm((f) => ({ ...f, priority: v as CustomerSupportTicket["priority"] }))
+                  }
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Assign to</Label>
+                <Select
+                  value={newTicketForm.assignedTo || "__unassigned__"}
+                  onValueChange={(v) =>
+                    setNewTicketForm((f) => ({ ...f, assignedTo: v === "__unassigned__" ? "" : v }))
+                  }
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Unassigned" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unassigned__">Unassigned</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddTicketOpen(false)}>Cancel</Button>
-            <Button onClick={() => setAddTicketOpen(false)}>Create</Button>
+            <Button variant="outline" onClick={() => setAddTicketOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!newTicketForm.subject.trim()) {
+                  toast({ title: "Subject is required", variant: "destructive" });
+                  return;
+                }
+                const tid = "tk-" + makeId();
+                const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}`;
+                const now = new Date().toISOString();
+                const assignee = newTicketForm.assignedTo
+                  ? users.find((u) => u.id === newTicketForm.assignedTo)
+                  : undefined;
+                const ticket: CustomerSupportTicket = {
+                  id: tid,
+                  ticketNumber,
+                  subject: newTicketForm.subject.trim(),
+                  description: newTicketForm.description.trim() || "—",
+                  status: "open",
+                  priority: newTicketForm.priority,
+                  createdBy: me.id,
+                  createdByName: me.name,
+                  assignedTo: assignee?.id,
+                  assignedToName: assignee?.name,
+                  createdAt: now,
+                  updatedAt: now,
+                };
+                useAppStore.getState().addSupportTicket(customer.id, ticket);
+                useAppStore.getState().appendActivityLog(customer.id, {
+                  id: "cal-" + makeId(),
+                  action: "Support ticket created",
+                  description: `${ticketNumber}: ${ticket.subject}`,
+                  performedBy: me.id,
+                  performedByName: me.name,
+                  timestamp: now,
+                  entityType: "support_ticket",
+                  entityId: tid,
+                });
+                toast({ title: "Ticket created", description: ticketNumber });
+                setAddTicketOpen(false);
+              }}
+            >
+              Create
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1583,23 +1934,66 @@ export default function CustomerProfile() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={logActivityOpen} onOpenChange={setLogActivityOpen}>
+      <Dialog
+        open={logActivityOpen}
+        onOpenChange={(open) => {
+          setLogActivityOpen(open);
+          if (open) setLogActivityForm({ action: "", description: "", entityType: "" });
+        }}
+      >
         <DialogContent>
-          <DialogHeader><DialogTitle>Log Activity</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Action, Description, Entity Type.</p>
+          <DialogHeader>
+            <DialogTitle>Log Activity</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="log-activity-action">Action</Label>
+              <Input
+                id="log-activity-action"
+                value={logActivityForm.action}
+                onChange={(e) => setLogActivityForm((f) => ({ ...f, action: e.target.value }))}
+                placeholder="e.g. Called customer, Email sent"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="log-activity-desc">Description</Label>
+              <Textarea
+                id="log-activity-desc"
+                rows={3}
+                value={logActivityForm.description}
+                onChange={(e) => setLogActivityForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="Details for the activity log"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="log-activity-entity">Related entity (optional)</Label>
+              <Input
+                id="log-activity-entity"
+                value={logActivityForm.entityType}
+                onChange={(e) => setLogActivityForm((f) => ({ ...f, entityType: e.target.value }))}
+                placeholder="e.g. deal, proposal, invoice"
+              />
+            </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setLogActivityOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setLogActivityOpen(false)}>
+              Cancel
+            </Button>
             <Button
               onClick={() => {
+                if (!logActivityForm.action.trim() || !logActivityForm.description.trim()) {
+                  toast({ title: "Action and description are required", variant: "destructive" });
+                  return;
+                }
+                const ts = new Date().toISOString();
                 useAppStore.getState().appendActivityLog(customer.id, {
                   id: "cal-" + makeId(),
-                  action: "Activity logged",
-                  description: "Manual activity entry",
+                  action: logActivityForm.action.trim(),
+                  description: logActivityForm.description.trim(),
                   performedBy: me.id,
                   performedByName: me.name,
-                  timestamp: new Date().toISOString(),
+                  timestamp: ts,
+                  entityType: logActivityForm.entityType.trim() || undefined,
                 });
                 toast({ title: "Activity logged" });
                 setLogActivityOpen(false);

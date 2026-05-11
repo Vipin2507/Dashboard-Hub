@@ -456,7 +456,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addContact: (customerId, contact) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, contacts: [...c.contacts, contact] } : c
+        c.id === customerId ? { ...c, contacts: [...(c.contacts ?? []), contact] } : c
       ),
     }));
   },
@@ -465,7 +465,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({
       customers: s.customers.map(c =>
         c.id === customerId
-          ? { ...c, contacts: c.contacts.map(co => (co.id === contactId ? { ...co, ...updates } : co)) }
+          ? { ...c, contacts: (c.contacts ?? []).map(co => (co.id === contactId ? { ...co, ...updates } : co)) }
           : c
       ),
     }));
@@ -474,7 +474,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteContact: (customerId, contactId) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, contacts: c.contacts.filter(co => co.id !== contactId) } : c
+        c.id === customerId ? { ...c, contacts: (c.contacts ?? []).filter(co => co.id !== contactId) } : c
       ),
     }));
   },
@@ -483,7 +483,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({
       customers: s.customers.map(c =>
         c.id === customerId
-          ? { ...c, contacts: c.contacts.map(co => ({ ...co, isPrimary: co.id === contactId })) }
+          ? { ...c, contacts: (c.contacts ?? []).map(co => ({ ...co, isPrimary: co.id === contactId })) }
           : c
       ),
     }));
@@ -492,7 +492,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addNote: (customerId, note) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, notes: [note, ...c.notes] } : c
+        c.id === customerId ? { ...c, notes: [note, ...(c.notes ?? [])] } : c
       ),
     }));
   },
@@ -502,7 +502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({
       customers: s.customers.map(c =>
         c.id === customerId
-          ? { ...c, notes: c.notes.map(n => (n.id === noteId ? { ...n, content, updatedAt: now } : n)) }
+          ? { ...c, notes: (c.notes ?? []).map(n => (n.id === noteId ? { ...n, content, updatedAt: now } : n)) }
           : c
       ),
     }));
@@ -511,7 +511,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteNote: (customerId, noteId) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, notes: c.notes.filter(n => n.id !== noteId) } : c
+        c.id === customerId ? { ...c, notes: (c.notes ?? []).filter(n => n.id !== noteId) } : c
       ),
     }));
   },
@@ -519,7 +519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addSupportTicket: (customerId, ticket) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, supportTickets: [ticket, ...c.supportTickets] } : c
+        c.id === customerId ? { ...c, supportTickets: [ticket, ...(c.supportTickets ?? [])] } : c
       ),
     }));
   },
@@ -531,7 +531,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         c.id === customerId
           ? {
               ...c,
-              supportTickets: c.supportTickets.map(t =>
+              supportTickets: (c.supportTickets ?? []).map(t =>
                 t.id === ticketId ? { ...t, ...updates, updatedAt: now } : t
               ),
             }
@@ -543,7 +543,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   appendActivityLog: (customerId, entry) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, activityLog: [entry, ...c.activityLog] } : c
+        c.id === customerId ? { ...c, activityLog: [entry, ...(c.activityLog ?? [])] } : c
       ),
     }));
   },
@@ -552,8 +552,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({
       customers: s.customers.map(c => {
         if (c.id !== customerId) return c;
-        const totalRevenue = c.totalRevenue + payment.amount;
-        return { ...c, payments: [payment, ...c.payments], totalRevenue };
+        const totalRevenue = (c.totalRevenue ?? 0) + payment.amount;
+        return { ...c, payments: [payment, ...(c.payments ?? [])], totalRevenue };
       }),
     }));
   },
@@ -561,7 +561,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addInvoice: (customerId, invoice) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, invoices: [invoice, ...c.invoices] } : c
+        c.id === customerId ? { ...c, invoices: [invoice, ...(c.invoices ?? [])] } : c
       ),
     }));
   },
@@ -570,7 +570,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(s => ({
       customers: s.customers.map(c =>
         c.id === customerId
-          ? { ...c, invoices: c.invoices.map(inv => (inv.id === invoiceId ? { ...inv, status } : inv)) }
+          ? { ...c, invoices: (c.invoices ?? []).map(inv => (inv.id === invoiceId ? { ...inv, status } : inv)) }
           : c
       ),
     }));
@@ -579,7 +579,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   addProductLine: (customerId, line) => {
     set(s => ({
       customers: s.customers.map(c =>
-        c.id === customerId ? { ...c, productLines: [line, ...c.productLines] } : c
+        c.id === customerId ? { ...c, productLines: [line, ...(c.productLines ?? [])] } : c
       ),
     }));
   },
