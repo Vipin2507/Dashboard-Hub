@@ -520,6 +520,7 @@ export default function CustomerProfile() {
   const [briefLines, setBriefLines] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState("overview");
   const [productLineFilter, setProductLineFilter] = useState<string>("all");
+  const [draftProductLineFilter, setDraftProductLineFilter] = useState<string>("all");
   const [newContactForm, setNewContactForm] = useState({
     name: "",
     email: "",
@@ -538,6 +539,12 @@ export default function CustomerProfile() {
     description: "",
     entityType: "",
   });
+
+  useEffect(() => {
+    setDraftProductLineFilter(productLineFilter);
+  }, [productLineFilter]);
+
+  const hasPendingProductLineFilter = draftProductLineFilter !== productLineFilter;
 
   const canUpdate = can(me.role, "customers", "update");
   const canDelete = can(me.role, "customers", "delete");
@@ -837,7 +844,7 @@ export default function CustomerProfile() {
                       </div>
                       <div className="w-full sm:w-72">
                         <Label className="sr-only">Product line</Label>
-                        <Select value={productLineFilter} onValueChange={setProductLineFilter}>
+                        <Select value={draftProductLineFilter} onValueChange={setDraftProductLineFilter}>
                           <SelectTrigger className="h-9 w-full">
                             <SelectValue placeholder="All product lines" />
                           </SelectTrigger>
@@ -850,6 +857,25 @@ export default function CustomerProfile() {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-9"
+                          disabled={!hasPendingProductLineFilter}
+                          onClick={() => setDraftProductLineFilter("all")}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          type="button"
+                          className="h-9 bg-blue-600 hover:bg-blue-700 text-white"
+                          disabled={!hasPendingProductLineFilter}
+                          onClick={() => setProductLineFilter(draftProductLineFilter)}
+                        >
+                          Apply
+                        </Button>
                       </div>
                     </div>
                   )}

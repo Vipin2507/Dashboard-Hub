@@ -107,6 +107,13 @@ export default function DeliveryPage() {
   });
 
   const [dealFilter, setDealFilter] = useState<"all" | "active" | "won">("all");
+  const [draftDealFilter, setDraftDealFilter] = useState<"all" | "active" | "won">("all");
+
+  useEffect(() => {
+    setDraftDealFilter(dealFilter);
+  }, [dealFilter]);
+
+  const hasPendingFilterChanges = draftDealFilter !== dealFilter;
 
   const rows = useMemo(() => {
     const all = dealsQ.data ?? [];
@@ -215,7 +222,7 @@ export default function DeliveryPage() {
         subtitle="Manage post-sales delivery stages for won deals"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Select value={dealFilter} onValueChange={(v) => setDealFilter(v as typeof dealFilter)}>
+            <Select value={draftDealFilter} onValueChange={(v) => setDraftDealFilter(v as typeof dealFilter)}>
               <SelectTrigger className="h-9 w-[170px]">
                 <SelectValue />
               </SelectTrigger>
@@ -225,6 +232,15 @@ export default function DeliveryPage() {
                 <SelectItem value="won">Won</SelectItem>
               </SelectContent>
             </Select>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9"
+              disabled={!hasPendingFilterChanges}
+              onClick={() => setDealFilter(draftDealFilter)}
+            >
+              Apply
+            </Button>
             <Button
               type="button"
               variant="outline"

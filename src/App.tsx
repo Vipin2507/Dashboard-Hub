@@ -65,9 +65,55 @@ function DataBootstrapper() {
   return null;
 }
 
+function AutomationBootstrapper() {
+  const authUserId = useAppStore((s) => s.authUserId);
+  const setAutomationTemplates = useAppStore((s) => s.setAutomationTemplates);
+  const setAutomationLogs = useAppStore((s) => s.setAutomationLogs);
+  const setAutomationSettings = useAppStore((s) => s.setAutomationSettings);
+  const automationSettings = useAppStore((s) => s.automationSettings);
+
+  useEffect(() => {
+    if (!authUserId) return;
+    let mounted = true;
+    const sync = async () => {
+      try {
+        const [tplRes, logRes, settingsRes] = await Promise.all([
+          fetch(apiUrl("/api/automation/templates")),
+          fetch(apiUrl("/api/automation/logs")),
+          fetch(apiUrl("/api/automation/settings")),
+        ]);
+        if (!mounted) return;
+        if (tplRes.ok) setAutomationTemplates(await tplRes.json());
+        if (logRes.ok) setAutomationLogs(await logRes.json());
+        if (settingsRes.ok) {
+          const serverSettings = (await settingsRes.json()) as Partial<typeof automationSettings>;
+          if (serverSettings && Object.keys(serverSettings).length > 0) {
+            setAutomationSettings({ ...automationSettings, ...serverSettings });
+          }
+        }
+      } catch {
+        // ignore offline API
+      }
+    };
+    void sync();
+    return () => {
+      mounted = false;
+    };
+  }, [
+    authUserId,
+    automationSettings,
+    setAutomationLogs,
+    setAutomationSettings,
+    setAutomationTemplates,
+  ]);
+
+  return null;
+}
+
 const App = () => (
   <>
     <DataBootstrapper />
+    <AutomationBootstrapper />
     <TooltipProvider>
       <Toaster />
       <Sonner />

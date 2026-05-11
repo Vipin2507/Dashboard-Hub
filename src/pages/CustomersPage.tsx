@@ -119,6 +119,35 @@ export default function CustomersPage() {
   const [leadFilter, setLeadFilter] = useState('');
   const [salesFilter, setSalesFilter] = useState<string | 'all'>('all');
   const [regionFilter, setRegionFilter] = useState<string | 'all'>('all');
+  const [draftLeadFilter, setDraftLeadFilter] = useState('');
+  const [draftSalesFilter, setDraftSalesFilter] = useState<string | 'all'>('all');
+  const [draftRegionFilter, setDraftRegionFilter] = useState<string | 'all'>('all');
+
+  useEffect(() => {
+    setDraftLeadFilter(leadFilter);
+    setDraftSalesFilter(salesFilter);
+    setDraftRegionFilter(regionFilter);
+  }, [leadFilter, salesFilter, regionFilter]);
+
+  const hasPendingFilterChanges =
+    draftLeadFilter !== leadFilter || draftSalesFilter !== salesFilter || draftRegionFilter !== regionFilter;
+
+  const applyFilters = () => {
+    setLeadFilter(draftLeadFilter);
+    setSalesFilter(draftSalesFilter);
+    setRegionFilter(draftRegionFilter);
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setDraftLeadFilter('');
+    setDraftSalesFilter('all');
+    setDraftRegionFilter('all');
+    setLeadFilter('');
+    setSalesFilter('all');
+    setRegionFilter('all');
+    setPage(1);
+  };
 
   const all = customersQuery.data ?? [];
   const scope = getScope(me.role, 'customers');
@@ -277,12 +306,12 @@ export default function CustomersPage() {
               <Input
                 className="h-8 text-xs w-32"
                 placeholder="Lead ID"
-                value={leadFilter}
-                onChange={e => { setPage(1); setLeadFilter(e.target.value); }}
+                value={draftLeadFilter}
+                onChange={e => setDraftLeadFilter(e.target.value)}
               />
               <Select
-                value={salesFilter}
-                onValueChange={v => { setPage(1); setSalesFilter(v as typeof salesFilter); }}
+                value={draftSalesFilter}
+                onValueChange={v => setDraftSalesFilter(v as typeof salesFilter)}
               >
                 <SelectTrigger className="h-8 text-xs w-36">
                   <SelectValue placeholder="Sales exec" />
@@ -297,8 +326,8 @@ export default function CustomersPage() {
                 </SelectContent>
               </Select>
               <Select
-                value={regionFilter}
-                onValueChange={v => { setPage(1); setRegionFilter(v as typeof regionFilter); }}
+                value={draftRegionFilter}
+                onValueChange={v => setDraftRegionFilter(v as typeof regionFilter)}
               >
                 <SelectTrigger className="h-8 text-xs w-32">
                   <SelectValue placeholder="Region" />
@@ -310,6 +339,23 @@ export default function CustomersPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-8"
+                disabled={!hasPendingFilterChanges}
+                onClick={clearFilters}
+              >
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                className="text-xs h-8 bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={!hasPendingFilterChanges}
+                onClick={applyFilters}
+              >
+                Apply
+              </Button>
             </div>
             <div className="flex rounded-md border border-border bg-muted text-xs overflow-hidden">
               <button

@@ -1314,12 +1314,16 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
 
 function LogsTab() {
   const logs = useAppStore((s) => s.automationLogs);
+  const setAutomationLogs = useAppStore((s) => s.setAutomationLogs);
 
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const totalPages = Math.max(1, Math.ceil(logs.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const paginatedLogs = logs.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearFailedConfirmOpen, setClearFailedConfirmOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const STATUS_STYLE: Record<AutomationLog["status"], string> = {
     sent: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -1337,8 +1341,114 @@ function LogsTab() {
     };
   }, [logs]);
 
+  const exportCsv = () => {
+    const cols = [
+      "sentAt",
+      "status",
+      "channel",
+      "trigger",
+      "templateId",
+      "templateName",
+      "recipient",
+      "recipientName",
+      "entityType",
+      "entityId",
+      "entityName",
+      "errorMessage",
+      "n8nExecutionId",
+    ] as const;
+
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      // CSV-safe quoting
+      const needs = /[",\n\r]/.test(s);
+      const out = s.replace(/"/g, '""');
+      return needs ? `"${out}"` : out;
+    };
+
+    const header = cols.join(",");
+    const rows = logs.map((l) =>
+      [
+        l.sentAt,
+        l.status,
+        l.channel,
+        l.trigger,
+        l.templateId,
+        l.templateName,
+        l.recipient,
+        l.recipientName,
+        l.entityType,
+        l.entityId,
+        l.entityName,
+        l.errorMessage ?? "",
+        l.n8nExecutionId ?? "",
+      ]
+        .map(esc)
+        .join(","),
+    );
+    const csv = [header, ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.download = `automation-logs-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: "CSV exported" });
+  };
+
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Activity logs are stored on the server (up to 1000 recent entries).
+        </p>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-8" onClick={exportCsv} disabled={logs.length === 0}>
+            Export CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={async () => {
+              try {
+                const res = await fetch(apiUrl("/api/automation/logs"));
+                if (!res.ok) throw new Error(String(res.status));
+                const items = (await res.json()) as AutomationLog[];
+                setAutomationLogs(items);
+                toast({ title: "Logs refreshed" });
+              } catch {
+                toast({ title: "Refresh failed", variant: "destructive" });
+              }
+            }}
+          >
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-destructive"
+            onClick={() => setClearFailedConfirmOpen(true)}
+            disabled={stats.failed === 0}
+          >
+            Clear failed
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-destructive"
+            onClick={() => setClearConfirmOpen(true)}
+            disabled={logs.length === 0}
+          >
+            Clear logs
+          </Button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: "Total Sent", value: stats.sent, color: "text-emerald-600" },
@@ -1379,6 +1489,9 @@ function LogsTab() {
                 <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 lg:table-cell md:px-4 md:py-3">
                   Entity
                 </th>
+                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
+                  Manage
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -1408,11 +1521,36 @@ function LogsTab() {
                   <td className="hidden px-3 py-3 lg:table-cell md:px-4 md:py-3.5">
                     <span className="text-xs text-gray-500">{log.entityName}</span>
                   </td>
+                  <td className="px-3 py-3 text-right md:px-4 md:py-3.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-destructive"
+                      disabled={deletingId === log.id}
+                      onClick={async () => {
+                        setDeletingId(log.id);
+                        try {
+                          const res = await fetch(apiUrl(`/api/automation/logs/${encodeURIComponent(log.id)}`), {
+                            method: "DELETE",
+                          });
+                          if (!res.ok) throw new Error(String(res.status));
+                          setAutomationLogs(useAppStore.getState().automationLogs.filter((l) => l.id !== log.id));
+                          toast({ title: "Log removed" });
+                        } catch {
+                          toast({ title: "Delete failed", variant: "destructive" });
+                        } finally {
+                          setDeletingId(null);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
               {paginatedLogs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
                     No automation logs yet.
                   </td>
                 </tr>
@@ -1432,6 +1570,68 @@ function LogsTab() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all automation logs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete the entire automation activity log history from the server.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground"
+              onClick={async () => {
+                try {
+                  const res = await fetch(apiUrl("/api/automation/logs"), { method: "DELETE" });
+                  if (!res.ok) throw new Error(String(res.status));
+                  setAutomationLogs([]);
+                  toast({ title: "Logs cleared" });
+                } catch {
+                  toast({ title: "Clear failed", variant: "destructive" });
+                } finally {
+                  setClearConfirmOpen(false);
+                }
+              }}
+            >
+              Clear
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={clearFailedConfirmOpen} onOpenChange={setClearFailedConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear failed logs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete only logs with status <strong>failed</strong> from the server.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground"
+              onClick={async () => {
+                try {
+                  const res = await fetch(apiUrl("/api/automation/logs?status=failed"), { method: "DELETE" });
+                  if (!res.ok) throw new Error(String(res.status));
+                  setAutomationLogs(useAppStore.getState().automationLogs.filter((l) => l.status !== "failed"));
+                  toast({ title: "Failed logs cleared" });
+                } catch {
+                  toast({ title: "Clear failed logs failed", variant: "destructive" });
+                } finally {
+                  setClearFailedConfirmOpen(false);
+                }
+              }}
+            >
+              Clear failed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

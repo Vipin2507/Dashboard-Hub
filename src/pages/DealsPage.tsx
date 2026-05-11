@@ -443,6 +443,14 @@ export default function DealsPage() {
   const [teamFilter, setTeamFilter] = useState("all");
   const [regionFilter, setRegionFilter] = useState("all");
   const [serviceFilter, setServiceFilter] = useState("all");
+  // Draft filters (edit, then Apply)
+  const [draftSearch, setDraftSearch] = useState("");
+  const [draftStageFilter, setDraftStageFilter] = useState("all");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DealPipelineStatus>("all");
+  const [draftOwnerFilter, setDraftOwnerFilter] = useState("all");
+  const [draftTeamFilter, setDraftTeamFilter] = useState("all");
+  const [draftRegionFilter, setDraftRegionFilter] = useState("all");
+  const [draftServiceFilter, setDraftServiceFilter] = useState("all");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
@@ -1112,6 +1120,52 @@ export default function DealsPage() {
     setSearchParams(next, { replace: true });
   };
 
+  useEffect(() => {
+    setDraftSearch(search);
+    setDraftStageFilter(stageFilter);
+    setDraftStatusFilter(statusFilter);
+    setDraftOwnerFilter(ownerFilter);
+    setDraftTeamFilter(teamFilter);
+    setDraftRegionFilter(regionFilter);
+    setDraftServiceFilter(serviceFilter);
+  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter]);
+
+  const hasPendingFilterChanges =
+    draftSearch !== search ||
+    draftStageFilter !== stageFilter ||
+    draftStatusFilter !== statusFilter ||
+    draftOwnerFilter !== ownerFilter ||
+    draftTeamFilter !== teamFilter ||
+    draftRegionFilter !== regionFilter ||
+    draftServiceFilter !== serviceFilter;
+
+  const applyFilters = () => {
+    setSearch(draftSearch);
+    setStageFilter(draftStageFilter);
+    setStatusFilterAndUrl(draftStatusFilter);
+    setOwnerFilter(draftOwnerFilter);
+    setTeamFilter(draftTeamFilter);
+    setRegionFilter(draftRegionFilter);
+    setServiceFilter(draftServiceFilter);
+  };
+
+  const clearFilters = () => {
+    setDraftSearch("");
+    setDraftStageFilter("all");
+    setDraftStatusFilter("all");
+    setDraftOwnerFilter("all");
+    setDraftTeamFilter("all");
+    setDraftRegionFilter("all");
+    setDraftServiceFilter("all");
+    setSearch("");
+    setStageFilter("all");
+    setStatusFilterAndUrl("all");
+    setOwnerFilter("all");
+    setTeamFilter("all");
+    setRegionFilter("all");
+    setServiceFilter("all");
+  };
+
   const openPaymentPlanDialog = useCallback(() => {
     if (!sheetDeal?.id) return;
     setPaymentPlanStartDate(new Date().toISOString().slice(0, 10));
@@ -1447,13 +1501,13 @@ export default function DealsPage() {
                 <Input
                   className="pl-8 h-9 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
                   placeholder="Search deal, customer..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  value={draftSearch}
+                  onChange={(e) => setDraftSearch(e.target.value)}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:col-span-8 lg:grid-cols-6">
-                <Select value={stageFilter} onValueChange={setStageFilter}>
+                <Select value={draftStageFilter} onValueChange={setDraftStageFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All stages" />
                   </SelectTrigger>
@@ -1467,7 +1521,7 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={statusFilter} onValueChange={(v) => setStatusFilterAndUrl(v as "all" | DealPipelineStatus)}>
+                <Select value={draftStatusFilter} onValueChange={(v) => setDraftStatusFilter(v as "all" | DealPipelineStatus)}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="Deal status" />
                   </SelectTrigger>
@@ -1481,7 +1535,7 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={ownerFilter} onValueChange={setOwnerFilter}>
+                <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All owners" />
                   </SelectTrigger>
@@ -1495,7 +1549,7 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={teamFilter} onValueChange={setTeamFilter}>
+                <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All teams" />
                   </SelectTrigger>
@@ -1509,7 +1563,7 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={regionFilter} onValueChange={setRegionFilter}>
+                <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All regions" />
                   </SelectTrigger>
@@ -1523,7 +1577,7 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={serviceFilter} onValueChange={setServiceFilter}>
+                <Select value={draftServiceFilter} onValueChange={setDraftServiceFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
                     <SelectValue placeholder="All services" />
                   </SelectTrigger>
@@ -1537,6 +1591,15 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="button" variant="outline" className="h-9" onClick={clearFilters} disabled={!hasPendingFilterChanges}>
+                Clear
+              </Button>
+              <Button type="button" className="h-9 bg-blue-600 hover:bg-blue-700 text-white" onClick={applyFilters} disabled={!hasPendingFilterChanges}>
+                Apply
+              </Button>
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-1 pt-1">

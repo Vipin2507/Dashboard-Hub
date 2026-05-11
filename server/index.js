@@ -1950,6 +1950,22 @@ app.put("/api/automation/logs/:id", (req, res) => {
   res.json(log);
 });
 
+app.delete("/api/automation/logs/:id", (req, res) => {
+  const info = db.prepare("DELETE FROM automation_logs WHERE id = ?").run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+});
+
+app.delete("/api/automation/logs", (req, res) => {
+  const status = String(req.query?.status ?? "").trim();
+  if (status) {
+    db.prepare("DELETE FROM automation_logs WHERE status = ?").run(status);
+    return res.json({ ok: true });
+  }
+  db.prepare("DELETE FROM automation_logs").run();
+  res.json({ ok: true });
+});
+
 app.get("/api/automation/settings", (_req, res) => {
   const row = db.prepare("SELECT data FROM automation_settings WHERE id = 1").get();
   const settings = row ? parseJsonSafe(row.data, {}) : {};

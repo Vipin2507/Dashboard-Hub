@@ -287,6 +287,14 @@ export default function Proposals() {
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [page, setPage] = useState(1);
+  // Draft filters (edit, then Apply)
+  const [draftSearch, setDraftSearch] = useState("");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">("all");
+  const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(false);
+  const [draftDateFrom, setDraftDateFrom] = useState("");
+  const [draftDateTo, setDraftDateTo] = useState("");
+  const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>("all");
+  const [draftSortBy, setDraftSortBy] = useState<SortKey>("date");
   const statusFromUrl = searchParams.get("status");
   const ownerFromUrl = searchParams.get("owner");
   const teamFromUrl = searchParams.get("team");
@@ -308,8 +316,68 @@ export default function Proposals() {
   const [deliveryAssigneeId, setDeliveryAssigneeId] = useState<string>("");
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
+  const [draftTeamQueryFilter, setDraftTeamQueryFilter] = useState<string>("all");
+  const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+
+  useEffect(() => {
+    setDraftSearch(search);
+    setDraftStatusFilter(statusFilter);
+    setDraftSuspectWonOnly(suspectWonOnly);
+    setDraftDateFrom(dateFrom);
+    setDraftDateTo(dateTo);
+    setDraftAssignedToFilter(assignedToFilter);
+    setDraftSortBy(sortBy);
+    setDraftTeamQueryFilter(teamQueryFilter);
+    setDraftRegionQueryFilter(regionQueryFilter);
+  }, [search, statusFilter, suspectWonOnly, dateFrom, dateTo, assignedToFilter, sortBy, teamQueryFilter, regionQueryFilter]);
+
+  const hasPendingFilterChanges =
+    draftSearch !== search ||
+    draftStatusFilter !== statusFilter ||
+    draftSuspectWonOnly !== suspectWonOnly ||
+    draftDateFrom !== dateFrom ||
+    draftDateTo !== dateTo ||
+    draftAssignedToFilter !== assignedToFilter ||
+    draftSortBy !== sortBy ||
+    draftTeamQueryFilter !== teamQueryFilter ||
+    draftRegionQueryFilter !== regionQueryFilter;
+
+  const applyFilters = () => {
+    setSearch(draftSearch);
+    setStatusFilter(draftStatusFilter);
+    setSuspectWonOnly(draftSuspectWonOnly);
+    setDateFrom(draftDateFrom);
+    setDateTo(draftDateTo);
+    setAssignedToFilter(draftAssignedToFilter);
+    setSortBy(draftSortBy);
+    setTeamQueryFilter(draftTeamQueryFilter);
+    setRegionQueryFilter(draftRegionQueryFilter);
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setDraftSearch("");
+    setDraftStatusFilter("all");
+    setDraftSuspectWonOnly(false);
+    setDraftDateFrom("");
+    setDraftDateTo("");
+    setDraftAssignedToFilter("all");
+    setDraftSortBy("date");
+    setDraftTeamQueryFilter("all");
+    setDraftRegionQueryFilter("all");
+    setSearch("");
+    setStatusFilter("all");
+    setSuspectWonOnly(false);
+    setDateFrom("");
+    setDateTo("");
+    setAssignedToFilter("all");
+    setSortBy("date");
+    setTeamQueryFilter("all");
+    setRegionQueryFilter("all");
+    setPage(1);
+  };
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -665,10 +733,9 @@ export default function Proposals() {
               <Input
                 placeholder="Search proposal, customer..."
                 className="h-10 w-full pl-9 text-sm"
-                value={search}
+                value={draftSearch}
                 onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
+                  setDraftSearch(e.target.value);
                 }}
               />
             </div>
@@ -680,12 +747,11 @@ export default function Proposals() {
                   key={o.value}
                   type="button"
                   onClick={() => {
-                    setStatusFilter(o.value);
-                    setPage(1);
+                    setDraftStatusFilter(o.value);
                   }}
                   className={cn(
                     "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
-                    statusFilter === o.value
+                    draftStatusFilter === o.value
                       ? "bg-blue-600 text-white"
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
                   )}
@@ -696,12 +762,11 @@ export default function Proposals() {
               <button
                 type="button"
                 onClick={() => {
-                  setSuspectWonOnly((v) => !v);
-                  setPage(1);
+                  setDraftSuspectWonOnly((v) => !v);
                 }}
                 className={cn(
                   "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
-                  suspectWonOnly
+                  draftSuspectWonOnly
                     ? "bg-orange-600 text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
                 )}
@@ -715,10 +780,9 @@ export default function Proposals() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 lg:items-center">
               {(me.role === "super_admin" || me.role === "sales_manager") && (
                 <Select
-                  value={assignedToFilter}
+                  value={draftAssignedToFilter}
                   onValueChange={(v) => {
-                    setAssignedToFilter(v);
-                    setPage(1);
+                    setDraftAssignedToFilter(v);
                   }}
                 >
                   <SelectTrigger className="h-9 w-full text-sm">
@@ -746,17 +810,16 @@ export default function Proposals() {
                     placeholder: "Any date…",
                     className: "h-9 w-full text-sm",
                   }}
-                  value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
+                  value={[ymdToDate(draftDateFrom), ymdToDate(draftDateTo)]}
                   onChange={(ev) => {
                     const [f, t] = ev.value;
-                    setDateFrom(f ? dateToYmd(f) : "");
-                    setDateTo(t ? dateToYmd(t) : "");
-                    setPage(1);
+                    setDraftDateFrom(f ? dateToYmd(f) : "");
+                    setDraftDateTo(t ? dateToYmd(t) : "");
                   }}
                 />
               </div>
 
-              <Select value={sortBy} onValueChange={(v) => (setSortBy(v as SortKey), setPage(1))}>
+              <Select value={draftSortBy} onValueChange={(v) => setDraftSortBy(v as SortKey)}>
                 <SelectTrigger className="h-9 w-full text-sm">
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
@@ -777,17 +840,22 @@ export default function Proposals() {
                   (me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-6",
                   !(me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-5",
                 )}
-                onClick={() => {
-                  setSearch("");
-                  setStatusFilter("all");
-                  setAssignedToFilter("all");
-                  setDateFrom("");
-                  setDateTo("");
-                  setSortBy("date");
-                  setPage(1);
-                }}
+                onClick={clearFilters}
               >
                 Clear filters
+              </Button>
+              <Button
+                type="button"
+                className={cn(
+                  "h-9 w-full text-sm bg-blue-600 hover:bg-blue-700 text-white",
+                  "sm:col-start-3 sm:justify-self-end sm:w-[160px]",
+                  (me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-5",
+                  !(me.role === "super_admin" || me.role === "sales_manager") && "lg:col-start-4",
+                )}
+                disabled={!hasPendingFilterChanges}
+                onClick={applyFilters}
+              >
+                Apply
               </Button>
             </div>
           </div>

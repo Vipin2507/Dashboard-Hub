@@ -177,13 +177,21 @@ export function registerIntegrationProxies(app, { db }) {
   app.get("/integrations/waha/sessions", proxyWahaSessions);
 
   // n8n Routes (Multipart/Form-Data Supported)
-  app.post("/api/integrations/n8n/webhook/buildesk-health", multipartHandler, (req, res) => {
+  // IMPORTANT: n8n webhooks can be sent as JSON (no attachments) OR multipart (PDF attachments).
+  // Use a content-type aware parser so we don't drop JSON bodies on the floor.
+  const n8nBodyHandler = (req, res, next) => {
+    const ct = String(req.headers["content-type"] || "").toLowerCase();
+    if (ct.includes("multipart/form-data")) return multipartHandler(req, res, next);
+    return jsonHandler(req, res, next);
+  };
+
+  app.post("/api/integrations/n8n/webhook/buildesk-health", n8nBodyHandler, (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-health");
   });
-  app.post("/api/integrations/n8n/webhook/buildesk-email", multipartHandler, (req, res) => {
+  app.post("/api/integrations/n8n/webhook/buildesk-email", n8nBodyHandler, (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-email");
   });
-  app.post("/api/integrations/n8n/webhook/:segment", multipartHandler, (req, res) => {
+  app.post("/api/integrations/n8n/webhook/:segment", n8nBodyHandler, (req, res) => {
     void proxyN8nWebhook(req, res, undefined);
   });
 
