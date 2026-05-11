@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Label } from "@/components/ui/label";
 import { formatINR } from "@/lib/rbac";
 import { api } from "@/lib/api";
@@ -454,7 +455,14 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
               </div>
               <div className="space-y-2">
                 <Label>Estimate Date</Label>
-                <Input type="date" value={estimateDate} onChange={(e) => setEstimateDate(e.target.value)} />
+                <Datepicker
+                  select="single"
+                  touchUi={false}
+                  inputComponent="input"
+                  inputProps={{ placeholder: "Select…", className: "h-9" }}
+                  value={ymdToDate(estimateDate)}
+                  onChange={(ev) => setEstimateDate(ev.value ? dateToYmd(ev.value) : "")}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Owner</Label>

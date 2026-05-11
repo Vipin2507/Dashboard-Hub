@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import type { Proposal } from "@/types";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -855,22 +856,23 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
               Scoped to the customer selected above{customerId ? "" : " (all customers)"}.
             </p>
             <div className="flex flex-wrap gap-2 items-end">
-              <div>
-                <Label className="text-xs">From</Label>
-                <Input
-                  type="date"
-                  className="h-9 w-[150px]"
-                  value={historyFilters.from}
-                  onChange={(e) => setHistoryFilters((f) => ({ ...f, from: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label className="text-xs">To</Label>
-                <Input
-                  type="date"
-                  className="h-9 w-[150px]"
-                  value={historyFilters.to}
-                  onChange={(e) => setHistoryFilters((f) => ({ ...f, to: e.target.value }))}
+              <div className="min-w-[200px] space-y-1">
+                <Label className="text-xs">Payment date</Label>
+                <Datepicker
+                  controls={["calendar"]}
+                  select="range"
+                  touchUi={true}
+                  inputComponent="input"
+                  inputProps={{ placeholder: "Any range…", className: "h-9 w-full min-w-[200px]" }}
+                  value={[ymdToDate(historyFilters.from), ymdToDate(historyFilters.to)]}
+                  onChange={(ev) => {
+                    const [f, t] = ev.value;
+                    setHistoryFilters((h) => ({
+                      ...h,
+                      from: f ? dateToYmd(f) : "",
+                      to: t ? dateToYmd(t) : "",
+                    }));
+                  }}
                 />
               </div>
               <div>
@@ -1283,7 +1285,14 @@ function ProposalDecisionForm({
         )}
         <div className="space-y-1">
           <Label className="text-xs">Decision date</Label>
-          <Input type="date" className="h-9 w-[180px]" value={decisionDate} onChange={(e) => setDecisionDate(e.target.value)} />
+          <Datepicker
+            select="single"
+            touchUi={true}
+            inputComponent="input"
+            inputProps={{ placeholder: "Select…", className: "h-9 w-[180px]" }}
+            value={ymdToDate(decisionDate)}
+            onChange={(ev) => setDecisionDate(ev.value ? dateToYmd(ev.value) : "")}
+          />
         </div>
         <div className="space-y-1">
           <Label className="text-xs">Remarks</Label>
@@ -1387,11 +1396,25 @@ function PaymentPlanForm({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Start date</Label>
-            <Input type="date" className="h-9" value={planStartDate} onChange={(e) => setPlanStartDate(e.target.value)} />
+            <Datepicker
+              select="single"
+              touchUi={true}
+              inputComponent="input"
+              inputProps={{ placeholder: "Select…", className: "h-9" }}
+              value={ymdToDate(planStartDate)}
+              onChange={(ev) => setPlanStartDate(ev.value ? dateToYmd(ev.value) : "")}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">End date</Label>
-            <Input type="date" className="h-9" value={planEndDate} onChange={(e) => setPlanEndDate(e.target.value)} />
+            <Datepicker
+              select="single"
+              touchUi={true}
+              inputComponent="input"
+              inputProps={{ placeholder: "Select…", className: "h-9" }}
+              value={ymdToDate(planEndDate)}
+              onChange={(ev) => setPlanEndDate(ev.value ? dateToYmd(ev.value) : "")}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Number of installments</Label>
@@ -1497,7 +1520,14 @@ function RecordPaymentForm({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Payment date</Label>
-            <Input type="date" className="h-9" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
+            <Datepicker
+              select="single"
+              touchUi={true}
+              inputComponent="input"
+              inputProps={{ placeholder: "Select…", className: "h-9" }}
+              value={ymdToDate(paymentDate)}
+              onChange={(ev) => setPaymentDate(ev.value ? dateToYmd(ev.value) : "")}
+            />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Transaction reference</Label>

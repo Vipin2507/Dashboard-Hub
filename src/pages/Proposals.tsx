@@ -15,6 +15,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import {
   FileText,
@@ -348,7 +349,7 @@ export default function Proposals() {
     if (!canReassign) return;
     const u = users.find((x) => x.id === nextUserId);
     if (!u) return;
-    updateProposal(p.id, {
+    await updateProposal(p.id, {
       assignedTo: u.id,
       assignedToName: u.name,
       teamId: u.teamId,
@@ -409,9 +410,10 @@ export default function Proposals() {
       updatedAt: now,
       createdBy: me.id,
     };
-    useAppStore.getState().addProposal(copy);
+    await useAppStore.getState().addProposal(copy);
     toast({ title: "Duplicated", description: `${copy.proposalNumber} created as Shared.` });
     await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    await queryClient.refetchQueries({ queryKey: QK.proposals() });
   };
 
   const stateCustomerId = (location.state as { customerId?: string; detailId?: string } | null)?.customerId;
@@ -733,24 +735,26 @@ export default function Proposals() {
                 </Select>
               )}
 
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 w-full text-sm"
-              />
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  setPage(1);
-                }}
-                className="h-9 w-full text-sm"
-              />
+              <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-2">
+                <p className="text-xs text-muted-foreground">Created date</p>
+                <Datepicker
+                  controls={["calendar"]}
+                  select="range"
+                  touchUi={true}
+                  inputComponent="input"
+                  inputProps={{
+                    placeholder: "Any date…",
+                    className: "h-9 w-full text-sm",
+                  }}
+                  value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
+                  onChange={(ev) => {
+                    const [f, t] = ev.value;
+                    setDateFrom(f ? dateToYmd(f) : "");
+                    setDateTo(t ? dateToYmd(t) : "");
+                    setPage(1);
+                  }}
+                />
+              </div>
 
               <Select value={sortBy} onValueChange={(v) => (setSortBy(v as SortKey), setPage(1))}>
                 <SelectTrigger className="h-9 w-full text-sm">
@@ -893,10 +897,19 @@ export default function Proposals() {
                                 {p.status === "draft" && canEditProposal(p) && (
                                   <DropdownMenuItem
                                     className="cursor-pointer"
-                                    onClick={() => {
-                                      submitForApprovalAction(p.id);
-                                      void queryClient.invalidateQueries({ queryKey: QK.proposals() });
-                                      toast({ title: "Submitted for approval", description: p.proposalNumber });
+                                    onClick={async () => {
+                                      try {
+                                        await submitForApprovalAction(p.id);
+                                        await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                                        await queryClient.refetchQueries({ queryKey: QK.proposals() });
+                                        toast({ title: "Submitted for approval", description: p.proposalNumber });
+                                      } catch (e) {
+                                        toast({
+                                          title: "Submit failed",
+                                          description: e instanceof Error ? e.message : "Try again",
+                                          variant: "destructive",
+                                        });
+                                      }
                                     }}
                                   >
                                     <Send className="mr-2 h-4 w-4" />

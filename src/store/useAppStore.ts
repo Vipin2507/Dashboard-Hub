@@ -115,13 +115,13 @@ interface AppState {
 
   // Proposals
   setProposals: (proposals: Proposal[]) => void;
-  addProposal: (proposal: Proposal) => void;
-  updateProposal: (id: string, updates: Partial<Proposal>) => void;
+  addProposal: (proposal: Proposal) => Promise<void>;
+  updateProposal: (id: string, updates: Partial<Proposal>) => Promise<void>;
   deleteProposal: (id: string) => void;
-  submitForApproval: (id: string) => void;
+  submitForApproval: (id: string) => Promise<void>;
   approveProposal: (id: string, approverId: string) => void;
   rejectProposal: (id: string, approverId: string, reason: string) => void;
-  sendProposal: (id: string) => void;
+  sendProposal: (id: string) => Promise<void>;
   /** Create deal from approved proposal (API assigns DEAL-… id). */
   createDeal: (proposalId: string) => void;
   createDealFromProposal: (id: string, dealId: string) => void;
@@ -701,7 +701,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ proposals });
   },
 
-  addProposal: (proposal) => {
+  addProposal: async (proposal) => {
     set(s => ({ proposals: [proposal, ...s.proposals] }));
     const me = get().me;
     const customer = get().customers.find(c => c.id === proposal.customerId);
@@ -720,14 +720,24 @@ export const useAppStore = create<AppState>((set, get) => ({
         entityId: proposal.id,
       });
     }
-    void fetch(apiUrl('/api/proposals'), {
+    const res = await fetch(apiUrl('/api/proposals'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(proposal),
-    }).catch(() => undefined);
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      set(s => ({ proposals: s.proposals.filter(p => p.id !== proposal.id) }));
+      if (customer) {
+        get().updateCustomer(proposal.customerId, {
+          activeProposalsCount: customer.activeProposalsCount,
+        });
+      }
+      throw new Error(errText || 'Failed to save proposal');
+    }
   },
 
-  updateProposal: (id, updates) => {
+  updateProposal: async (id, updates) => {
     const now = new Date().toISOString();
     set(s => ({
       proposals: s.proposals.map(p =>
@@ -735,12 +745,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
     const proposal = get().proposals.find(p => p.id === id);
-    if (proposal) {
-      void fetch(apiUrl(`/api/proposals/${id}`), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(proposal),
-      }).catch(() => undefined);
+    if (!proposal) return;
+    const res = await fetch(apiUrl(`/api/proposals/${id}`), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(proposal),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(errText || 'Failed to update proposal');
     }
   },
 
@@ -751,7 +764,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }).catch(() => undefined);
   },
 
-  submitForApproval: (id) => {
+  submitForApproval: async (id) => {
     set(s => ({
       proposals: s.proposals.map(p =>
         p.id === id ? { ...p, status: 'approval_pending' as const, updatedAt: new Date().toISOString() } : p
@@ -759,11 +772,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     const proposal = get().proposals.find(p => p.id === id);
     if (proposal) {
-      void fetch(apiUrl(`/api/proposals/${id}`), {
+      const res = await fetch(apiUrl(`/api/proposals/${id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(proposal),
-      }).catch(() => undefined);
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || 'Failed to submit proposal');
+      }
     }
     get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'manager@buildesk.com', subject: 'Proposal submitted for approval', entityId: id });
   },
@@ -859,7 +876,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  sendProposal: (id) => {
+  sendProposal: async (id) => {
     const now = new Date().toISOString();
     set(s => ({
       proposals: s.proposals.map(p =>
@@ -868,11 +885,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     const proposalPersist = get().proposals.find(p => p.id === id);
     if (proposalPersist) {
-      void fetch(apiUrl(`/api/proposals/${id}`), {
+      const res = await fetch(apiUrl(`/api/proposals/${id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(proposalPersist),
-      }).catch(() => undefined);
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(errText || 'Failed to save sent proposal');
+      }
     }
     const proposal = get().proposals.find(p => p.id === id);
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;

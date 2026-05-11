@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -778,7 +779,16 @@ export function ConvertToDealDialog({
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Expected Close Date *
                     </label>
-                    <Input type="date" {...register("expectedCloseDate")} className="h-9 rounded-lg text-sm" />
+                    <Datepicker
+                      select="single"
+                      touchUi={false}
+                      inputComponent="input"
+                      inputProps={{ placeholder: "Select…", className: "h-9 rounded-lg text-sm" }}
+                      value={ymdToDate(watched.expectedCloseDate)}
+                      onChange={(ev) =>
+                        setValue("expectedCloseDate", ev.value ? dateToYmd(ev.value) : "", { shouldValidate: true })
+                      }
+                    />
                     {errors.expectedCloseDate && (
                       <p className="text-xs text-red-500">{errors.expectedCloseDate.message}</p>
                     )}
@@ -864,7 +874,16 @@ export function ConvertToDealDialog({
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       First Payment Date *
                     </label>
-                    <Input type="date" {...register("startDate")} className="h-9 max-w-xs rounded-lg text-sm" />
+                    <Datepicker
+                      select="single"
+                      touchUi={false}
+                      inputComponent="input"
+                      inputProps={{ placeholder: "Select…", className: "h-9 max-w-xs rounded-lg text-sm" }}
+                      value={ymdToDate(watched.startDate)}
+                      onChange={(ev) =>
+                        setValue("startDate", ev.value ? dateToYmd(ev.value) : "", { shouldValidate: true })
+                      }
+                    />
                     <p className="text-xs text-gray-400">
                       All subsequent dates are calculated from this date
                     </p>

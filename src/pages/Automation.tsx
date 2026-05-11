@@ -64,6 +64,7 @@ const ALL_TRIGGERS: AutomationTrigger[] = [
   "proposal_rejected",
   "deal_created",
   "estimate_shared",
+  "deal_invoice_sent",
   "deal_won",
   "deal_lost",
   "deal_follow_up",
@@ -85,6 +86,7 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   proposal_rejected: "Proposal Rejected",
   deal_created: "Deal Created",
   estimate_shared: "Estimate Shared (manual)",
+  deal_invoice_sent: "Deal Invoice Sent (manual)",
   deal_won: "Deal Won",
   deal_lost: "Deal Lost",
   deal_follow_up: "Deal Follow-up Reminder",
@@ -710,7 +712,14 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                 text: template.body,
               }),
             })
-          : await fetchN8nWebhook(settings, template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email", {
+          : await fetchN8nWebhook(
+              settings,
+              template.trigger === "deal_invoice_sent"
+                ? "buildesk-invoice"
+                : template.trigger === "estimate_shared"
+                  ? "buildesk-estimate"
+                  : "buildesk-email",
+              {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1109,6 +1118,13 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
               {watchedTrigger === "estimate_shared" && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Used by Deals → Actions → Send (manual). No automatic sending unless you trigger it from UI.
+                </p>
+              )}
+              {watchedTrigger === "deal_invoice_sent" && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Fires after Deals → Send invoice posts to n8n <code className="text-[10px]">buildesk-invoice</code>.
+                  Email automations include multipart field <code className="text-[10px]">invoice_pdf</code> when the
+                  installment invoice can be loaded (same pattern as <code className="text-[10px]">estimate_pdf</code>).
                 </p>
               )}
             </div>

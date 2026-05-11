@@ -62,6 +62,21 @@ export const DEFAULT_RULES: Omit<AutomationRule, 'id'>[] = [
     actions: [{ type: 'send_whatsapp', templateId: 'tpl-004', delayHours: 0 }],
     cooldownHours: 0,
   },
+  {
+    name: 'Deal invoice sent — notify sales manager (optional)',
+    isActive: false,
+    trigger: 'deal_invoice_sent',
+    conditions: [],
+    actions: [
+      {
+        type: 'in_app_notification',
+        targetRole: 'sales_manager',
+        message: 'A deal invoice was sent from Deals (buildesk-invoice webhook).',
+        delayHours: 0,
+      },
+    ],
+    cooldownHours: 0,
+  },
 ];
 
 const RULES_STORAGE_KEY = 'buildesk_automation_rules_v1';

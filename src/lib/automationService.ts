@@ -30,6 +30,74 @@ async function loadDealForEstimatePdf(dealId: string) {
   return d as any;
 }
 
+type DealInstallmentInvoiceRow = { id: string; invoice_number?: string | null };
+type DealPaymentPlanApi = { installments?: DealInstallmentInvoiceRow[] } | null;
+
+/** Build invoice PDF for n8n multipart field `invoice_pdf` (same pattern as `estimate_pdf`). */
+async function loadInvoicePdfBlobForContext(ctx: AutomationContext): Promise<{ blob: Blob; fileName: string } | null> {
+  const { generateInvoicePdfBlobFromData } = await import("@/lib/generateInvoicePdf");
+  type InvoiceData = import("@/lib/generateInvoicePdf").InvoiceData;
+
+  const fromDetail = async (detail: { invoiceData?: InvoiceData | null; invoiceNumber?: string | null }) => {
+    if (!detail.invoiceData) return null;
+    const blob = await generateInvoicePdfBlobFromData(detail.invoiceData);
+    const num = (
+      detail.invoiceData.invoiceNumber ||
+      detail.invoiceNumber ||
+      ctx.invoiceNumber ||
+      "invoice"
+    ).trim();
+    const safe = num.replace(/[^a-zA-Z0-9._-]/g, "_") || "invoice";
+    return { blob, fileName: `${safe}.pdf` };
+  };
+
+  if (ctx.installmentId) {
+    try {
+      const res = await fetch(apiUrl(`/api/deal-installments/${encodeURIComponent(ctx.installmentId)}/invoice`));
+      if (!res.ok) return null;
+      const detail = (await res.json()) as { invoiceData?: InvoiceData | null; invoiceNumber?: string | null };
+      return await fromDetail(detail);
+    } catch {
+      return null;
+    }
+  }
+
+  if (ctx.dealId && ctx.invoiceNumber) {
+    try {
+      const res = await fetch(apiUrl(`/api/deals/${encodeURIComponent(ctx.dealId)}/payment-plan`));
+      if (!res.ok) return null;
+      const plan = (await res.json()) as DealPaymentPlanApi;
+      const want = String(ctx.invoiceNumber).trim();
+      const inst = plan?.installments?.find((i) => i.invoice_number && String(i.invoice_number).trim() === want);
+      if (!inst?.id) return null;
+      const invRes = await fetch(apiUrl(`/api/deal-installments/${encodeURIComponent(inst.id)}/invoice`));
+      if (!invRes.ok) return null;
+      const detail = (await res.json()) as { invoiceData?: InvoiceData | null; invoiceNumber?: string | null };
+      return await fromDetail(detail);
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function n8nEmailMultipartInit(
+  payload: Record<string, unknown>,
+  files: Array<{ field: string; blob: Blob; name: string }>,
+): RequestInit {
+  const formData = new FormData();
+  formData.append("data", JSON.stringify(payload));
+  for (const [k, v] of Object.entries(payload)) {
+    if (v === undefined || v === null) continue;
+    formData.append(k, typeof v === "string" ? v : String(v));
+  }
+  for (const f of files) {
+    formData.append(f.field, f.blob, f.name);
+  }
+  return { method: "POST", body: formData };
+}
+
 async function refreshTemplatesIfStale(): Promise<void> {
   const now = Date.now();
   if (now - lastTemplateRefreshAt < TEMPLATE_REFRESH_TTL_MS) return;
@@ -143,6 +211,88 @@ export async function triggerAutomation(trigger: AutomationTrigger, context: Aut
   }
 }
 
+const BUILDESK_INVOICE_WEBHOOK = "buildesk-invoice";
+
+/**
+ * POSTs deal/invoice payload to n8n `buildesk-invoice`, then runs `deal_invoice_sent` automations (templates + rules).
+ * Use from Deals UI when the user clicks “Send invoice”.
+ */
+export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ ok: boolean; error?: string }> {
+  const { automationSettings, appendAutomationLog } = useAppStore.getState();
+  const ctx = enrichAutomationContext(context);
+  const entityId = ctx.dealId ?? "";
+  const entityName = ctx.dealTitle ?? ctx.customerName ?? "";
+
+  const logEntry: AutomationLog = {
+    id: crypto.randomUUID(),
+    templateId: BUILDESK_INVOICE_WEBHOOK,
+    templateName: "Send invoice (n8n)",
+    trigger: "deal_invoice_sent",
+    channel: "email",
+    recipient: ctx.customerEmail ?? ctx.customerPhone ?? "",
+    recipientName: ctx.customerName ?? "",
+    entityType: "deal",
+    entityId,
+    entityName,
+    status: "pending",
+    sentAt: new Date().toISOString(),
+  };
+  appendAutomationLog(logEntry);
+
+  const payload: Record<string, unknown> = {
+    trigger: "deal_invoice_sent" as const,
+    templateId: BUILDESK_INVOICE_WEBHOOK,
+    templateName: "Deal invoice dispatch",
+    dealId: ctx.dealId,
+    dealTitle: ctx.dealTitle,
+    dealValue: ctx.dealValue,
+    customerId: ctx.customerId,
+    customerName: ctx.customerName,
+    customerPhone: ctx.customerPhone,
+    customerEmail: ctx.customerEmail,
+    estimateNumber: ctx.estimateNumber,
+    invoiceNumber: ctx.invoiceNumber,
+    installmentId: ctx.installmentId,
+    installmentLabel: ctx.installmentLabel,
+    dueDate: ctx.dueDate,
+    amountDue: ctx.amountDue,
+    salesRepName: ctx.salesRepName,
+    salesRepPhone: ctx.salesRepPhone,
+    salesRepEmail: ctx.salesRepEmail,
+    companyName: ctx.companyName,
+  };
+
+  try {
+    const invoicePdf = await loadInvoicePdfBlobForContext(ctx);
+    const init: RequestInit =
+      invoicePdf != null
+        ? n8nEmailMultipartInit(payload, [{ field: "invoice_pdf", blob: invoicePdf.blob, name: invoicePdf.fileName }])
+        : {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          };
+    const res = await fetchN8nWebhook(automationSettings, BUILDESK_INVOICE_WEBHOOK, init);
+    const ok = res.ok;
+    const errBody = ok ? "" : (await res.text().catch(() => "")).slice(0, 500);
+    const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
+    updateAutomationLog(logEntry.id, {
+      status: (ok ? "sent" : "failed") as AutomationLog["status"],
+      errorMessage: ok ? undefined : `HTTP ${res.status}${errShort ? ` — ${errShort}` : ""}`,
+    });
+    if (ok) {
+      await triggerAutomation("deal_invoice_sent", context);
+    }
+    return { ok, error: ok ? undefined : `HTTP ${res.status}` };
+  } catch (err) {
+    updateAutomationLog(logEntry.id, {
+      status: "failed",
+      errorMessage: String(err),
+    });
+    return { ok: false, error: String(err) };
+  }
+}
+
 /** Send a specific template by id (used by Rules actions). */
 export async function sendAutomationTemplateById(templateId: string, context: AutomationContext): Promise<void> {
   const { automationTemplates, automationSettings } = useAppStore.getState();
@@ -185,6 +335,9 @@ export interface AutomationContext {
   // Invoice
   invoiceId?: string;
   invoiceNumber?: string;
+  /** Deal-installment row id when sending a per-installment invoice. */
+  installmentId?: string;
+  installmentLabel?: string;
   amountDue?: number;
   dueDate?: string;
   daysUntilDue?: number;
@@ -286,6 +439,7 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{next_follow_up_date}}": ctx.nextFollowUpDate ?? "",
     "{{loss_reason}}": ctx.lossReason ?? ctx.rejectionReason ?? "",
     "{{invoice_number}}": ctx.invoiceNumber ?? "",
+    "{{installment_label}}": ctx.installmentLabel ?? "",
     "{{amount_due}}": formatINRInline(ctx.amountDue),
     "{{due_date}}": ctx.dueDate ?? "",
     "{{days_until_due}}": String(ctx.daysUntilDue ?? ""),
@@ -425,6 +579,9 @@ async function fireN8nWebhook(
   const shouldAttachEstimatePdf =
     template.channel === "email" && template.trigger === "estimate_shared" && (!!ctx.estimateJson || !!ctx.dealId);
 
+  // For deal invoice automations, attach invoice PDF (n8n expects `invoice_pdf`).
+  const shouldAttachInvoicePdf = template.channel === "email" && template.trigger === "deal_invoice_sent";
+
   let proposalPdfBlob: Blob | null = null;
   let proposalPdfName = "proposal.pdf";
   if (shouldAttachProposalPdf) {
@@ -456,8 +613,27 @@ async function fireN8nWebhook(
     }
   }
 
+  let invoicePdfBlob: Blob | null = null;
+  let invoicePdfName = "invoice.pdf";
+  if (shouldAttachInvoicePdf) {
+    try {
+      const inv = await loadInvoicePdfBlobForContext(ctx);
+      if (inv) {
+        invoicePdfBlob = inv.blob;
+        invoicePdfName = inv.fileName;
+      }
+    } catch {
+      invoicePdfBlob = null;
+    }
+  }
+
   for (const recipient of recipients) {
-    const webhookPath = template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email";
+    const webhookPath =
+      template.trigger === "estimate_shared"
+        ? "buildesk-estimate"
+        : template.trigger === "deal_invoice_sent"
+          ? "buildesk-invoice"
+          : "buildesk-email";
     const normalizedPhone =
       template.channel === "whatsapp" || template.channel === "sms"
         ? normalizeIndiaPhone(recipient.phone)
@@ -514,24 +690,14 @@ async function fireN8nWebhook(
     appendAutomationLog(logEntry);
 
     try {
+      const files: Array<{ field: string; blob: Blob; name: string }> = [];
+      if (proposalPdfBlob) files.push({ field: "proposal_pdf", blob: proposalPdfBlob, name: proposalPdfName });
+      if (estimatePdfBlob) files.push({ field: "estimate_pdf", blob: estimatePdfBlob, name: estimatePdfName });
+      if (invoicePdfBlob) files.push({ field: "invoice_pdf", blob: invoicePdfBlob, name: invoicePdfName });
+
       const init: RequestInit =
-        (proposalPdfBlob || estimatePdfBlob) && template.channel === "email"
-          ? (() => {
-              const formData = new FormData();
-              // Keep backward compatibility with existing n8n mappings like:
-              //   {{ $json.body.delayHours }}
-              // by also sending payload fields as top-level form fields.
-              // `data` remains as a full JSON blob for convenience/debugging.
-              formData.append("data", JSON.stringify(payload));
-              for (const [k, v] of Object.entries(payload)) {
-                if (v === undefined || v === null) continue;
-                // n8n webhook parses multipart fields as strings
-                formData.append(k, typeof v === "string" ? v : String(v));
-              }
-              if (proposalPdfBlob) formData.append("proposal_pdf", proposalPdfBlob, proposalPdfName);
-              if (estimatePdfBlob) formData.append("estimate_pdf", estimatePdfBlob, estimatePdfName);
-              return { method: "POST", body: formData };
-            })()
+        files.length > 0 && template.channel === "email"
+          ? n8nEmailMultipartInit(payload as Record<string, unknown>, files)
           : {
               method: "POST",
               headers: { "Content-Type": "application/json" },

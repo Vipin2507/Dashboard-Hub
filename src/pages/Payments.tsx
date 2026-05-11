@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Datepicker, dateToYmd, ymdToDate } from '@/components/ui/datepicker';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -602,7 +603,14 @@ export default function Payments() {
             </div>
             <div className="space-y-1.5">
               <Label>Paid date</Label>
-              <Input value={payDate} onChange={(e) => setPayDate(e.target.value)} type="date" />
+              <Datepicker
+                select="single"
+                touchUi={false}
+                inputComponent="input"
+                inputProps={{ placeholder: 'Paid date…', className: 'h-9' }}
+                value={ymdToDate(payDate)}
+                onChange={(ev) => setPayDate(ev.value ? dateToYmd(ev.value) : '')}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Mode</Label>

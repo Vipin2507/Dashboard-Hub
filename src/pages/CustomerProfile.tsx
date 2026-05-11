@@ -364,7 +364,7 @@ function SupportWorkflowTab({
               size="sm"
               variant="outline"
               className="h-8 px-3 text-xs rounded-lg"
-              onClick={() => {
+              onClick={async () => {
                 if (!activeDeal) {
                   toast({ title: "No won deal", variant: "destructive" });
                   return;
@@ -397,33 +397,41 @@ function SupportWorkflowTab({
                 const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
                 const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
                 const grandTotal = subtotal + totalTax;
-                addProposal({
-                  id,
-                  proposalNumber,
-                  title: `Renewal — ${customer.companyName || customer.customerName}`,
-                  customerId: customer.id,
-                  customerName: customer.customerName ?? "",
-                  customerCompanyName: (customer.companyName ?? "").trim() || undefined,
-                  assignedTo: activeDeal.ownerUserId ?? me.id,
-                  assignedToName,
-                  regionId: me.regionId,
-                  teamId: me.teamId,
-                  status: "draft",
-                  validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-                  lineItems,
-                  setupDeploymentCharges: 0,
-                  subtotal,
-                  totalDiscount: 0,
-                  totalTax,
-                  grandTotal,
-                  versionHistory: [],
-                  currentVersion: 1,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                  createdBy: me.id,
-                  dealId: activeDeal.id,
-                });
-                toast({ title: "Renewal proposal created", description: proposalNumber });
+                try {
+                  await addProposal({
+                    id,
+                    proposalNumber,
+                    title: `Renewal — ${customer.companyName || customer.customerName}`,
+                    customerId: customer.id,
+                    customerName: customer.customerName ?? "",
+                    customerCompanyName: (customer.companyName ?? "").trim() || undefined,
+                    assignedTo: activeDeal.ownerUserId ?? me.id,
+                    assignedToName,
+                    regionId: me.regionId,
+                    teamId: me.teamId,
+                    status: "draft",
+                    validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+                    lineItems,
+                    setupDeploymentCharges: 0,
+                    subtotal,
+                    totalDiscount: 0,
+                    totalTax,
+                    grandTotal,
+                    versionHistory: [],
+                    currentVersion: 1,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                    createdBy: me.id,
+                    dealId: activeDeal.id,
+                  });
+                  toast({ title: "Renewal proposal created", description: proposalNumber });
+                } catch (e) {
+                  toast({
+                    title: "Could not create proposal",
+                    description: e instanceof Error ? e.message : "Save failed",
+                    variant: "destructive",
+                  });
+                }
               }}
             >
               Create Renewal

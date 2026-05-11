@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -337,7 +338,7 @@ export function RenewalSubscriptionTracker() {
         createdBy: me.id,
         notes: `Auto-generated renewal proposal for subscription ${proposeRow.id}`,
       };
-      addProposal(proposal);
+      await addProposal(proposal);
       const proposalUrl = `${window.location.origin}/proposals`;
       const ctx: AutomationContext = {
         ...buildCtx(proposeRow),
@@ -791,11 +792,25 @@ export function RenewalSubscriptionTracker() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>New plan start</Label>
-                <Input type="date" value={renewStart} onChange={(e) => setRenewStart(e.target.value)} />
+                <Datepicker
+                  select="single"
+                  touchUi={false}
+                  inputComponent="input"
+                  inputProps={{ placeholder: "Select…", className: "h-9" }}
+                  value={ymdToDate(renewStart)}
+                  onChange={(ev) => setRenewStart(ev.value ? dateToYmd(ev.value) : "")}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label>New expiry</Label>
-                <Input type="date" value={renewEnd} onChange={(e) => setRenewEnd(e.target.value)} />
+                <Datepicker
+                  select="single"
+                  touchUi={false}
+                  inputComponent="input"
+                  inputProps={{ placeholder: "Select…", className: "h-9" }}
+                  value={ymdToDate(renewEnd)}
+                  onChange={(ev) => setRenewEnd(ev.value ? dateToYmd(ev.value) : "")}
+                />
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm">

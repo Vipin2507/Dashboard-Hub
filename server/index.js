@@ -369,25 +369,81 @@ app.get("/api/estimates/next-number", (_req, res) => {
 });
 
 app.get("/api/estimates/:estimateNumber", (req, res) => {
-  const row = db
-    .prepare("SELECT * FROM estimates WHERE estimateNumber = ?")
-    .get(String(req.params.estimateNumber));
-  if (!row) return res.status(404).json({ error: "Not found" });
-  let payload = null;
-  try {
-    payload = row.estimateJson ? JSON.parse(row.estimateJson) : null;
-  } catch {
-    payload = null;
+  const num = String(req.params.estimateNumber || "").trim();
+  if (!num) return res.status(400).json({ error: "estimateNumber required" });
+
+  const row = db.prepare("SELECT * FROM estimates WHERE estimateNumber = ?").get(num);
+  if (row) {
+    let payload = null;
+    try {
+      payload = row.estimateJson ? JSON.parse(row.estimateJson) : null;
+    } catch {
+      payload = null;
+    }
+    return res.json({
+      id: row.id,
+      estimateNumber: row.estimateNumber,
+      customerId: row.customerId,
+      grandTotal: Number(row.grandTotal) || 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      estimateData: payload,
+    });
   }
-  res.json({
-    id: row.id,
-    estimateNumber: row.estimateNumber,
-    customerId: row.customerId,
-    grandTotal: Number(row.grandTotal) || 0,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-    estimateData: payload,
-  });
+
+  // Fallback: estimate JSON stored only on the deal row (older / alternate flows).
+  const deal = db.prepare("SELECT * FROM deals WHERE estimateNumber = ?").get(num);
+  if (deal?.estimateJson) {
+    let payload = null;
+    try {
+      payload = JSON.parse(deal.estimateJson);
+    } catch {
+      payload = null;
+    }
+    if (payload) {
+      return res.json({
+        id: deal.id,
+        estimateNumber: num,
+        customerId: deal.customerId,
+        grandTotal: Number(deal.totalAmount ?? deal.value) || 0,
+        createdAt: deal.createdAt,
+        updatedAt: deal.updatedAt,
+        estimateData: payload,
+      });
+    }
+  }
+
+  // Fallback: installment has estimate_number but no `estimates` row (e.g. POST /estimates failed mid-flow).
+  const inst = db
+    .prepare(
+      `SELECT di.*, d.estimateJson AS dealEstimateJson, d.customerId AS dealCustomerId
+       FROM deal_installments di
+       JOIN deals d ON d.id = di.deal_id
+       WHERE di.estimate_number = ?`,
+    )
+    .get(num);
+  if (inst?.dealEstimateJson) {
+    let payload = null;
+    try {
+      payload = JSON.parse(inst.dealEstimateJson);
+    } catch {
+      payload = null;
+    }
+    if (payload) {
+      const grandTotal = Number(inst.amount) || Number(payload.grandTotal) || 0;
+      return res.json({
+        id: inst.id,
+        estimateNumber: num,
+        customerId: inst.dealCustomerId,
+        grandTotal,
+        createdAt: inst.estimate_generated_at || inst.created_at,
+        updatedAt: inst.estimate_generated_at || inst.created_at,
+        estimateData: payload,
+      });
+    }
+  }
+
+  return res.status(404).json({ error: "Not found" });
 });
 
 app.post("/api/estimates", (req, res) => {

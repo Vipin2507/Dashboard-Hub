@@ -14,6 +14,7 @@ import {
 import { dialogSmMax4xl, dialogSmMax6xl, dialogSmMaxMd } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,8 +87,10 @@ export function ProposalFormDialog({
     setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
   }, [open, customersQuery.data, regions, users, me.id, setCustomers]);
 
-  const invalidateProposalQueries = () => {
-    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+  /** Wait for server persistence before refetching — avoids list overwriting the new row with stale GET. */
+  const syncProposalQueriesAfterPersist = async () => {
+    await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+    await queryClient.refetchQueries({ queryKey: QK.proposals() });
     void queryClient.invalidateQueries({ queryKey: QK.dashboard() });
   };
 
@@ -122,7 +125,8 @@ export function ProposalFormDialog({
 
   const canOverride = can(me.role, "proposals", "override_final_value");
   const canRequestApproval = can(me.role, "proposals", "request_approval");
-  const canSend = can(me.role, "proposals", "send");
+  /** Save & send is restricted to Super Admin only (direct customer send from the form). */
+  const canSaveAndSend = me.role === "super_admin";
 
   const totals = useMemo(() => {
     const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
@@ -346,77 +350,104 @@ export function ProposalFormDialog({
     };
   }, [pdfPreviewUrl]);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = async () => {
     if (!title || !customerId) {
       toast({ title: "Missing fields", description: "Title and Customer are required.", variant: "destructive" });
       return;
     }
     const payload = buildProposal();
-    if (editingProposal) {
-      updateProposal(editingProposal.id, payload);
-      toast({ title: "Proposal updated", description: `${payload.proposalNumber} saved.` });
-    } else {
-      const id = "p" + makeId();
-      const now = new Date().toISOString();
-      addProposal({
-        ...payload,
-        id,
-        createdAt: now,
-        updatedAt: now,
-      } as Proposal);
-      toast({ title: "Proposal created", description: `${payload.proposalNumber} saved as ${payload.status}.` });
+    try {
+      if (editingProposal) {
+        await updateProposal(editingProposal.id, payload);
+        toast({ title: "Proposal updated", description: `${payload.proposalNumber} saved.` });
+      } else {
+        const id = "p" + makeId();
+        const now = new Date().toISOString();
+        await addProposal({
+          ...payload,
+          id,
+          createdAt: now,
+          updatedAt: now,
+        } as Proposal);
+        toast({ title: "Proposal created", description: `${payload.proposalNumber} saved as ${payload.status}.` });
+      }
+      await syncProposalQueriesAfterPersist();
+      onSaved();
+      onOpenChange(false);
+    } catch (e) {
+      toast({
+        title: "Save failed",
+        description: e instanceof Error ? e.message : "Could not save proposal",
+        variant: "destructive",
+      });
     }
-    invalidateProposalQueries();
-    onSaved();
-    onOpenChange(false);
   };
 
-  const handleSubmitForApproval = () => {
+  const handleSubmitForApproval = async () => {
     if (!title || !customerId) {
       toast({ title: "Missing fields", variant: "destructive" });
       return;
     }
     const payload = buildProposal();
-    if (editingProposal) {
-      updateProposal(editingProposal.id, { ...payload, status: "draft" });
-      saveNewVersion(editingProposal.id);
-      updateProposal(editingProposal.id, { status: "approval_pending" });
-      submitForApproval(editingProposal.id);
-    } else {
-      const id = "p" + makeId();
-      const now = new Date().toISOString();
-      addProposal({ ...payload, id, createdAt: now, updatedAt: now, status: "approval_pending" } as Proposal);
-      const added = useAppStore.getState().proposals.find((p) => p.id === id);
-      if (added) submitForApproval(id);
+    try {
+      if (editingProposal) {
+        await updateProposal(editingProposal.id, { ...payload, status: "draft" });
+        saveNewVersion(editingProposal.id);
+        await updateProposal(editingProposal.id, { status: "approval_pending" });
+        await submitForApproval(editingProposal.id);
+      } else {
+        const id = "p" + makeId();
+        const now = new Date().toISOString();
+        await addProposal({ ...payload, id, createdAt: now, updatedAt: now, status: "approval_pending" } as Proposal);
+        await submitForApproval(id);
+      }
+      toast({ title: "Submitted for approval", description: "Proposal has been sent for approval." });
+      await syncProposalQueriesAfterPersist();
+      onSaved();
+      onOpenChange(false);
+    } catch (e) {
+      toast({
+        title: "Submit failed",
+        description: e instanceof Error ? e.message : "Could not submit proposal",
+        variant: "destructive",
+      });
     }
-    toast({ title: "Submitted for approval", description: "Proposal has been sent for approval." });
-    invalidateProposalQueries();
-    onSaved();
-    onOpenChange(false);
   };
 
-  const handleSaveAndSend = () => {
+  const handleSaveAndSend = async () => {
+    if (!canSaveAndSend) {
+      toast({ title: "Not allowed", description: "Only Super Admin can use Save & send.", variant: "destructive" });
+      return;
+    }
     if (!title || !customerId) {
       toast({ title: "Missing fields", variant: "destructive" });
       return;
     }
     const payload = buildProposal();
-    if (editingProposal) {
-      updateProposal(editingProposal.id, { ...payload, status: "sent" });
-      saveNewVersion(editingProposal.id);
-      const now = new Date().toISOString();
-      updateProposal(editingProposal.id, { status: "sent", sentAt: now });
-      useAppStore.getState().sendProposal(editingProposal.id);
-    } else {
-      const id = "p" + makeId();
-      const now = new Date().toISOString();
-      addProposal({ ...payload, id, createdAt: now, updatedAt: now, status: "sent", sentAt: now } as Proposal);
-      useAppStore.getState().sendProposal(id);
+    try {
+      if (editingProposal) {
+        await updateProposal(editingProposal.id, { ...payload, status: "sent" });
+        saveNewVersion(editingProposal.id);
+        const now = new Date().toISOString();
+        await updateProposal(editingProposal.id, { status: "sent", sentAt: now });
+        await sendProposal(editingProposal.id);
+      } else {
+        const id = "p" + makeId();
+        const now = new Date().toISOString();
+        await addProposal({ ...payload, id, createdAt: now, updatedAt: now, status: "sent", sentAt: now } as Proposal);
+        await sendProposal(id);
+      }
+      toast({ title: "Proposal sent", description: "Proposal has been sent to customer." });
+      await syncProposalQueriesAfterPersist();
+      onSaved();
+      onOpenChange(false);
+    } catch (e) {
+      toast({
+        title: "Send failed",
+        description: e instanceof Error ? e.message : "Could not send proposal",
+        variant: "destructive",
+      });
     }
-    toast({ title: "Proposal sent", description: "Proposal has been sent to customer." });
-    invalidateProposalQueries();
-    onSaved();
-    onOpenChange(false);
   };
 
   useEffect(() => {
@@ -599,7 +630,14 @@ export function ProposalFormDialog({
               </div>
               <div className="space-y-2">
                 <Label>Valid Until *</Label>
-                <Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+                <Datepicker
+                  select="single"
+                  touchUi={false}
+                  inputComponent="input"
+                  inputProps={{ placeholder: "Select…", className: "h-10 text-sm" }}
+                  value={ymdToDate(validUntil)}
+                  onChange={(ev) => setValidUntil(ev.value ? dateToYmd(ev.value) : "")}
+                />
               </div>
               <div className="col-span-1 sm:col-span-2 lg:col-span-3 space-y-2">
                 <Label>Remark (shown on proposal)</Label>
@@ -765,7 +803,7 @@ export function ProposalFormDialog({
             </Button>
             <Button variant="outline" onClick={handleSaveDraft}>Save as draft</Button>
             {canRequestApproval && <Button variant="outline" onClick={handleSubmitForApproval}>Save & submit for approval</Button>}
-            {canSend && <Button onClick={handleSaveAndSend}>Save & send</Button>}
+            {canSaveAndSend && <Button onClick={handleSaveAndSend}>Save & send</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>

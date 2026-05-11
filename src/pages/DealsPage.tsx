@@ -15,7 +15,12 @@ import {
   normalizeDealStatus,
   type DealPipelineStatus,
 } from "@/lib/dealStatus";
-import { checkDealFollowUpReminders, triggerAutomation } from "@/lib/automationService";
+import {
+  checkDealFollowUpReminders,
+  sendDealInvoiceN8n,
+  triggerAutomation,
+  type AutomationContext,
+} from "@/lib/automationService";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,6 +76,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
 import { generateEstimatePdf, generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
@@ -446,6 +452,8 @@ export default function DealsPage() {
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [sendEstimateOpen, setSendEstimateOpen] = useState<null | { deal: Deal; channel: "email" | "whatsapp" }>(null);
+  /** `${dealId}:deal` or `${dealId}:${installmentId}` while sending invoice webhook */
+  const [invoiceSendBusyKey, setInvoiceSendBusyKey] = useState<string | null>(null);
 
   const [paymentPlanOpen, setPaymentPlanOpen] = useState(false);
   const [paymentPlanType, setPaymentPlanType] = useState<"one_time" | "monthly" | "quarterly" | "custom">("monthly");
@@ -487,6 +495,16 @@ export default function DealsPage() {
     enabled: sheetOpen && !!sheetDeal?.id && sheetMode !== "create",
     staleTime: 10_000,
   });
+
+  const primaryInstallmentWithInvoice = useMemo(() => {
+    const rows = dealCreationPlanQ.data?.installments ?? [];
+    return rows.find((i) => !!i.invoice_number) ?? null;
+  }, [dealCreationPlanQ.data]);
+
+  const canSendInvoiceFromSheetView =
+    sheetMode === "view" &&
+    !!sheetDeal &&
+    (!!sheetDeal.invoiceNumber || !!primaryInstallmentWithInvoice);
 
   const markInstallmentPaidM = useMutation({
     mutationFn: async (installmentId: string) => {
@@ -588,6 +606,54 @@ export default function DealsPage() {
       });
     }
   }, []);
+
+  const buildInvoiceAutomationContext = useCallback(
+    (deal: Deal, installment?: DealInstallmentRow | null): AutomationContext => ({
+      dealId: deal.id,
+      dealTitle: deal.name,
+      dealValue: Number(deal.value ?? deal.totalAmount ?? 0),
+      customerId: deal.customerId,
+      salesRepId: deal.ownerUserId,
+      estimateNumber: installment?.estimate_number ?? deal.estimateNumber ?? undefined,
+      invoiceNumber: installment?.invoice_number ?? deal.invoiceNumber ?? undefined,
+      installmentId: installment?.id,
+      installmentLabel: installment?.label,
+      dueDate: installment?.due_date ?? undefined,
+      amountDue: installment != null ? Number(installment.amount ?? 0) : undefined,
+    }),
+    [],
+  );
+
+  const sendInvoiceFromDealUi = useCallback(
+    async (deal: Deal, installment?: DealInstallmentRow | null) => {
+      const busyKey = `${deal.id}:${installment?.id ?? "deal"}`;
+      const ctx = buildInvoiceAutomationContext(deal, installment ?? null);
+      if (!ctx.invoiceNumber?.trim()) {
+        toast({
+          title: "No invoice yet",
+          description: "Generate an invoice (e.g. mark installment paid) before sending.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setInvoiceSendBusyKey(busyKey);
+      try {
+        const { ok, error } = await sendDealInvoiceN8n(ctx);
+        if (ok) {
+          toast({ title: "Invoice sent", description: "buildesk-invoice webhook delivered." });
+        } else {
+          toast({
+            title: "Send invoice failed",
+            description: error ?? "Webhook error",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        setInvoiceSendBusyKey(null);
+      }
+    },
+    [buildInvoiceAutomationContext],
+  );
 
   const sendInstallmentEstimate = useCallback(
     async (estimateNumber: string | null, channel: "email" | "whatsapp") => {
@@ -1864,6 +1930,17 @@ export default function DealsPage() {
                                   </>
                                 )}
 
+                                {deal.invoiceNumber && (
+                                  <DropdownMenuItem
+                                    className="cursor-pointer"
+                                    disabled={invoiceSendBusyKey === `${deal.id}:deal`}
+                                    onClick={() => void sendInvoiceFromDealUi(deal, null)}
+                                  >
+                                    <Receipt className="mr-2 h-4 w-4" />
+                                    Send invoice
+                                  </DropdownMenuItem>
+                                )}
+
                                 {(canUpdateDeal || canRemoveDeal) && <DropdownMenuSeparator />}
 
                                 {canUpdateDeal && !deal.locked && (
@@ -1924,7 +2001,9 @@ export default function DealsPage() {
             <p>
               <strong className="text-foreground">Follow-up:</strong> Set “Next follow-up” to trigger{" "}
               <strong>deal_follow_up</strong> automation 1 day before and on that date. New deals fire{" "}
-              <strong>deal_created</strong> for the assignee.
+              <strong>deal_created</strong> for the assignee. <strong>Send invoice</strong> posts to n8n{" "}
+              <code className="text-[10px]">buildesk-invoice</code> and runs <strong>deal_invoice_sent</strong>{" "}
+              templates.
             </p>
             <p>
               <strong className="text-foreground">Roles:</strong> Super Admin can edit, archive (soft delete), and set{" "}
@@ -2128,20 +2207,32 @@ export default function DealsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label>Expected close date</Label>
-                  <Input
-                    type="date"
-                    value={expectedCloseDate}
-                    onChange={(e) => setExpectedCloseDate(e.target.value)}
-                    disabled={sheetMode === "view"}
+                  <Datepicker
+                    select="single"
+                    touchUi={false}
+                    inputComponent="input"
+                    inputProps={{
+                      placeholder: "Select…",
+                      className: "h-9 rounded-lg text-sm",
+                      disabled: sheetMode === "view",
+                    }}
+                    value={ymdToDate(expectedCloseDate)}
+                    onChange={(ev) => setExpectedCloseDate(ev.value ? dateToYmd(ev.value) : "")}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Next follow-up date</Label>
-                  <Input
-                    type="date"
-                    value={nextFollowUpDate}
-                    onChange={(e) => setNextFollowUpDate(e.target.value)}
-                    disabled={sheetMode === "view"}
+                  <Datepicker
+                    select="single"
+                    touchUi={false}
+                    inputComponent="input"
+                    inputProps={{
+                      placeholder: "Select…",
+                      className: "h-9 rounded-lg text-sm",
+                      disabled: sheetMode === "view",
+                    }}
+                    value={ymdToDate(nextFollowUpDate)}
+                    onChange={(ev) => setNextFollowUpDate(ev.value ? dateToYmd(ev.value) : "")}
                   />
                 </div>
                 <div className="space-y-2">
@@ -2546,16 +2637,32 @@ export default function DealsPage() {
                                           PDF
                                         </Button>
                                         {!!i.invoice_number && (
-                                          <Button
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-7 px-2 text-[11px] border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-                                            onClick={() => downloadInstallmentInvoice(i.id)}
-                                            title={`Download invoice ${i.invoice_number}`}
-                                          >
-                                            <Receipt className="mr-1 h-3 w-3" />
-                                            Invoice
-                                          </Button>
+                                          <>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 px-2 text-[11px] border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                                              onClick={() => downloadInstallmentInvoice(i.id)}
+                                              title={`Download invoice ${i.invoice_number}`}
+                                            >
+                                              <Receipt className="mr-1 h-3 w-3" />
+                                              Invoice
+                                            </Button>
+                                            <Button
+                                              size="sm"
+                                              variant="outline"
+                                              className="h-7 px-2 text-[11px]"
+                                              disabled={
+                                                !sheetDeal ||
+                                                invoiceSendBusyKey === `${sheetDeal.id}:${i.id}`
+                                              }
+                                              title="Send invoice to n8n (buildesk-invoice)"
+                                              onClick={() => sheetDeal && void sendInvoiceFromDealUi(sheetDeal, i)}
+                                            >
+                                              <Send className="mr-1 h-3 w-3" />
+                                              Send inv.
+                                            </Button>
+                                          </>
                                         )}
                                         <DropdownMenu>
                                           <DropdownMenuTrigger asChild>
@@ -2664,6 +2771,25 @@ export default function DealsPage() {
                 <Button variant="outline" onClick={() => setSheetOpen(false)}>
                   Close
                 </Button>
+                {canSendInvoiceFromSheetView && sheetDeal && !sheetDeal.deletedAt && (
+                  <Button
+                    variant="secondary"
+                    disabled={
+                      !!invoiceSendBusyKey &&
+                      invoiceSendBusyKey.startsWith(`${sheetDeal.id}:`)
+                    }
+                    onClick={() => {
+                      const inst =
+                        !sheetDeal.invoiceNumber && primaryInstallmentWithInvoice
+                          ? primaryInstallmentWithInvoice
+                          : null;
+                      void sendInvoiceFromDealUi(sheetDeal, inst);
+                    }}
+                  >
+                    <Receipt className="mr-2 h-4 w-4" />
+                    Send invoice
+                  </Button>
+                )}
                 {canUpdateDeal && sheetDeal && !sheetDeal.locked && !sheetDeal.deletedAt && (
                   <Button
                     onClick={() => {
@@ -2727,11 +2853,25 @@ export default function DealsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Start date</Label>
-              <Input type="date" value={paymentPlanStartDate} onChange={(e) => setPaymentPlanStartDate(e.target.value)} />
+              <Datepicker
+                select="single"
+                touchUi={false}
+                inputComponent="input"
+                inputProps={{ placeholder: "Select…", className: "h-9" }}
+                value={ymdToDate(paymentPlanStartDate)}
+                onChange={(ev) => setPaymentPlanStartDate(ev.value ? dateToYmd(ev.value) : "")}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>End date (optional)</Label>
-              <Input type="date" value={paymentPlanEndDate} onChange={(e) => setPaymentPlanEndDate(e.target.value)} />
+              <Datepicker
+                select="single"
+                touchUi={false}
+                inputComponent="input"
+                inputProps={{ placeholder: "Optional…", className: "h-9" }}
+                value={ymdToDate(paymentPlanEndDate)}
+                onChange={(ev) => setPaymentPlanEndDate(ev.value ? dateToYmd(ev.value) : "")}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Number of installments</Label>
@@ -2781,11 +2921,16 @@ export default function DealsPage() {
                       <TableRow key={idx}>
                         <TableCell className="text-xs tabular-nums">{idx + 1}</TableCell>
                         <TableCell>
-                          <Input
-                            type="date"
-                            value={r.due_date}
-                            onChange={(e) =>
-                              setCustomRows((rows) => rows.map((x, i) => (i === idx ? { ...x, due_date: e.target.value } : x)))
+                          <Datepicker
+                            select="single"
+                            touchUi={false}
+                            inputComponent="input"
+                            inputProps={{ placeholder: "Due", className: "h-8 min-w-[140px] text-xs" }}
+                            value={ymdToDate(r.due_date)}
+                            onChange={(ev) =>
+                              setCustomRows((rows) =>
+                                rows.map((x, i) => (i === idx ? { ...x, due_date: ev.value ? dateToYmd(ev.value) : "" } : x)),
+                              )
                             }
                           />
                         </TableCell>
