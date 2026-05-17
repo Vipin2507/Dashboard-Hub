@@ -72,9 +72,8 @@ app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
 // ---------------------------------------------------------
-// 5. REMAINING API REGISTRATIONS
+// 5. REMAINING API REGISTRATIONS (payments API registered once below with broadcast)
 // ---------------------------------------------------------
-registerPaymentsApi(app,  db );
 registerDataControlApi(app,  db );
 registerSubscriptionRenewalApi(app,  db );
 registerDeliveryApi(app,  db , { broadcast } );
@@ -1888,6 +1887,7 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
       action: "created",
       id: result.planId,
     });
+    broadcast({ type: "change", entity: "payments", action: "plan_created", id: result.planId, dealId });
     if (proposalId) {
       broadcast({ type: "change", entity: "proposals", action: "updated", id: proposalId });
     }

@@ -212,6 +212,7 @@ function getInitialState() {
     automationTemplates: structuredClone(seedAutomationTemplates),
     automationLogs: [],
     automationSettings: {
+      automationsEnabled: true,
       n8nWebhookBase: 'http://72.60.200.185:5678/webhook',
       wahaApiUrl: 'http://72.60.200.185:3000',
       wahaApiKey: 'MySecretWAHAKey',

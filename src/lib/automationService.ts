@@ -187,6 +187,12 @@ export type TriggerAutomationOptions = {
   skipEmailSmsN8n?: boolean;
 };
 
+/** Master kill switch — when off, automated sends and rule runners are skipped. */
+export function isAutomationGloballyEnabled(): boolean {
+  const { automationSettings } = useAppStore.getState();
+  return automationSettings.automationsEnabled !== false;
+}
+
 // Call this from anywhere in the app when a triggerable event occurs.
 // e.g. triggerAutomation('proposal_sent', { proposalId: 'p-001' })
 export async function triggerAutomation(
@@ -194,6 +200,8 @@ export async function triggerAutomation(
   context: AutomationContext,
   options?: TriggerAutomationOptions,
 ): Promise<void> {
+  if (!isAutomationGloballyEnabled()) return;
+
   // Ensure we don't use stale templates (common when templates are edited in backend/other tab
   // and the user sends immediately without visiting the Automation page).
   await refreshTemplatesIfStale();
@@ -235,6 +243,9 @@ const BUILDESK_INVOICE_WEBHOOK = "buildesk-invoice";
  * Use from Deals UI when the user clicks “Send invoice”.
  */
 export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ ok: boolean; error?: string }> {
+  if (!isAutomationGloballyEnabled()) {
+    return { ok: false, error: "All automations are turned off (kill switch on Automation page)." };
+  }
   await refreshTemplatesIfStale();
   const { automationSettings, appendAutomationLog, automationTemplates } = useAppStore.getState();
   const ctx = enrichAutomationContext(context);
@@ -366,6 +377,7 @@ export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ 
 
 /** Send a specific template by id (used by Rules actions). */
 export async function sendAutomationTemplateById(templateId: string, context: AutomationContext): Promise<void> {
+  if (!isAutomationGloballyEnabled()) return;
   const { automationTemplates, automationSettings } = useAppStore.getState();
   const template = automationTemplates.find((t) => t.id === templateId);
   if (!template) return;
@@ -938,6 +950,7 @@ async function sendInAppNotification(template: AutomationTemplate, body: string,
 
 // Trigger if due in 1, 3, or 7 days (frontend-only helper)
 export function checkAndTriggerPaymentDue(): void {
+  if (!isAutomationGloballyEnabled()) return;
   const { customers, users } = useAppStore.getState();
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
@@ -996,6 +1009,7 @@ export function checkAndTriggerPaymentDue(): void {
 }
 
 export function checkAndTriggerProposalFollowUps(): void {
+  if (!isAutomationGloballyEnabled()) return;
   const { proposals, customers, users, automationTemplates } = useAppStore.getState();
   const followUpTemplates = automationTemplates.filter(
     (t) => t.isActive && t.trigger === "proposal_follow_up",
@@ -1106,6 +1120,7 @@ export function checkInstallmentPaymentReminders(
   }>,
   settings: InstallmentReminderSettings,
 ): void {
+  if (!isAutomationGloballyEnabled()) return;
   const today = new Date().toISOString().slice(0, 10);
   const { customers, users } = useAppStore.getState();
   const state = getRuleState();
@@ -1168,6 +1183,7 @@ export function checkDealFollowUpReminders(
     dealStatus?: string | null;
   }>,
 ): void {
+  if (!isAutomationGloballyEnabled()) return;
   const today = new Date().toISOString().slice(0, 10);
   const { customers, users } = useAppStore.getState();
   const state = getRuleState();
@@ -1208,6 +1224,7 @@ export function checkDealFollowUpReminders(
 }
 
 export function runAutomationRules(): void {
+  if (!isAutomationGloballyEnabled()) return;
   checkAndTriggerPaymentDue();
   checkAndTriggerProposalFollowUps();
   const { deals } = useAppStore.getState();
@@ -1236,6 +1253,7 @@ export async function sendSubscriptionReminderChannels(
   subject: string,
   ctx: AutomationContext,
 ): Promise<void> {
+  if (!isAutomationGloballyEnabled()) return;
   const { automationSettings, automationTemplates } = useAppStore.getState();
   const uniq = [...new Set(channels)];
   const baseFake = (): AutomationTemplate => ({
@@ -1272,6 +1290,7 @@ async function recordSubscriptionReminderKind(subscriptionId: string, kind: "30d
 }
 
 export async function checkSubscriptionRenewalAutomation(): Promise<void> {
+  if (!isAutomationGloballyEnabled()) return;
   try {
     const res = await fetch(apiUrl("/api/subscriptions/tracker"));
     if (!res.ok) return;

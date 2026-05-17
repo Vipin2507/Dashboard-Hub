@@ -9,8 +9,17 @@ import {
   type InstallmentPreview,
 } from "@/lib/paymentPlanCalculator";
 import { generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
-import { determineGSTType, ESTIMATE_DEFAULTS, getStateCodeFromGSTIN } from "@/lib/estimateConfig";
+import { getStateCodeFromGSTIN } from "@/lib/estimateConfig";
 import { calculateEstimateTotals } from "@/lib/estimateCalculator";
+import {
+  buildDealEstimateBilling,
+  buildInstallmentEstimateData,
+  emptyDealEstimateBilling,
+  resolveGstTypeForBilling,
+  validateDealEstimateBilling,
+  type DealEstimateBillingState,
+} from "@/lib/dealEstimateBilling";
+import { DealEstimateBillingSection } from "@/components/DealEstimateBillingSection";
 import { useAppStore } from "@/store/useAppStore";
 import { api } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
@@ -44,7 +53,7 @@ import {
   FileText,
   Loader2,
 } from "lucide-react";
-import type { Customer, Deal, Proposal, ProposalLineItem } from "@/types";
+import type { Customer, Deal, Proposal } from "@/types";
 import type { EstimateData } from "@/types/estimate";
 
 const schema = z.object({
@@ -99,31 +108,6 @@ const DISTRIBUTION_OPTIONS = [
   },
 ];
 
-function allocateAmountAcrossProposalLines(
-  installmentAmount: number,
-  lines: ProposalLineItem[],
-): number[] {
-  if (!lines.length) return [];
-  const weights = lines.map((li) => Math.max(0, Number(li.lineTotal) || 0));
-  const sumW = weights.reduce((a, b) => a + b, 0);
-  if (sumW <= 0) {
-    const n = lines.length;
-    const base = Math.floor((installmentAmount / n) * 100) / 100;
-    const remainder = Math.round((installmentAmount - base * n) * 100) / 100;
-    return lines.map((_, i) => (i === n - 1 ? base + remainder : base));
-  }
-  let allocated = 0;
-  return weights.map((w, i) => {
-    const isLast = i === weights.length - 1;
-    if (isLast) {
-      return Math.round((installmentAmount - allocated) * 100) / 100;
-    }
-    const amt = Math.round(((installmentAmount * w) / sumW) * 100) / 100;
-    allocated += amt;
-    return amt;
-  });
-}
-
 function resolveDealAssignmentFromForm(
   form: Pick<FormData, "customerId" | "regionId" | "teamId" | "ownerUserId">,
   proposal: Proposal,
@@ -168,9 +152,11 @@ export function ConvertToDealDialog({
   const regions = useAppStore((s) => s.regions);
   const teams = useAppStore((s) => s.teams);
   const users = useAppStore((s) => s.users);
+  const inventoryItems = useAppStore((s) => s.inventoryItems);
   const qc = useQueryClient();
 
   const [step, setStep] = useState<"form" | "preview">("form");
+  const [billing, setBilling] = useState<DealEstimateBillingState>(emptyDealEstimateBilling);
   const [preview, setPreview] = useState<InstallmentPreview[]>([]);
   const [generating, setGenerating] = useState(false);
   const [generatingIndex, setGeneratingIndex] = useState(-1);
@@ -212,6 +198,7 @@ export function ConvertToDealDialog({
     setPreview([]);
     const value = proposal.finalQuoteValue ?? proposal.grandTotal ?? 0;
     const cust = customers.find((c) => c.id === proposal.customerId);
+    setBilling(buildDealEstimateBilling(cust, proposal, inventoryItems));
     reset({
       title: proposal.title ?? "",
       customerId: proposal.customerId ?? "",
@@ -230,7 +217,7 @@ export function ConvertToDealDialog({
       intervalMonths: 3,
       customPercentages: [25, 25, 25, 25],
     });
-  }, [open, proposal, reset, customers, me.regionId, me.teamId, me.id]);
+  }, [open, proposal, reset, customers, inventoryItems, me.regionId, me.teamId, me.id]);
 
   const watched = watch();
   const watchedCustomerId = watch("customerId");
@@ -276,8 +263,9 @@ export function ConvertToDealDialog({
     [regions],
   );
 
-  const customerStateCode = getStateCodeFromGSTIN(selectedCustomer?.gstin ?? "");
-  const gstType = determineGSTType(customerStateCode);
+  const customerStateCode = getStateCodeFromGSTIN(billing.gstin || selectedCustomer?.gstin || "");
+  const gstType = resolveGstTypeForBilling(billing);
+  const gstTypeLabel = gstType === "intra" ? "CGST + SGST (intra-state)" : "IGST (inter-state)";
 
   const liveInstallments: InstallmentPreview[] = useMemo(() => {
     if (!watched.enablePaymentPlan || !watched.startDate) return [];
@@ -318,6 +306,11 @@ export function ConvertToDealDialog({
 
   const handlePreview = handleSubmit((data) => {
     if (!proposal) return;
+    const billingErr = validateDealEstimateBilling(billing);
+    if (billingErr) {
+      toast.error(billingErr);
+      return;
+    }
     if (data.enablePaymentPlan) {
       if (!liveInstallments.length) {
         toast.error("Could not build installments. Check amounts, dates, and custom percentages.");
@@ -477,7 +470,10 @@ export function ConvertToDealDialog({
 
       const { deal, installments: savedInstallments } = result;
 
-      const billToName = cust ? customerBillToName(cust) : proposal.customerName || "Customer";
+      const billToName =
+        billing.companyName.trim() ||
+        billing.customerFullName.trim() ||
+        (cust ? customerBillToName(cust) : proposal.customerName || "Customer");
 
       for (let i = 0; i < preview.length; i++) {
         setGeneratingIndex(i);
@@ -487,40 +483,17 @@ export function ConvertToDealDialog({
 
         const { estimateNumber } = await api.get<{ estimateNumber: string }>("/estimates/next-number");
 
-        const lineAmounts = allocateAmountAcrossProposalLines(inst.amount, proposal.lineItems);
-
-        const estimateData: EstimateData = {
+        const estimateData: EstimateData = buildInstallmentEstimateData({
+          billing,
+          baseItems: billing.items,
+          inst,
+          installmentIndex: i,
+          installmentCount: preview.length,
           estimateNumber,
-          estimateDate: inst.dueDate,
-          customerName: billToName,
-          customerAddress: cust
-            ? [cust.address?.line1, cust.address?.line2].filter(Boolean).join(", ")
-            : "",
-          customerCity: cust?.address?.city ?? "",
-          customerState: cust?.address?.state ?? "",
-          customerPincode: cust?.address?.pincode ?? "",
-          customerCountry: cust?.address?.country ?? "India",
-          customerGstin: cust?.gstin,
-          customerStateCode: customerStateCode || "",
           gstType,
-          lineItems: proposal.lineItems.map((li, idx) => {
-            const qty = Number(li.qty) || 1;
-            const shareAmount = lineAmounts[idx] ?? 0;
-            const rate = Math.round((shareAmount / qty) * 100) / 100;
-            return {
-              id: li.id,
-              description: `${li.name}\n${inst.label} — ${inst.displayDate}`,
-              hsnSac: li.sku || "998313",
-              qty,
-              unit: li.qtyLabel?.trim() || "Licence",
-              rate,
-              amount: Math.round(shareAmount * 100) / 100,
-              taxRate: li.taxRate ?? 18,
-            };
-          }),
-          notes: `${selectedPlan?.label ?? "Plan"} — Installment ${i + 1} of ${preview.length}`,
-          termsAndConditions: ESTIMATE_DEFAULTS.terms,
-        };
+          customerStateCode,
+          planLabel: selectedPlan?.label,
+        });
 
         const totals = calculateEstimateTotals(estimateData.lineItems, gstType);
 
@@ -544,7 +517,7 @@ export function ConvertToDealDialog({
 
       INVALIDATE.deal(qc, deal.id, customerId);
       INVALIDATE.proposal(qc, proposal.id, customerId);
-      qc.invalidateQueries({ queryKey: QK.paymentPlans() });
+      qc.invalidateQueries({ queryKey: ["payments"] });
 
       toast.success(`Deal created + ${preview.length} estimates generated`, {
         description: `${deal.id} — ${billToName}`,
@@ -569,7 +542,7 @@ export function ConvertToDealDialog({
       <DialogContent
         className={cn(
           "flex h-[100dvh] max-h-none w-full max-w-none flex-col gap-0 p-0",
-          "sm:max-h-[95vh] sm:max-w-2xl sm:rounded-xl sm:h-auto",
+          "sm:max-h-[95vh] sm:max-w-4xl sm:rounded-xl sm:h-auto",
         )}
       >
         <DialogHeader className="flex-shrink-0 border-b px-5 py-4">
@@ -795,6 +768,13 @@ export function ConvertToDealDialog({
                   </div>
                 </div>
               </div>
+
+              <DealEstimateBillingSection
+                billing={billing}
+                onChange={setBilling}
+                inventoryItems={inventoryItems}
+                gstTypeLabel={gstTypeLabel}
+              />
 
               <div className="flex items-center justify-between border-b border-t border-gray-100 py-2 dark:border-gray-800">
                 <div>

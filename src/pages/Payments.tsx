@@ -19,6 +19,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { can, formatINR } from '@/lib/rbac';
 import { toast } from '@/components/ui/use-toast';
 import {
+  useDuePayments,
   useOverduePayments,
   usePaymentCatalog,
   usePaymentHistory,
@@ -36,6 +37,36 @@ function formatDate(s?: string | null) {
   } catch {
     return s;
   }
+}
+
+function paymentStatusBadge(status?: string) {
+  const s = String(status ?? 'pending');
+  if (s === 'paid') {
+    return (
+      <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+        Paid
+      </span>
+    );
+  }
+  if (s === 'overdue') {
+    return (
+      <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
+        Overdue
+      </span>
+    );
+  }
+  if (s === 'partial') {
+    return (
+      <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+        Partial
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+      Due
+    </span>
+  );
 }
 
 function PaymentKpiCard(props: {
@@ -204,6 +235,7 @@ export default function Payments() {
 
   const remainingQ = useRemainingBalances();
   const overdueQ = useOverduePayments();
+  const dueQ = useDuePayments();
   const historyQ = usePaymentHistory();
   const catalogQ = usePaymentCatalog();
 
@@ -223,14 +255,17 @@ export default function Payments() {
     const collectedMTD = (historyQ.data ?? [])
       .filter((h) => h.status === 'paid' && h.paid_date && new Date(h.paid_date).getMonth() === new Date().getMonth())
       .reduce((s, h) => s + Number(h.paid_amount ?? 0), 0);
+    const dueAmount = (dueQ.data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
     return {
       totalPending,
       overdueAmount,
+      dueAmount,
       collectedMTD,
       activePlans: remainingRows.length,
       overdueCount: (overdueQ.data ?? []).length,
+      dueCount: (dueQ.data ?? []).length,
     };
-  }, [remainingQ.data, overdueQ.data, historyQ.data]);
+  }, [remainingQ.data, overdueQ.data, dueQ.data, historyQ.data]);
 
   if (!canView) {
     return (
@@ -284,6 +319,9 @@ export default function Payments() {
             <TabsTrigger value="overview" className="text-xs">
               Overview
             </TabsTrigger>
+            <TabsTrigger value="due" className="text-xs">
+              Due ({kpis.dueCount})
+            </TabsTrigger>
             <TabsTrigger value="overdue" className="text-xs">
               Overdue ({kpis.overdueCount})
             </TabsTrigger>
@@ -303,6 +341,14 @@ export default function Payments() {
               <CardContent>
                 {remainingQ.isLoading ? (
                   <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : remainingQ.isError ? (
+                  <p className="text-sm text-destructive">
+                    Could not load payment plans. Restart the API server (<code className="text-xs">npm run server</code>) and refresh.
+                  </p>
+                ) : (remainingQ.data ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No active payment plans yet. Create a deal from a proposal with <strong>Payment plan</strong> enabled to see installments here.
+                  </p>
                 ) : (
                   <div className="overflow-x-auto rounded-md border">
                     <Table>
@@ -313,7 +359,8 @@ export default function Payments() {
                           <TableHead className="text-xs">Plan</TableHead>
                           <TableHead className="text-xs">Remaining</TableHead>
                           <TableHead className="text-xs">Next due</TableHead>
-                          <TableHead className="text-xs">Overdues</TableHead>
+                          <TableHead className="text-xs">Overdue</TableHead>
+                          <TableHead className="text-xs">Source</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -324,7 +371,77 @@ export default function Payments() {
                             <TableCell className="text-xs">{r.plan_name}</TableCell>
                             <TableCell className="text-sm font-semibold">{formatINR(Number(r.remaining_amount ?? 0))}</TableCell>
                             <TableCell className="text-xs">{formatDate(r.next_due_date)}</TableCell>
-                            <TableCell className="text-xs">{Number(r.overdue_count ?? 0)}</TableCell>
+                            <TableCell className="text-xs">
+                              {Number(r.overdue_count ?? 0) > 0 ? (
+                                <span className="font-medium text-destructive">{r.overdue_count}</span>
+                              ) : (
+                                '0'
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {r.plan_source === 'deal' ? 'Deal + estimate' : 'Manual plan'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="due" className="mt-4">
+            <Card className="border border-border shadow-none">
+              <CardHeader>
+                <CardTitle className="text-base">Upcoming due installments</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {dueQ.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : (dueQ.data ?? []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No upcoming installments due.</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs">Customer</TableHead>
+                          <TableHead className="text-xs">Deal</TableHead>
+                          <TableHead className="text-xs">Installment</TableHead>
+                          <TableHead className="text-xs">Estimate</TableHead>
+                          <TableHead className="text-xs">Amount</TableHead>
+                          <TableHead className="text-xs">Due date</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
+                          <TableHead className="text-xs text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(dueQ.data ?? []).map((row: any) => (
+                          <TableRow key={row.id}>
+                            <TableCell className="text-sm font-medium">{row.company_name ?? '—'}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{row.deal_title ?? '—'}</TableCell>
+                            <TableCell className="text-xs">{row.label}</TableCell>
+                            <TableCell className="text-xs font-mono">{row.estimate_number ?? '—'}</TableCell>
+                            <TableCell className="text-sm font-semibold">{formatINR(Number(row.amount ?? 0))}</TableCell>
+                            <TableCell className="text-xs">{formatDate(row.due_date)}</TableCell>
+                            <TableCell className="text-xs">{paymentStatusBadge(row.status)}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                className="h-7 px-2.5 text-xs rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+                                onClick={() => {
+                                  setRecordRow(row);
+                                  setPayAmount(String(row.amount ?? ''));
+                                  setPayRef('');
+                                  setPayMode('bank_transfer');
+                                  setPayDate(new Date().toISOString().slice(0, 10));
+                                  setRecordOpen(true);
+                                }}
+                              >
+                                Record
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -351,8 +468,10 @@ export default function Payments() {
                           <TableHead className="text-xs">Customer</TableHead>
                           <TableHead className="text-xs">Deal</TableHead>
                           <TableHead className="text-xs">Installment</TableHead>
+                          <TableHead className="text-xs">Estimate</TableHead>
                           <TableHead className="text-xs">Amount</TableHead>
                           <TableHead className="text-xs">Due date</TableHead>
+                          <TableHead className="text-xs">Status</TableHead>
                           <TableHead className="text-xs text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -362,8 +481,10 @@ export default function Payments() {
                             <TableCell className="text-sm font-medium">{row.company_name ?? '—'}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{row.deal_title ?? '—'}</TableCell>
                             <TableCell className="text-xs">{row.label}</TableCell>
+                            <TableCell className="text-xs font-mono">{row.estimate_number ?? '—'}</TableCell>
                             <TableCell className="text-sm font-semibold text-destructive">{formatINR(Number(row.amount ?? 0))}</TableCell>
                             <TableCell className="text-xs text-destructive">{formatDate(row.due_date)}</TableCell>
+                            <TableCell className="text-xs">{paymentStatusBadge('overdue')}</TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <Button
@@ -422,6 +543,7 @@ export default function Payments() {
                                       }
                                       toast({ title: 'Payment confirmed' });
                                       overdueQ.refetch();
+                                      dueQ.refetch();
                                       historyQ.refetch();
                                       remainingQ.refetch();
                                     }}
@@ -650,6 +772,7 @@ export default function Payments() {
                 toast({ title: 'Payment recorded', description: out?.receiptNumber ? `Receipt: ${out.receiptNumber}` : undefined });
                 setRecordOpen(false);
                 overdueQ.refetch();
+                dueQ.refetch();
                 historyQ.refetch();
                 remainingQ.refetch();
               }}

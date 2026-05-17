@@ -57,7 +57,7 @@ import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useCreateDealPaymentPlan, useDealPaymentSummary, useRecordPayment } from "@/hooks/usePayments";
+import { useCreateDealPaymentPlan, useDealPaymentSummary, useRecordPayment, useRemainingBalances } from "@/hooks/usePayments";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -491,6 +491,7 @@ export default function DealsPage() {
   const [remarks, setRemarks] = useState("");
 
   const dealPaymentsQ = useDealPaymentSummary(sheetOpen && sheetDeal?.id && sheetMode !== "create" ? sheetDeal.id : null);
+  const remainingBalancesQ = useRemainingBalances();
   const createDealPlanM = useCreateDealPaymentPlan();
   const recordPaymentM = useRecordPayment();
 
@@ -739,6 +740,46 @@ export default function DealsPage() {
     refetchInterval: LIVE_ENTITY_POLL_MS,
     refetchOnMount: "always",
   });
+
+  const paymentByDealId = useMemo(() => {
+    const map = new Map<string, { paid: number; remaining: number; total: number }>();
+    for (const row of remainingBalancesQ.data ?? []) {
+      const dealId = String((row as any).deal_id ?? "");
+      if (!dealId) continue;
+      const paid = Number((row as any).paid_amount ?? 0) || 0;
+      const remaining = Number((row as any).remaining_amount ?? 0) || 0;
+      const total = Number((row as any).total_amount ?? 0) || 0;
+      const prev = map.get(dealId) ?? { paid: 0, remaining: 0, total: 0 };
+      map.set(dealId, {
+        paid: prev.paid + paid,
+        remaining: prev.remaining + remaining,
+        total: Math.max(prev.total, total),
+      });
+    }
+    return map;
+  }, [remainingBalancesQ.data]);
+
+  const deriveDealPaymentNumbers = useCallback(
+    (deal: Deal, totalAmountGuess?: number) => {
+      const fromPlans = paymentByDealId.get(String(deal.id));
+      if (fromPlans) {
+        return {
+          amountPaid: fromPlans.paid,
+          balanceAmount: Math.max(0, fromPlans.remaining),
+        };
+      }
+      const amountPaid = deal.amountPaid != null ? Number(deal.amountPaid) : undefined;
+      const total = totalAmountGuess ?? (deal.totalAmount != null ? Number(deal.totalAmount) : undefined) ?? (deal.value ?? undefined);
+      const balanceAmount =
+        deal.balanceAmount != null
+          ? Number(deal.balanceAmount)
+          : total != null && amountPaid != null
+            ? Math.max(0, total - amountPaid)
+            : undefined;
+      return { amountPaid, balanceAmount };
+    },
+    [paymentByDealId],
+  );
 
   const auditQuery = useQuery({
     queryKey: ["deal-audit", sheetDeal?.id],
@@ -1978,14 +2019,16 @@ export default function DealsPage() {
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
-                            return formatINRAmount(d.balanceAmount);
+                            const pay = deriveDealPaymentNumbers(deal, d.totalAmount ?? deal.value);
+                            return formatINRAmount(pay.balanceAmount ?? d.balanceAmount);
                           })()}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
-                            return formatINRAmount(d.amountPaid);
+                            const pay = deriveDealPaymentNumbers(deal, d.totalAmount ?? deal.value);
+                            return formatINRAmount(pay.amountPaid ?? d.amountPaid);
                           })()}
                         </td>
                         <td className="px-4 py-3.5 text-sm min-w-[180px]">

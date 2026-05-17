@@ -27,6 +27,10 @@ export interface PaymentInstallment {
   paid_date?: string | null;
   paid_amount: number;
   status: 'pending' | 'paid' | 'overdue' | 'partial';
+  estimate_number?: string | null;
+  installment_source?: 'deal' | 'customer';
+  company_name?: string | null;
+  deal_title?: string | null;
   payment_mode?: string | null;
   transaction_reference?: string | null;
   receipt_number?: string | null;

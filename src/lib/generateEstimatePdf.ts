@@ -4,6 +4,14 @@ import type { Deal } from "@/types";
 import type { EstimateData } from "@/types/estimate";
 import { calculateEstimateTotals } from "@/lib/estimateCalculator";
 import { COMPANY, ESTIMATE_DEFAULTS } from "@/lib/estimateConfig";
+import {
+  computeEstimatePdfItemColumnWidths,
+  computeEstimatePdfTotalsFooterLayout,
+  formatEstimatePdfInr,
+  PDF_CELL_PAD_LR_MM,
+  PDF_MIN_BODY_ROW_H_MM,
+  PDF_PX_MM,
+} from "@/lib/estimatePdfTableLayout";
 
 type EstimateLineItem = {
   name: string;
@@ -55,7 +63,7 @@ export const COLORS = {
   tableHeaderText: [255, 255, 255],
   totalRowBg: [242, 242, 242],
   totalBoldBg: [230, 230, 230],
-  tableBorder: [180, 180, 180],
+  tableBorder: [204, 204, 204],
   companyName: [0, 0, 0],
   estimateLabel: [0, 0, 0],
   estNumber: [80, 80, 80],
@@ -65,7 +73,7 @@ export const COLORS = {
 } as const;
 
 function fmtINR(amount: number): string {
-  return amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatEstimatePdfInr(amount);
 }
 
 function fmtDate(isoDate: string): string {
@@ -82,7 +90,8 @@ function drawHRule(doc: jsPDF, x1: number, y: number, x2: number, lineWidth = 0.
   doc.line(nx1, ny, nx2, ny);
 }
 
-const ROW_RULE_COLOR: [number, number, number] = [150, 150, 150];
+const ROW_RULE_COLOR: [number, number, number] = [204, 204, 204];
+const ROW_LINE_MM = 1 * PDF_PX_MM;
 
 function imageFormatFromDataUrl(dataUrl: string): "PNG" | "JPEG" | "WEBP" | null {
   const m = /^data:([^;]+);base64,/i.exec(String(dataUrl || ""));
@@ -226,49 +235,95 @@ async function generateEstimatePdfDoc(estimate: EstimateData): Promise<jsPDF> {
     fmtINR(Number(item.amount || 0)),
   ]);
 
+  const itemColWidths = computeEstimatePdfItemColumnWidths(doc, CONTENT_W, estimate.lineItems);
+
   autoTable(doc, {
     startY: y,
     head: [["#", "Item & Description", "HSN/SAC", "Qty", "Rate", "Amount"]],
     body: tableBody,
     theme: "plain",
+    tableWidth: CONTENT_W,
     styles: {
       font: "helvetica",
       fontSize: 8.5,
-      cellPadding: { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
+      overflow: "linebreak",
+      cellPadding: {
+        top: PDF_CELL_PAD_LR_MM,
+        bottom: PDF_CELL_PAD_LR_MM,
+        left: PDF_CELL_PAD_LR_MM,
+        right: PDF_CELL_PAD_LR_MM,
+      },
       textColor: COLORS.bodyText as any,
       lineColor: ROW_RULE_COLOR as any,
-      // Draw only the bottom rule for each cell (gives "line after each item")
-      lineWidth: { top: 0, right: 0, bottom: 0.55, left: 0 } as any,
+      lineWidth: { top: 0, right: 0, bottom: ROW_LINE_MM, left: 0 } as any,
       valign: "top",
+      minCellHeight: PDF_MIN_BODY_ROW_H_MM,
     },
     headStyles: {
       fillColor: COLORS.tableHeaderBg as any,
       textColor: COLORS.tableHeaderText as any,
-      fontStyle: "normal",
+      fontStyle: "bold",
       fontSize: 8.5,
-      halign: "left",
-      lineWidth: { top: 0, right: 0, bottom: 0.55, left: 0 } as any,
+      valign: "middle",
+      minCellHeight: 8.5,
+      overflow: "hidden",
+      cellPadding: {
+        top: PDF_CELL_PAD_LR_MM,
+        bottom: PDF_CELL_PAD_LR_MM,
+        left: PDF_CELL_PAD_LR_MM,
+        right: PDF_CELL_PAD_LR_MM,
+      },
+      lineWidth: { top: 0, right: 0, bottom: ROW_LINE_MM, left: 0 } as any,
       lineColor: ROW_RULE_COLOR as any,
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: "center" },
-      1: { cellWidth: 78, halign: "left" },
-      2: { cellWidth: 20, halign: "center" },
-      3: { cellWidth: 18, halign: "center" },
-      4: { cellWidth: 28, halign: "right" },
-      5: { cellWidth: 28, halign: "right" },
+      0: { cellWidth: itemColWidths[0], halign: "center" },
+      1: { cellWidth: itemColWidths[1], halign: "left" },
+      2: { cellWidth: itemColWidths[2], halign: "center" },
+      3: { cellWidth: itemColWidths[3], halign: "center" },
+      4: { cellWidth: itemColWidths[4], halign: "right" },
+      5: { cellWidth: itemColWidths[5], halign: "right" },
     },
-    alternateRowStyles: { fillColor: [255, 255, 255] },
+    alternateRowStyles: { fillColor: [248, 249, 250] },
     bodyStyles: { fillColor: [255, 255, 255] },
     margin: { left: MARGIN_L, right: MARGIN_R },
     didParseCell: (data) => {
+      const headHalign: Array<"center" | "left" | "right"> = [
+        "center",
+        "left",
+        "center",
+        "center",
+        "right",
+        "right",
+      ];
+      if (data.section === "head") {
+        data.cell.styles.halign = headHalign[data.column.index] ?? "left";
+      }
       if (data.section === "body" && data.column.index === 3) {
         data.cell.styles.fontSize = 8;
+      }
+      if (data.section === "body" && data.column.index === 1) {
+        data.cell.styles.overflow = "linebreak";
+      }
+      if (data.section === "body" && (data.column.index === 4 || data.column.index === 5)) {
+        data.cell.styles.halign = "right";
       }
     },
   });
 
   const tableBottom = (doc as any).lastAutoTable.finalY;
+
+  const totalsLayoutRows = [
+    { label: "Sub Total", amount: fmtINR(totals.subTotal) },
+    ...totals.taxBreakdown.map((row) => ({ label: row.label, amount: fmtINR(row.amount) })),
+  ];
+  const totalsFooter = computeEstimatePdfTotalsFooterLayout(
+    doc,
+    CONTENT_W,
+    totalsLayoutRows,
+    "Total",
+    fmtINR(totals.grandTotal),
+  );
 
   const totalsData = [
     ["", "Sub Total", fmtINR(totals.subTotal)],
@@ -279,33 +334,43 @@ async function generateEstimatePdfDoc(estimate: EstimateData): Promise<jsPDF> {
     startY: tableBottom,
     body: totalsData,
     theme: "plain",
+    tableWidth: CONTENT_W,
     styles: {
       font: "helvetica",
       fontSize: 8.5,
-      cellPadding: { top: 2.2, bottom: 2.2, left: 2.6, right: 2.6 },
+      overflow: "linebreak",
+      cellPadding: {
+        top: PDF_CELL_PAD_LR_MM,
+        bottom: PDF_CELL_PAD_LR_MM,
+        left: PDF_CELL_PAD_LR_MM,
+        right: PDF_CELL_PAD_LR_MM,
+      },
       textColor: COLORS.bodyText as any,
       lineColor: COLORS.tableBorder as any,
       lineWidth: 0,
     },
     bodyStyles: { fillColor: [255, 255, 255] },
     columnStyles: {
-      0: { cellWidth: 104, fillColor: [255, 255, 255], lineColor: [255, 255, 255] },
-      1: { cellWidth: 48, halign: "right" },
-      2: { cellWidth: 28, halign: "right" },
+      0: {
+        cellWidth: totalsFooter.spacer,
+        fillColor: [255, 255, 255],
+        lineColor: [255, 255, 255],
+      },
+      1: { cellWidth: totalsFooter.labelCol, halign: "right" },
+      2: { cellWidth: totalsFooter.amountCol, halign: "right" },
     },
     margin: { left: MARGIN_L, right: MARGIN_R },
     didDrawCell: (data) => {
       const isRowStart = data.column.index === 0;
       if (!isRowStart) return;
       if (data.section !== "body") return;
-      // Only underline the right totals block (skip the 104mm spacer column)
       const startX = Number((data.table as any).startX ?? MARGIN_L);
       const width = Number((data.table as any).width ?? 0);
-      if (!Number.isFinite(startX) || !Number.isFinite(width) || width <= 104) return;
-      const x = startX + 104;
+      if (!Number.isFinite(startX) || !Number.isFinite(width) || width <= totalsFooter.spacer) return;
+      const x = startX + totalsFooter.spacer;
       const yLine = Number(data.cell.y) + Number(data.cell.height);
       doc.setDrawColor(...COLORS.tableBorder);
-      drawHRule(doc, x, yLine, startX + width, 0.25);
+      drawHRule(doc, x, yLine, startX + width, ROW_LINE_MM);
     },
   });
 
@@ -315,33 +380,43 @@ async function generateEstimatePdfDoc(estimate: EstimateData): Promise<jsPDF> {
     startY: totalsRowBottom,
     body: [["", "Total", fmtINR(totals.grandTotal)]],
     theme: "plain",
+    tableWidth: CONTENT_W,
     styles: {
       font: "helvetica",
       fontSize: 9.5,
       fontStyle: "bold",
-      cellPadding: { top: 2.6, bottom: 2.6, left: 2.6, right: 2.6 },
+      overflow: "linebreak",
+      cellPadding: {
+        top: PDF_CELL_PAD_LR_MM,
+        bottom: PDF_CELL_PAD_LR_MM,
+        left: PDF_CELL_PAD_LR_MM,
+        right: PDF_CELL_PAD_LR_MM,
+      },
       textColor: [0, 0, 0],
       lineColor: COLORS.tableBorder as any,
       lineWidth: 0,
     },
     columnStyles: {
-      0: { cellWidth: 104, fillColor: [255, 255, 255], lineColor: [255, 255, 255] },
-      1: { cellWidth: 48, halign: "right", fillColor: COLORS.totalBoldBg as any },
-      2: { cellWidth: 28, halign: "right", fillColor: COLORS.totalBoldBg as any },
+      0: {
+        cellWidth: totalsFooter.spacer,
+        fillColor: [255, 255, 255],
+        lineColor: [255, 255, 255],
+      },
+      1: { cellWidth: totalsFooter.labelCol, halign: "right", fillColor: COLORS.totalBoldBg as any },
+      2: { cellWidth: totalsFooter.amountCol, halign: "right", fillColor: COLORS.totalBoldBg as any },
     },
     margin: { left: MARGIN_L, right: MARGIN_R },
     didDrawCell: (data) => {
       const isRowStart = data.column.index === 0;
       if (!isRowStart) return;
       if (data.section !== "body") return;
-      // Only underline the right totals block (skip the 104mm spacer column)
       const startX = Number((data.table as any).startX ?? MARGIN_L);
       const width = Number((data.table as any).width ?? 0);
-      if (!Number.isFinite(startX) || !Number.isFinite(width) || width <= 104) return;
-      const x = startX + 104;
+      if (!Number.isFinite(startX) || !Number.isFinite(width) || width <= totalsFooter.spacer) return;
+      const x = startX + totalsFooter.spacer;
       const yLine = Number(data.cell.y) + Number(data.cell.height);
       doc.setDrawColor(...COLORS.tableBorder);
-      drawHRule(doc, x, yLine, startX + width, 0.25);
+      drawHRule(doc, x, yLine, startX + width, ROW_LINE_MM);
     },
   });
 

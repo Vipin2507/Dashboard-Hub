@@ -32,8 +32,192 @@ function addBillingCycle(isoDate, cycle) {
   return d.toISOString().slice(0, 10);
 }
 
+/** Normalize deal + customer installment rows for the Payments UI. */
+function effectiveInstallmentStatus(row, statusField = "status") {
+  const raw = String(row[statusField] ?? "pending");
+  if (raw === "paid") return "paid";
+  const due = row.due_date;
+  if (due && raw !== "paid" && String(due) < new Date().toISOString().slice(0, 10)) {
+    return "overdue";
+  }
+  if (raw === "overdue") return "overdue";
+  return raw === "partial" ? "partial" : "pending";
+}
+
 export function registerPaymentsApi(app, db, helpers = {}) {
   const { getProposalById, broadcast } = helpers;
+
+  function syncOverdueInstallmentStatuses() {
+    db.prepare(
+      `UPDATE payment_installments SET status = 'overdue'
+       WHERE status = 'pending' AND due_date < date('now')`,
+    ).run();
+    db.prepare(
+      `UPDATE deal_installments SET payment_status = 'overdue'
+       WHERE payment_status = 'pending' AND due_date < date('now')`,
+    ).run();
+  }
+
+  function mapDealInstallmentRow(di, companyName, dealTitle) {
+    const status = effectiveInstallmentStatus(di, "payment_status");
+    return {
+      id: di.id,
+      plan_id: di.plan_id,
+      customer_id: di.customer_id,
+      deal_id: di.deal_id,
+      label: di.label,
+      amount: Number(di.amount ?? 0),
+      percentage: di.percentage ?? null,
+      due_date: di.due_date,
+      paid_date: di.paid_date ?? null,
+      paid_amount: Number(di.paid_amount ?? 0),
+      status,
+      payment_mode: null,
+      transaction_reference: null,
+      receipt_number: null,
+      receipt_sent: 0,
+      confirmed_by: null,
+      confirmed_at: null,
+      notes: null,
+      company_name: companyName ?? null,
+      deal_title: dealTitle ?? null,
+      estimate_number: di.estimate_number ?? null,
+      installment_source: "deal",
+    };
+  }
+
+  function mapPaymentInstallmentRow(pi, companyName, dealTitle) {
+    return {
+      ...pi,
+      status: effectiveInstallmentStatus(pi, "status"),
+      company_name: companyName ?? pi.company_name ?? null,
+      deal_title: dealTitle ?? pi.deal_title ?? null,
+      estimate_number: null,
+      installment_source: "customer",
+    };
+  }
+
+  function buildInstallmentFilter(wherePrefix, filters) {
+    const { customerId, dealId, from, to } = filters;
+    let where = "1=1";
+    const params = [];
+    if (customerId) {
+      where += ` AND ${wherePrefix}.customer_id = ?`;
+      params.push(customerId);
+    }
+    if (dealId) {
+      where += ` AND ${wherePrefix}.deal_id = ?`;
+      params.push(dealId);
+    }
+    if (from) {
+      where += ` AND ${wherePrefix}.due_date >= ?`;
+      params.push(from);
+    }
+    if (to) {
+      where += ` AND ${wherePrefix}.due_date <= ?`;
+      params.push(to);
+    }
+    return { where, params };
+  }
+
+  function fetchAllInstallmentRows(filters = {}) {
+    syncOverdueInstallmentStatuses();
+    const { status } = filters;
+    const piFilter = buildInstallmentFilter("pi", filters);
+    const diFilter = buildInstallmentFilter("di", filters);
+
+    const piRows = db
+      .prepare(
+        `SELECT pi.*, c.name as company_name, d.name as deal_title
+         FROM payment_installments pi
+         LEFT JOIN customers c ON c.id = pi.customer_id
+         LEFT JOIN deals d ON d.id = pi.deal_id
+         WHERE ${piFilter.where}`,
+      )
+      .all(...piFilter.params);
+
+    const diRows = db
+      .prepare(
+        `SELECT di.*, c.name as company_name, d.name as deal_title
+         FROM deal_installments di
+         LEFT JOIN customers c ON c.id = di.customer_id
+         LEFT JOIN deals d ON d.id = di.deal_id
+         WHERE ${diFilter.where}`,
+      )
+      .all(...diFilter.params);
+
+    let merged = [
+      ...piRows.map((r) => mapPaymentInstallmentRow(r, r.company_name, r.deal_title)),
+      ...diRows.map((r) => mapDealInstallmentRow(r, r.company_name, r.deal_title)),
+    ];
+    if (status) {
+      merged = merged.filter((r) => r.status === status);
+    }
+    merged.sort((a, b) => String(b.due_date).localeCompare(String(a.due_date)));
+    return merged;
+  }
+
+  function fetchRemainingPlanRows() {
+    syncOverdueInstallmentStatuses();
+    const customerPlans = db
+      .prepare(
+        `SELECT
+           cpp.id as plan_id,
+           cpp.deal_id as deal_id,
+           cpp.plan_name,
+           cpp.total_amount,
+           cpp.paid_amount,
+           cpp.remaining_amount,
+           cpp.status,
+           c.id as customer_id,
+           c.name as company_name,
+           d.name as deal_title,
+           COUNT(CASE WHEN pi.status IN ('pending','overdue','partial') AND pi.due_date < date('now') THEN 1 END) as overdue_count,
+           MIN(CASE WHEN pi.status IN ('pending','overdue','partial') THEN pi.due_date END) as next_due_date,
+           'customer' as plan_source
+         FROM customer_payment_plans cpp
+         LEFT JOIN customers c ON c.id = cpp.customer_id
+         LEFT JOIN deals d ON d.id = cpp.deal_id
+         LEFT JOIN payment_installments pi ON pi.plan_id = cpp.id
+         WHERE cpp.remaining_amount > 0
+         GROUP BY cpp.id`,
+      )
+      .all();
+
+    const dealPlans = db
+      .prepare(
+        `SELECT
+           dpp.id as plan_id,
+           dpp.deal_id as deal_id,
+           dpp.plan_name,
+           dpp.total_amount,
+           COALESCE(SUM(CASE WHEN di.payment_status = 'paid' THEN di.paid_amount ELSE 0 END), 0) as paid_amount,
+           (dpp.total_amount - COALESCE(SUM(CASE WHEN di.payment_status = 'paid' THEN di.paid_amount ELSE 0 END), 0)) as remaining_amount,
+           CASE
+             WHEN COUNT(CASE WHEN di.payment_status != 'paid' AND di.due_date < date('now') THEN 1 END) > 0 THEN 'overdue'
+             ELSE 'active'
+           END as status,
+           dpp.customer_id,
+           c.name as company_name,
+           d.name as deal_title,
+           COUNT(CASE WHEN di.payment_status != 'paid' AND di.due_date < date('now') THEN 1 END) as overdue_count,
+           MIN(CASE WHEN di.payment_status != 'paid' THEN di.due_date END) as next_due_date,
+           'deal' as plan_source
+         FROM deal_payment_plans dpp
+         LEFT JOIN customers c ON c.id = dpp.customer_id
+         LEFT JOIN deals d ON d.id = dpp.deal_id
+         LEFT JOIN deal_installments di ON di.plan_id = dpp.id
+         GROUP BY dpp.id
+         HAVING remaining_amount > 0.01`,
+      )
+      .all();
+
+    return [...customerPlans, ...dealPlans].sort((a, b) => {
+      const ad = a.next_due_date || "9999-99-99";
+      const bd = b.next_due_date || "9999-99-99";
+      return ad.localeCompare(bd);
+    });
+  }
 
   function nextReceiptNumber() {
     const y = new Date().getFullYear();
@@ -213,7 +397,9 @@ export function registerPaymentsApi(app, db, helpers = {}) {
     const { dealId } = req.params;
     const deal = db.prepare("SELECT id, name, customerId, value, totalAmount FROM deals WHERE id = ?").get(dealId);
     if (!deal) return res.status(404).json({ error: "Deal not found" });
-    const plans = db
+    syncOverdueInstallmentStatuses();
+
+    const customerPlans = db
       .prepare(
         `SELECT cpp.*
          FROM customer_payment_plans cpp
@@ -221,16 +407,47 @@ export function registerPaymentsApi(app, db, helpers = {}) {
          ORDER BY cpp.created_at DESC`,
       )
       .all(dealId);
-    const installments = db
+    const paymentInst = db
       .prepare(`SELECT * FROM payment_installments WHERE deal_id = ? ORDER BY due_date ASC`)
       .all(dealId);
-    res.json({
-      deal,
-      plans: plans.map((p) => ({
+
+    const dealPlans = db
+      .prepare(`SELECT * FROM deal_payment_plans WHERE deal_id = ? ORDER BY created_at DESC`)
+      .all(dealId);
+    const dealInst = db
+      .prepare(`SELECT * FROM deal_installments WHERE deal_id = ? ORDER BY installment_number ASC`)
+      .all(dealId);
+
+    const plans = [
+      ...customerPlans.map((p) => ({
         ...p,
-        installments: installments.filter((i) => i.plan_id === p.id),
+        plan_source: "customer",
+        installments: paymentInst
+          .filter((i) => i.plan_id === p.id)
+          .map((i) => mapPaymentInstallmentRow(i)),
       })),
-    });
+      ...dealPlans.map((p) => {
+        const insts = dealInst.filter((i) => i.plan_id === p.id);
+        const paid = insts
+          .filter((i) => i.payment_status === "paid")
+          .reduce((s, i) => s + Number(i.paid_amount ?? 0), 0);
+        return {
+          id: p.id,
+          customer_id: p.customer_id,
+          deal_id: p.deal_id,
+          plan_name: p.plan_name,
+          total_amount: Number(p.total_amount ?? 0),
+          paid_amount: paid,
+          remaining_amount: Math.max(0, Number(p.total_amount ?? 0) - paid),
+          status: paid >= Number(p.total_amount ?? 0) ? "completed" : "active",
+          start_date: p.start_date,
+          plan_source: "deal",
+          installments: insts.map((i) => mapDealInstallmentRow(i)),
+        };
+      }),
+    ];
+
+    res.json({ deal, plans });
   });
 
   app.post("/api/payments/deal/:dealId/create-plan-v2", (req, res) => {
@@ -383,7 +600,9 @@ export function registerPaymentsApi(app, db, helpers = {}) {
 
   app.get("/api/payments/customer/:customerId/summary-v2", (req, res) => {
     const { customerId } = req.params;
-    const plans = db
+    syncOverdueInstallmentStatuses();
+
+    const customerPlans = db
       .prepare(
         `SELECT cpp.*, d.name as deal_title, d.stage as deal_stage
          FROM customer_payment_plans cpp
@@ -393,25 +612,72 @@ export function registerPaymentsApi(app, db, helpers = {}) {
       )
       .all(customerId);
 
-    const installments = db
+    const paymentInst = db
       .prepare(`SELECT * FROM payment_installments WHERE customer_id = ? ORDER BY due_date ASC`)
       .all(customerId);
 
-    const totalPaid = installments
+    const dealPlans = db
+      .prepare(
+        `SELECT dpp.*, d.name as deal_title, d.stage as deal_stage
+         FROM deal_payment_plans dpp
+         LEFT JOIN deals d ON d.id = dpp.deal_id
+         WHERE dpp.customer_id = ?
+         ORDER BY dpp.created_at DESC`,
+      )
+      .all(customerId);
+
+    const dealInst = db
+      .prepare(`SELECT * FROM deal_installments WHERE customer_id = ? ORDER BY installment_number ASC`)
+      .all(customerId);
+
+    const allInstallments = [
+      ...paymentInst.map((i) => mapPaymentInstallmentRow(i)),
+      ...dealInst.map((i) => mapDealInstallmentRow(i)),
+    ];
+
+    const totalPaid = allInstallments
       .filter((i) => i.status === "paid")
       .reduce((s, i) => s + Number(i.paid_amount ?? 0), 0);
 
-    const totalPending = installments
-      .filter((i) => i.status === "pending")
+    const totalPending = allInstallments
+      .filter((i) => i.status === "pending" || i.status === "overdue")
       .reduce((s, i) => s + Number(i.amount ?? 0), 0);
 
-    const overdue = installments.filter((i) => i.status === "pending" && new Date(i.due_date) < new Date());
+    const overdue = allInstallments.filter((i) => i.status === "overdue");
+
+    const plans = [
+      ...customerPlans.map((p) => ({
+        ...p,
+        plan_source: "customer",
+        installments: paymentInst
+          .filter((i) => i.plan_id === p.id)
+          .map((i) => mapPaymentInstallmentRow(i)),
+      })),
+      ...dealPlans.map((p) => {
+        const insts = dealInst.filter((i) => i.plan_id === p.id);
+        const paid = insts
+          .filter((i) => i.payment_status === "paid")
+          .reduce((s, i) => s + Number(i.paid_amount ?? 0), 0);
+        return {
+          id: p.id,
+          customer_id: p.customer_id,
+          deal_id: p.deal_id,
+          deal_title: p.deal_title,
+          deal_stage: p.deal_stage,
+          plan_name: p.plan_name,
+          total_amount: Number(p.total_amount ?? 0),
+          paid_amount: paid,
+          remaining_amount: Math.max(0, Number(p.total_amount ?? 0) - paid),
+          status: paid >= Number(p.total_amount ?? 0) ? "completed" : "active",
+          start_date: p.start_date,
+          plan_source: "deal",
+          installments: insts.map((i) => mapDealInstallmentRow(i)),
+        };
+      }),
+    ];
 
     res.json({
-      plans: plans.map((p) => ({
-        ...p,
-        installments: installments.filter((i) => i.plan_id === p.id),
-      })),
+      plans,
       summary: {
         totalPaid,
         totalPending,
@@ -490,6 +756,36 @@ export function registerPaymentsApi(app, db, helpers = {}) {
   app.post("/api/payments/installment/:id/pay", (req, res) => {
     const { id } = req.params;
     const { paidAmount, paidDate, paymentMode, transactionReference, notes, userId, userName } = req.body || {};
+    const dealInst = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(id);
+    if (dealInst) {
+      const paid = Number(paidAmount ?? 0);
+      if (!Number.isFinite(paid) || paid <= 0) return res.status(400).json({ error: "paidAmount must be > 0" });
+      const payDate = isoDateOnly(paidDate) ?? isoDateOnly(new Date().toISOString());
+      const dueAmt = Number(dealInst.amount ?? 0);
+      const paymentStatus = paid >= dueAmt ? "paid" : "pending";
+      db.prepare(
+        `UPDATE deal_installments SET payment_status = ?, paid_date = ?, paid_amount = ? WHERE id = ?`,
+      ).run(paymentStatus, payDate, paid, id);
+      try {
+        broadcast?.({
+          type: "change",
+          entity: "deal_installments",
+          action: "payment_updated",
+          id,
+          customerId: dealInst.customer_id,
+        });
+        broadcast?.({ type: "change", entity: "payments", action: "installment_paid", id, customerId: dealInst.customer_id });
+      } catch {
+        /* ignore */
+      }
+      const row = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(id);
+      return res.json({
+        installment: mapDealInstallmentRow(row),
+        receiptNumber: null,
+        installment_source: "deal",
+      });
+    }
+
     const inst = db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id);
     if (!inst) return res.status(404).json({ error: "Not found" });
     const paid = Number(paidAmount ?? 0);
@@ -553,6 +849,22 @@ export function registerPaymentsApi(app, db, helpers = {}) {
   app.put("/api/payments/installment/:id/confirm", (req, res) => {
     const { id } = req.params;
     const { userId, userName } = req.body || {};
+    const dealInst = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(id);
+    if (dealInst) {
+      const paidAmt = Number(dealInst.paid_amount ?? 0) || Number(dealInst.amount ?? 0);
+      db.prepare(
+        `UPDATE deal_installments SET payment_status = 'paid', paid_amount = ?, paid_date = COALESCE(paid_date, date('now')) WHERE id = ?`,
+      ).run(paidAmt, id);
+      try {
+        broadcast?.({ type: "change", entity: "payments", action: "installment_confirmed", id, customerId: dealInst.customer_id });
+        broadcast?.({ type: "change", entity: "deal_installments", action: "payment_updated", id });
+      } catch {
+        /* ignore */
+      }
+      const row = db.prepare("SELECT * FROM deal_installments WHERE id = ?").get(id);
+      return res.json(mapDealInstallmentRow(row));
+    }
+
     const inst = db.prepare("SELECT * FROM payment_installments WHERE id = ?").get(id);
     if (!inst) return res.status(404).json({ error: "Not found" });
     db.prepare(
@@ -572,53 +884,28 @@ export function registerPaymentsApi(app, db, helpers = {}) {
   });
 
   app.get("/api/payments/overdue", (_req, res) => {
-    const rows = db
-      .prepare(
-        `SELECT pi.*, c.name as company_name, c.id as customer_id, d.name as deal_title
-         FROM payment_installments pi
-         LEFT JOIN customers c ON c.id = pi.customer_id
-         LEFT JOIN deals d ON d.id = pi.deal_id
-         WHERE pi.status = 'pending' AND pi.due_date < date('now')
-         ORDER BY pi.due_date ASC`,
-      )
-      .all();
+    const rows = fetchAllInstallmentRows({ status: "overdue" }).sort((a, b) =>
+      String(a.due_date).localeCompare(String(b.due_date)),
+    );
+    res.json(rows);
+  });
+
+  app.get("/api/payments/due", (_req, res) => {
+    syncOverdueInstallmentStatuses();
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = fetchAllInstallmentRows({ status: "pending" }).filter(
+      (r) => r.due_date && String(r.due_date) >= today,
+    );
+    rows.sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
     res.json(rows);
   });
 
   app.get("/api/payments/history-v2", (req, res) => {
     const { customerId, dealId, from, to, status } = req.query || {};
-    let where = "1=1";
-    const params = [];
-    if (customerId) {
-      where += " AND pi.customer_id = ?";
-      params.push(customerId);
+    let rows = fetchAllInstallmentRows({ customerId, dealId, from, to, status });
+    if (!status) {
+      rows = rows.filter((r) => r.status === "paid" || Number(r.paid_amount ?? 0) > 0);
     }
-    if (dealId) {
-      where += " AND pi.deal_id = ?";
-      params.push(dealId);
-    }
-    if (from) {
-      where += " AND pi.due_date >= ?";
-      params.push(from);
-    }
-    if (to) {
-      where += " AND pi.due_date <= ?";
-      params.push(to);
-    }
-    if (status) {
-      where += " AND pi.status = ?";
-      params.push(status);
-    }
-    const rows = db
-      .prepare(
-        `SELECT pi.*, c.name as company_name, d.name as deal_title
-         FROM payment_installments pi
-         LEFT JOIN customers c ON c.id = pi.customer_id
-         LEFT JOIN deals d ON d.id = pi.deal_id
-         WHERE ${where}
-         ORDER BY pi.due_date DESC`,
-      )
-      .all(...params);
     res.json(rows);
   });
 
@@ -641,30 +928,12 @@ export function registerPaymentsApi(app, db, helpers = {}) {
   });
 
   app.get("/api/payments/remaining-v2", (_req, res) => {
-    const rows = db
-      .prepare(
-        `SELECT
-           cpp.id as plan_id,
-           cpp.plan_name,
-           cpp.total_amount,
-           cpp.paid_amount,
-           cpp.remaining_amount,
-           cpp.status,
-           c.id as customer_id,
-           c.name as company_name,
-           d.name as deal_title,
-           COUNT(CASE WHEN pi.status = 'pending' AND pi.due_date < date('now') THEN 1 END) as overdue_count,
-           MIN(CASE WHEN pi.status = 'pending' THEN pi.due_date END) as next_due_date
-         FROM customer_payment_plans cpp
-         LEFT JOIN customers c ON c.id = cpp.customer_id
-         LEFT JOIN deals d ON d.id = cpp.deal_id
-         LEFT JOIN payment_installments pi ON pi.plan_id = cpp.id
-         WHERE cpp.remaining_amount > 0
-         GROUP BY cpp.id
-         ORDER BY next_due_date ASC`,
-      )
-      .all();
-    res.json(rows);
+    try {
+      res.json(fetchRemainingPlanRows());
+    } catch (err) {
+      console.error("[payments] remaining-v2 failed:", err);
+      res.status(500).json({ error: err?.message || "Failed to load remaining balances" });
+    }
   });
 
   // Keep legacy endpoints intact below.

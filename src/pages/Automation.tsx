@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { NumericInput } from "@/components/ui/numeric-input";
 import { Textarea } from "@/components/ui/textarea";
@@ -52,6 +53,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Power,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -106,6 +108,63 @@ const CHANNEL_ICON: Record<AutomationChannel, React.ReactNode> = {
   sms: <MessageSquare className="h-4 w-4 text-orange-600" />,
   in_app: <Bell className="h-4 w-4 text-purple-600" />,
 };
+
+function AutomationKillSwitch() {
+  const settings = useAppStore((s) => s.automationSettings);
+  const updateSettings = useAppStore((s) => s.updateAutomationSettings);
+  const enabled = settings.automationsEnabled !== false;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between",
+        enabled
+          ? "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900 dark:bg-emerald-950/30"
+          : "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40",
+      )}
+    >
+      <div className="flex items-start gap-3 min-w-0">
+        <div
+          className={cn(
+            "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg",
+            enabled ? "bg-emerald-100 dark:bg-emerald-900/50" : "bg-red-100 dark:bg-red-900/50",
+          )}
+        >
+          <Power className={cn("h-5 w-5", enabled ? "text-emerald-700" : "text-red-600")} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            {enabled ? "Automations are ON" : "Automations are OFF (kill switch)"}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {enabled
+              ? "Templates, rules, and scheduled checks can send WhatsApp, email, and in-app messages."
+              : "Nothing will send automatically — proposal/deal triggers, payment reminders, follow-ups, and n8n webhooks are paused."}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <Label htmlFor="automation-kill-switch" className="text-sm font-medium cursor-pointer">
+          {enabled ? "Enabled" : "Disabled"}
+        </Label>
+        <Switch
+          id="automation-kill-switch"
+          checked={enabled}
+          onCheckedChange={(on) => {
+            updateSettings({ automationsEnabled: on });
+            toast({
+              title: on ? "Automations enabled" : "All automations turned off",
+              description: on
+                ? "Triggers and scheduled checks will run again."
+                : "No automated messages will be sent until you turn this back on.",
+              variant: on ? "default" : "destructive",
+            });
+          }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function ConnectionStatusPill({ service }: { service: "n8n" | "waha" }) {
   const settings = useAppStore((s) => s.automationSettings);
@@ -383,7 +442,16 @@ export default function Automation() {
             <Button
               variant="outline"
               className="h-9"
+              disabled={automationSettings.automationsEnabled === false}
               onClick={() => {
+                if (automationSettings.automationsEnabled === false) {
+                  toast({
+                    title: "Automations are off",
+                    description: "Turn on the kill switch above to run rules.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
                 runAutomationRules();
                 toast({ title: "Rule check started", description: "Proposal follow-up and payment rules evaluated." });
               }}
@@ -427,6 +495,8 @@ export default function Automation() {
           </div>
         ))}
       </div>
+
+      <AutomationKillSwitch />
 
       <div className="border-b border-gray-200 dark:border-gray-800">
         <div className="flex gap-0">

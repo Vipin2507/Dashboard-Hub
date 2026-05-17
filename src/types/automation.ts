@@ -64,6 +64,8 @@ export interface AutomationLog {
 }
 
 export interface AutomationSettings {
+  /** When false, no templates, rules, or scheduled checks send messages (master kill switch). */
+  automationsEnabled?: boolean;
   n8nWebhookBase: string; // e.g. "http://72.60.200.185:5678/webhook"
   wahaApiUrl: string; // e.g. "http://72.60.200.185:3000"
   wahaApiKey: string;

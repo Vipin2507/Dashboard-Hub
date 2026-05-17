@@ -1,6 +1,6 @@
 import type { AutomationTrigger } from '@/types';
 import type { AutomationContext } from '@/lib/automationService';
-import { sendAutomationTemplateById } from '@/lib/automationService';
+import { isAutomationGloballyEnabled, sendAutomationTemplateById } from '@/lib/automationService';
 import { useAppStore } from '@/store/useAppStore';
 
 export type AutomationConditionOperator = 'eq' | 'neq' | 'gt' | 'lt' | 'gte' | 'contains';
@@ -189,6 +189,7 @@ export async function evaluateAndFire(
   context: AutomationContext,
   rules: AutomationRule[],
 ): Promise<void> {
+  if (!isAutomationGloballyEnabled()) return;
   const now = Date.now();
   const matching = rules.filter((rule) => {
     if (!rule.isActive) return false;

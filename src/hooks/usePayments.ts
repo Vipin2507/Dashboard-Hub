@@ -81,6 +81,16 @@ export function useOverduePayments() {
   });
 }
 
+export function useDuePayments() {
+  return useQuery({
+    queryKey: ['payments', 'due'],
+    queryFn: () => apiGet<PaymentInstallment[]>('/api/payments/due'),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: 'always',
+  });
+}
+
 export function usePaymentHistory(params?: Record<string, string>) {
   return useQuery({
     queryKey: ['payments', 'history', params ?? {}],
