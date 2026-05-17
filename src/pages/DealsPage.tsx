@@ -442,7 +442,8 @@ export default function DealsPage() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [teamFilter, setTeamFilter] = useState("all");
   const [regionFilter, setRegionFilter] = useState("all");
-  const [serviceFilter, setServiceFilter] = useState("all");
+  const [timeRangeFilter, setTimeRangeFilter] = useState("all");
+  const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
   // Draft filters (edit, then Apply)
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStageFilter, setDraftStageFilter] = useState("all");
@@ -450,7 +451,8 @@ export default function DealsPage() {
   const [draftOwnerFilter, setDraftOwnerFilter] = useState("all");
   const [draftTeamFilter, setDraftTeamFilter] = useState("all");
   const [draftRegionFilter, setDraftRegionFilter] = useState("all");
-  const [draftServiceFilter, setDraftServiceFilter] = useState("all");
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState("all");
+  const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
@@ -1047,6 +1049,31 @@ export default function DealsPage() {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const now = new Date();
+    
+    let rangeStart: Date | null = null;
+    let rangeEnd: Date | null = null;
+    
+    if (timeRangeFilter === "this_week") {
+      rangeStart = new Date(now);
+      rangeStart.setDate(now.getDate() - now.getDay());
+      rangeStart.setHours(0, 0, 0, 0);
+    } else if (timeRangeFilter === "this_month") {
+      rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (timeRangeFilter === "this_year") {
+      rangeStart = new Date(now.getFullYear(), 0, 1);
+    } else if (timeRangeFilter === "previous_year") {
+      rangeStart = new Date(now.getFullYear() - 1, 0, 1);
+      rangeEnd = new Date(now.getFullYear(), 0, 1);
+    } else if (timeRangeFilter === "custom") {
+      rangeStart = customDateRange[0];
+      if (customDateRange[1]) {
+        rangeEnd = new Date(customDateRange[1]);
+        rangeEnd.setDate(rangeEnd.getDate() + 1);
+        rangeEnd.setHours(0, 0, 0, 0);
+      }
+    }
+
     return scopedActiveDeals.filter((d) => {
       if (q) {
         const customerName = customers.find((c) => c.id === d.customerId)?.customerName ?? "";
@@ -1067,10 +1094,17 @@ export default function DealsPage() {
       if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
-      if (serviceFilter !== "all" && String(d.serviceName ?? "").trim() !== serviceFilter) return false;
+      
+      if (timeRangeFilter !== "all") {
+        const t = d.createdAt || d.updatedAt;
+        if (!t) return false;
+        const dt = new Date(t);
+        if (rangeStart && dt < rangeStart) return false;
+        if (rangeEnd && dt >= rangeEnd) return false;
+      }
       return true;
     });
-  }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter, customers]);
+  }, [scopedActiveDeals, search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, timeRangeFilter, customDateRange, customers]);
 
   const [listPage, setListPage] = useState(1);
   const [listPageSize, setListPageSize] = useState<number>(() => {
@@ -1084,7 +1118,7 @@ export default function DealsPage() {
   });
   useEffect(() => {
     setListPage(1);
-  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter]);
+  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, timeRangeFilter, customDateRange]);
 
   const listTotalPages = Math.max(1, Math.ceil(visible.length / listPageSize));
   const listCurrentPage = Math.min(listPage, listTotalPages);
@@ -1130,14 +1164,7 @@ export default function DealsPage() {
     }, 0);
   };
 
-  const serviceOptions = useMemo(() => {
-    const set = new Set<string>();
-    scopedActiveDeals.forEach((d) => {
-      const s = String(d.serviceName ?? "").trim();
-      if (s) set.add(s);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [scopedActiveDeals]);
+
 
   const totalValue = visible.reduce((s, d) => s + d.value, 0);
 
@@ -1206,8 +1233,9 @@ export default function DealsPage() {
     setDraftOwnerFilter(ownerFilter);
     setDraftTeamFilter(teamFilter);
     setDraftRegionFilter(regionFilter);
-    setDraftServiceFilter(serviceFilter);
-  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, serviceFilter]);
+    setDraftTimeRangeFilter(timeRangeFilter);
+    setDraftCustomDateRange(customDateRange);
+  }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, timeRangeFilter, customDateRange]);
 
   const hasPendingFilterChanges =
     draftSearch !== search ||
@@ -1216,7 +1244,9 @@ export default function DealsPage() {
     draftOwnerFilter !== ownerFilter ||
     draftTeamFilter !== teamFilter ||
     draftRegionFilter !== regionFilter ||
-    draftServiceFilter !== serviceFilter;
+    draftTimeRangeFilter !== timeRangeFilter ||
+    draftCustomDateRange[0] !== customDateRange[0] ||
+    draftCustomDateRange[1] !== customDateRange[1];
 
   const applyFilters = () => {
     setSearch(draftSearch);
@@ -1225,7 +1255,8 @@ export default function DealsPage() {
     setOwnerFilter(draftOwnerFilter);
     setTeamFilter(draftTeamFilter);
     setRegionFilter(draftRegionFilter);
-    setServiceFilter(draftServiceFilter);
+    setTimeRangeFilter(draftTimeRangeFilter);
+    setCustomDateRange(draftCustomDateRange);
   };
 
   const clearFilters = () => {
@@ -1235,14 +1266,16 @@ export default function DealsPage() {
     setDraftOwnerFilter("all");
     setDraftTeamFilter("all");
     setDraftRegionFilter("all");
-    setDraftServiceFilter("all");
+    setDraftTimeRangeFilter("all");
+    setDraftCustomDateRange([null, null]);
     setSearch("");
     setStageFilter("all");
     setStatusFilterAndUrl("all");
     setOwnerFilter("all");
     setTeamFilter("all");
     setRegionFilter("all");
-    setServiceFilter("all");
+    setTimeRangeFilter("all");
+    setCustomDateRange([null, null]);
   };
 
   const openPaymentPlanDialog = useCallback(() => {
@@ -1667,19 +1700,20 @@ export default function DealsPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={draftServiceFilter} onValueChange={setDraftServiceFilter}>
+                <Select value={draftTimeRangeFilter} onValueChange={setDraftTimeRangeFilter}>
                   <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All services" />
+                    <SelectValue placeholder="All time" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All services</SelectItem>
-                    {serviceOptions.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="all">All time</SelectItem>
+                    <SelectItem value="this_week">This week</SelectItem>
+                    <SelectItem value="this_month">This month</SelectItem>
+                    <SelectItem value="this_year">This year</SelectItem>
+                    <SelectItem value="previous_year">Previous year</SelectItem>
+                    <SelectItem value="custom">Custom range</SelectItem>
                   </SelectContent>
                 </Select>
+
               </div>
             </div>
 
@@ -1717,6 +1751,23 @@ export default function DealsPage() {
                   );
                 })}
               </div>
+
+              {draftTimeRangeFilter === "custom" && (
+                <div className="w-64 sm:shrink-0">
+                  <Datepicker
+                    controls={['calendar']}
+                    select="range"
+                    touchUi={true}
+                    inputComponent="input"
+                    inputProps={{
+                      placeholder: 'Select range...',
+                      className: 'h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800',
+                    }}
+                    value={draftCustomDateRange}
+                    onChange={(ev) => setDraftCustomDateRange(ev.value)}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2 sm:shrink-0">
                 <Button
@@ -1891,8 +1942,8 @@ export default function DealsPage() {
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
                     {[
                       "Status",
-                      "Invoice Date",
-                      "Invoice#",
+                      "Deal Date",
+                      "Deal #",
                       "Customer Name",
                       "Total",
                       "Tax Amount",
@@ -1907,7 +1958,7 @@ export default function DealsPage() {
                         key={h}
                         className={cn(
                           "px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide",
-                          (h === "Customer Name" || h === "Invoice#" || h === "Place of Supply" || h === "Service") && "text-left",
+                          (h === "Customer Name" || h === "Deal #" || h === "Place of Supply" || h === "Service") && "text-left",
                           (h === "Total" ||
                             h === "Tax Amount" ||
                             h === "Amount Without Tax" ||
@@ -1915,8 +1966,8 @@ export default function DealsPage() {
                             h === "Amount Paid") &&
                             "text-right",
                           // Keep columns visible; use horizontal scroll instead of hiding.
-                          (h === "Invoice Date" ||
-                            h === "Invoice#" ||
+                          (h === "Deal Date" ||
+                            h === "Deal #" ||
                             h === "Total" ||
                             h === "Tax Amount" ||
                             h === "Amount Without Tax" ||

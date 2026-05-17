@@ -242,14 +242,13 @@ export default function DashboardPage() {
   const filteredProposals = useMemo(() => {
     return scopedProposals.filter((p) => {
       if (proposalStatusFilter !== 'all' && p.status !== proposalStatusFilter) return false;
-      if (!inDateRange(p.createdAt)) return false;
       if (ownerFilter !== 'all' && p.assignedTo !== ownerFilter) return false;
       const meta = ownerMeta.get(p.assignedTo);
       if (teamFilter !== 'all' && meta?.teamId !== teamFilter) return false;
       if (regionFilter !== 'all' && meta?.regionId !== regionFilter) return false;
       return true;
     });
-  }, [scopedProposals, proposalStatusFilter, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter, ownerMeta]);
+  }, [scopedProposals, proposalStatusFilter, ownerFilter, teamFilter, regionFilter, ownerMeta]);
 
   const filteredDeals = useMemo(() => {
     return scopedDeals.filter((d) => {
@@ -262,13 +261,12 @@ export default function DashboardPage() {
 
   const filteredCustomers = useMemo(() => {
     return scopedCustomers.filter((c) => {
-      if (!inDateRange(c.createdAt)) return false;
       if (ownerFilter !== 'all' && c.assignedTo && c.assignedTo !== ownerFilter) return false;
       if (teamFilter !== 'all' && c.teamId && c.teamId !== teamFilter) return false;
       if (regionFilter !== 'all' && c.regionId !== regionFilter) return false;
       return true;
     });
-  }, [scopedCustomers, dateFrom, dateTo, ownerFilter, teamFilter, regionFilter]);
+  }, [scopedCustomers, ownerFilter, teamFilter, regionFilter]);
 
   useEffect(() => {
     runAutomationRules();
@@ -284,39 +282,33 @@ export default function DashboardPage() {
     const ids = new Set(filteredCustomers.map((c) => c.id));
     return paymentHistory
       .filter((r) => ids.has(r.customerId) && (!r.paymentStatus || r.paymentStatus === "confirmed"))
+      .filter((r) => inDateRange(r.paymentDate))
       .reduce((s, r) => s + Number(r.amountPaid ?? 0), 0);
-  }, [filteredCustomers, paymentHistory]);
+  }, [filteredCustomers, paymentHistory, dateFrom, dateTo]);
 
   const activeProposalsCount = useMemo(
     () =>
       filteredProposals.filter(
-        (p) => p.status === "sent" || p.status === "approval_pending" || p.status === "approved" || p.status === "negotiation" || p.status === "won",
+        (p) => inDateRange(p.createdAt) && (p.status === "sent" || p.status === "approval_pending" || p.status === "approved" || p.status === "negotiation" || p.status === "won"),
       ).length,
-    [filteredProposals],
+    [filteredProposals, dateFrom, dateTo],
   );
 
-  const dealsClosedThisMonth = useMemo(() => {
-    const m = now.getMonth();
-    const y = now.getFullYear();
+  const dealsClosedCount = useMemo(() => {
     return filteredDeals.filter((d) => {
       if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return false;
       const ts = d.updatedAt ?? d.lastActivityAt ?? "";
-      if (!ts) return false;
-      const dt = new Date(ts);
-      return dt.getMonth() === m && dt.getFullYear() === y;
+      return inDateRange(ts);
     }).length;
-  }, [filteredDeals, now]);
+  }, [filteredDeals, dateFrom, dateTo]);
 
-  const newCustomersThisMonth = useMemo(() => {
-    return filteredCustomers.filter((c) => {
-      const d = new Date(c.createdAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    }).length;
-  }, [filteredCustomers, now]);
+  const newCustomersCount = useMemo(() => {
+    return filteredCustomers.filter((c) => inDateRange(c.createdAt)).length;
+  }, [filteredCustomers, dateFrom, dateTo]);
 
   const pendingApprovals = useMemo(
-    () => filteredProposals.filter((p) => p.status === "approval_pending").length,
-    [filteredProposals],
+    () => filteredProposals.filter((p) => inDateRange(p.createdAt) && p.status === "approval_pending").length,
+    [filteredProposals, dateFrom, dateTo],
   );
 
   const overdueInvoices = kpis.overduePayments;
@@ -351,10 +343,10 @@ export default function DashboardPage() {
 
   // KPI Row 1 — Top 4 cards (large)
   const kpiRow1 = [
-    { label: 'Total Revenue', value: formatINR(totalRevenue), sub: 'From paid payments', icon: DollarSign, color: 'text-green-600' },
-    { label: 'Active Proposals', value: String(activeProposalsCount), sub: 'Sent / Pending / Approved / Negotiation / Won', icon: TrendingUp, color: 'text-primary' },
-    { label: 'Deals Closed (This Month)', value: String(dealsClosedThisMonth), sub: 'Won this month', icon: CheckCircle, color: 'text-success' },
-    { label: 'New Customers (This Month)', value: String(newCustomersThisMonth), sub: 'Added this month', icon: Users, color: 'text-primary' },
+    { label: 'Total Revenue', value: formatINR(totalRevenue), sub: dateFrom ? 'In selected period' : 'From paid payments', icon: DollarSign, color: 'text-green-600' },
+    { label: 'Active Proposals', value: String(activeProposalsCount), sub: dateFrom ? 'Created in period' : 'Sent / Pending / Approved / Negotiation / Won', icon: TrendingUp, color: 'text-primary' },
+    { label: 'Deals Closed', value: String(dealsClosedCount), sub: dateFrom ? 'Won in period' : 'All time won', icon: CheckCircle, color: 'text-success' },
+    { label: 'New Customers', value: String(newCustomersCount), sub: dateFrom ? 'Added in period' : 'All time added', icon: Users, color: 'text-primary' },
   ];
 
   // KPI Row 2 — Secondary 4 cards
@@ -405,10 +397,10 @@ export default function DashboardPage() {
     () =>
       pipelineStatuses.map((status) => ({
         status: status.replace(/_/g, ' '),
-        count: filteredProposals.filter((p) => p.status === status).length,
+        count: filteredProposals.filter((p) => inDateRange(p.createdAt) && p.status === status).length,
         statusKey: status,
       })),
-    [filteredProposals]
+    [filteredProposals, dateFrom, dateTo]
   );
 
   const pipelineColors: Record<string, string> = {
@@ -428,9 +420,9 @@ export default function DashboardPage() {
     const statuses = ['active', 'lead', 'inactive', 'churned', 'blacklisted'] as const;
     return statuses.map((status) => ({
       name: status.charAt(0).toUpperCase() + status.slice(1),
-      value: filteredCustomers.filter((c) => c.status === status).length,
+      value: filteredCustomers.filter((c) => inDateRange(c.createdAt) && c.status === status).length,
     }));
-  }, [filteredCustomers]);
+  }, [filteredCustomers, dateFrom, dateTo]);
 
   const donutColors = ['#22c55e', '#0072BC', '#94a3b8', '#f97316', '#ef4444'];
 

@@ -593,27 +593,27 @@ export default function Proposals() {
       return d >= start && d <= end;
     };
 
-    const createdThisMonth = visible.filter((p) => inRange(p.createdAt, startThisMonth, endToday)).length;
-    const createdLastMonth = visible.filter((p) => inRange(p.createdAt, startLastMonth, endLastMonth)).length;
+    const createdThisMonth = filtered.filter((p) => inRange(p.createdAt, startThisMonth, endToday)).length;
+    const createdLastMonth = filtered.filter((p) => inRange(p.createdAt, startLastMonth, endLastMonth)).length;
 
-    const wonThisMonth = visible.filter(
+    const wonThisMonth = filtered.filter(
       (p) => p.status === "won" && p.updatedAt && inRange(p.updatedAt, startThisMonth, endToday),
     ).length;
-    const wonLastMonth = visible.filter(
+    const wonLastMonth = filtered.filter(
       (p) => p.status === "won" && p.updatedAt && inRange(p.updatedAt, startLastMonth, endLastMonth),
     ).length;
 
-    const totalValue = visible.reduce((s, p) => s + (p.finalQuoteValue ?? p.grandTotal), 0);
+    const totalValue = filtered.reduce((s, p) => s + (p.finalQuoteValue ?? p.grandTotal), 0);
 
     return {
-      total: visible.length,
-      pending: visible.filter((p) => p.status === "approval_pending").length,
+      total: filtered.length,
+      pending: filtered.filter((p) => p.status === "approval_pending").length,
       wonMonth: wonThisMonth,
       totalValue,
       trendTotal: pctChange(createdThisMonth, createdLastMonth),
       trendWon: pctChange(wonThisMonth, wonLastMonth),
     };
-  }, [visible]);
+  }, [filtered]);
 
   const handleExportCsv = () => {
     const headers = ["Proposal #", "Title", "Company Name", "Customer Name", "Assigned To", "Grand Total", "Status", "Valid Until"];
@@ -817,7 +817,7 @@ export default function Proposals() {
               )}
 
               <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-2">
-                <p className="text-xs text-muted-foreground">Created date</p>
+                
                 <Datepicker
                   controls={["calendar"]}
                   select="range"
