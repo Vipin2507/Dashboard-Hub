@@ -182,7 +182,7 @@ export function ConvertToDealDialog({
       expectedCloseDate: "",
       notes: "",
       enablePaymentPlan: true,
-      planSlug: "quarterly",
+      planSlug: "annual",
       startDate: new Date().toISOString().split("T")[0],
       distributionMode: "even",
       advancePercent: 30,
@@ -209,7 +209,7 @@ export function ConvertToDealDialog({
       expectedCloseDate: "",
       notes: proposal.notes ?? "",
       enablePaymentPlan: true,
-      planSlug: "quarterly",
+      planSlug: "annual",
       startDate: new Date().toISOString().split("T")[0],
       distributionMode: "even",
       advancePercent: 30,
@@ -304,36 +304,52 @@ export function ConvertToDealDialog({
     watched.enablePaymentPlan,
   ]);
 
-  const handlePreview = handleSubmit((data) => {
-    if (!proposal) return;
-    const billingErr = validateDealEstimateBilling(billing);
-    if (billingErr) {
-      toast.error(billingErr);
-      return;
-    }
-    if (data.enablePaymentPlan) {
-      if (!liveInstallments.length) {
-        toast.error("Could not build installments. Check amounts, dates, and custom percentages.");
+  const handlePreview = handleSubmit(
+    (data) => {
+      if (!proposal) return;
+      const billingErr = validateDealEstimateBilling(billing);
+      if (billingErr) {
+        toast.error(billingErr);
         return;
       }
-      if (data.distributionMode === "custom_percent") {
-        const sum =
-          data.customPercentages?.reduce((s, p) => s + (Number(p) || 0), 0) ?? 0;
-        if (Math.abs(sum - 100) > 0.02) {
-          toast.error("Custom percentages must total 100%.");
+      if (data.enablePaymentPlan) {
+        if (!liveInstallments.length) {
+          toast.error("Could not build installments. Check amounts, dates, and custom percentages.");
           return;
         }
+        if (data.distributionMode === "custom_percent") {
+          const sum =
+            data.customPercentages?.reduce((s, p) => s + (Number(p) || 0), 0) ?? 0;
+          if (Math.abs(sum - 100) > 0.02) {
+            toast.error("Custom percentages must total 100%.");
+            return;
+          }
+        }
+        setPreview(liveInstallments);
+        setStep("preview");
       }
-      setPreview(liveInstallments);
-      setStep("preview");
+    },
+    () => {
+      setTimeout(() => {
+        const errorEl = document.querySelector('.text-red-500');
+        if (errorEl) {
+          errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
     }
-  });
+  );
 
   const handleCreateDealWithoutPlan = async () => {
     if (!proposal || !me?.id) return;
     const valid = await trigger();
     if (!valid) {
       toast.error("Fix the highlighted fields.");
+      setTimeout(() => {
+        const errorEl = document.querySelector('.text-red-500');
+        if (errorEl) {
+          errorEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
       return;
     }
     const data = getValues();
@@ -752,6 +768,7 @@ export function ConvertToDealDialog({
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       Expected Close Date *
                     </label>
+                    <input type="hidden" {...register("expectedCloseDate")} />
                     <Datepicker
                       select="single"
                       touchUi={false}
@@ -854,6 +871,7 @@ export function ConvertToDealDialog({
                     <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       First Payment Date *
                     </label>
+                    <input type="hidden" {...register("startDate")} />
                     <Datepicker
                       select="single"
                       touchUi={false}
