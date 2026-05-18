@@ -848,6 +848,22 @@ async function fireWhatsAppDirect(
   const { appendAutomationLog } = useAppStore.getState();
   const recipients = resolveRecipients(template.recipients, ctx);
 
+  const shouldAttachProposalPdf = !!ctx.proposalId && String(template.trigger || "").toLowerCase().startsWith("proposal");
+
+  let proposalPdfBlob: Blob | null = null;
+  let proposalPdfName = "proposal.pdf";
+  if (shouldAttachProposalPdf) {
+    try {
+      const proposal = await loadProposalForPdf(ctx.proposalId as string);
+      const { generateProposalPdfBlob } = await import("@/lib/generateProposalPdf");
+      proposalPdfBlob = await generateProposalPdfBlob(proposal as never);
+      const num = (ctx.proposalNumber || (proposal as unknown as { proposalNumber?: string }).proposalNumber || "").trim();
+      proposalPdfName = num ? `Proposal-${num}.pdf` : `Proposal-${ctx.proposalId}.pdf`;
+    } catch {
+      proposalPdfBlob = null;
+    }
+  }
+
   for (const recipient of recipients) {
     const entityType: AutomationLog["entityType"] = ctx.proposalId
       ? "proposal"
@@ -893,18 +909,37 @@ async function fireWhatsAppDirect(
         });
         continue;
       }
-      const res = await fetchWahaSendText(settings, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Api-Key": settings.wahaApiKey,
-        },
-        body: JSON.stringify({
-          session: settings.wahaSession,
-          chatId: `${phone}@c.us`,
-          text: body,
-        }),
-      });
+      let res: Response;
+
+      if (proposalPdfBlob) {
+        const formData = new FormData();
+        formData.append("to", phone);
+        formData.append("message", body);
+        if (ctx.customerId) formData.append("customerId", ctx.customerId);
+        if (ctx.proposalId) formData.append("proposalId", ctx.proposalId);
+        
+        const file = new File([proposalPdfBlob], proposalPdfName, { type: "application/pdf" });
+        formData.append("file", file);
+
+        res = await fetch(apiUrl("/api/send-media"), {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        res = await fetchWahaSendText(settings, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Api-Key": settings.wahaApiKey,
+          },
+          body: JSON.stringify({
+            session: settings.wahaSession,
+            chatId: `${phone}@c.us`,
+            text: body,
+          }),
+        });
+      }
+
       const errBody = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 400);
       const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
       updateAutomationLog(logEntry.id, {

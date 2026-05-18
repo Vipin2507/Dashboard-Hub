@@ -94,6 +94,94 @@ export function registerIntegrationProxies(app, { db }) {
     }
   }
 
+  async function proxyWahaSendMedia(req, res) {
+    try {
+      const { to, message, customerId, proposalId, userId, userName } = req.body;
+      const file = (req.files || [])[0];
+      
+      if (!to || !file) {
+        return res.status(400).json({ status: "error", message: "Missing 'to' or 'file'" });
+      }
+
+      const settings = getAutomationSettingsFromDb(db);
+      const base = wahaBase(settings);
+      
+      const b64 = file.buffer.toString('base64');
+      const mimetype = file.mimetype || 'application/octet-stream';
+      const filename = file.originalname || 'attachment.pdf';
+      const session_name = settings.wahaSessionName || "first";
+
+      let endpoint = `${base}/api/sendFile`;
+      if (mimetype.startsWith('image/')) {
+        endpoint = `${base}/api/sendImage`;
+      } else if (mimetype.startsWith('audio/')) {
+        endpoint = `${base}/api/sendVoice`;
+      }
+
+      const payload = {
+        session: session_name,
+        chatId: `${to.replace(/[^0-9]/g, '')}@c.us`,
+        file: {
+          mimetype,
+          filename,
+          data: b64
+        },
+        caption: message || ""
+      };
+
+      const upstream = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Api-Key": String(settings.wahaApiKey || process.env.WAHA_API_KEY || ""),
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const buf = await upstream.text();
+      
+      if (upstream.status === 200 || upstream.status === 201) {
+        // Log to central_history_db
+        try {
+          const at = new Date().toISOString();
+          db.prepare(
+            `INSERT INTO central_history_db (id, customerId, entityType, entityId, channel, direction, summary, payloadJson, performedBy, performedByName, at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            "ch_" + Math.random().toString(36).slice(2, 10),
+            customerId || "unknown",
+            proposalId ? "proposal" : "contact",
+            proposalId || "unknown",
+            "whatsapp",
+            "out",
+            message ? `Shared PDF via WhatsApp: ${message}` : "Shared PDF via WhatsApp",
+            JSON.stringify({ to, filename }),
+            userId || "system", 
+            userName || "System",
+            at
+          );
+        } catch (dbErr) {
+          console.error("Failed to log WAHA send in history:", dbErr);
+        }
+      }
+
+      const ct = upstream.headers.get("content-type") || "";
+      res.status(upstream.status);
+      if (ct.includes("application/json")) {
+        try {
+          return res.json(JSON.parse(buf || "{}"));
+        } catch {
+          return res.type("text/plain").send(buf);
+        }
+      }
+      return res.type(ct || "text/plain").send(buf);
+    } catch (e) {
+      console.error("[WAHA-SendMedia-Error]:", e);
+      res.status(502).json({ error: String(e?.message || e) });
+    }
+  }
+
   // --- n8n PROXY LOGIC (REPAIRED) ---
 
   async function proxyN8nWebhook(req, res, segmentOverride) {
@@ -184,6 +272,9 @@ export function registerIntegrationProxies(app, { db }) {
     if (ct.includes("multipart/form-data")) return multipartHandler(req, res, next);
     return jsonHandler(req, res, next);
   };
+
+  // Add the new send-media route
+  app.post("/api/send-media", n8nBodyHandler, proxyWahaSendMedia);
 
   app.post("/api/integrations/n8n/webhook/buildesk-health", n8nBodyHandler, (req, res) => {
     void proxyN8nWebhook(req, res, "buildesk-health");

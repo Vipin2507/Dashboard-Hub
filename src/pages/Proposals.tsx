@@ -44,6 +44,7 @@ import {
   Copy,
   Link2,
   MessageSquarePlus,
+  MessageCircle,
   Truck,
   CheckCircle,
   Users,
@@ -60,7 +61,7 @@ import { RejectProposalDialog } from "@/components/RejectProposalDialog";
 import { SendProposalDialog } from "@/components/SendProposalDialog";
 import { ConvertToDealDialog } from "@/components/ConvertToDealDialog";
 import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
-import { generateProposalPdf } from "@/lib/generateProposalPdf";
+import { generateProposalPdf, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
 import {
   Dialog,
   DialogContent,
@@ -329,6 +330,10 @@ export default function Proposals() {
   const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [sharePdfId, setSharePdfId] = useState<string | null>(null);
+  const [sharePdfPhone, setSharePdfPhone] = useState("");
+  const [sharePdfMessage, setSharePdfMessage] = useState("");
+  const [sharePdfLoading, setSharePdfLoading] = useState(false);
 
   useEffect(() => {
     setDraftSearch(search);
@@ -1079,10 +1084,21 @@ export default function Proposals() {
                                 {/* Group 3 — Actions */}
                                 <DropdownMenuSeparator />
                                 {canMenu.sendEmail && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
-                                    <Send className="mr-2 h-4 w-4" />
-                                    Send via Email
-                                  </DropdownMenuItem>
+                                  <>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+                                      <Send className="mr-2 h-4 w-4" />
+                                      Send via Email
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem className="cursor-pointer" onClick={() => {
+                                      setSharePdfId(p.id);
+                                      const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+                                      setSharePdfPhone(cust?.primaryPhone || "");
+                                      setSharePdfMessage(`Here is the proposal: ${p.proposalNumber}`);
+                                    }}>
+                                      <MessageCircle className="mr-2 h-4 w-4" />
+                                      Share via WhatsApp
+                                    </DropdownMenuItem>
+                                  </>
                                 )}
                                 {canMenu.copyLink && (
                                   <DropdownMenuItem
@@ -1363,6 +1379,101 @@ export default function Proposals() {
               }}
             >
               Assign
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!sharePdfId} onOpenChange={(o) => !o && (setSharePdfId(null), setSharePdfPhone(""), setSharePdfMessage(""))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share PDF via WhatsApp</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">WhatsApp Number (with country code)</label>
+              <Input
+                placeholder="e.g. 919876543210"
+                value={sharePdfPhone}
+                onChange={(e) => setSharePdfPhone(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Message (Optional)</label>
+              <Textarea
+                placeholder="Type an optional message..."
+                value={sharePdfMessage}
+                onChange={(e) => setSharePdfMessage(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSharePdfId(null)} disabled={sharePdfLoading}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!sharePdfPhone.trim() || sharePdfLoading}
+              onClick={async () => {
+                if (!sharePdfId) return;
+                const p = proposals.find((x) => x.id === sharePdfId);
+                if (!p) return;
+                
+                try {
+                  setSharePdfLoading(true);
+                  toast({ title: "Generating PDF..." });
+                  
+                  // Wait slightly for UI to update
+                  await new Promise((r) => setTimeout(r, 100));
+                  
+                  const blob = await generateProposalPdfBlob(p);
+                  const file = new File([blob], `Proposal-${p.proposalNumber}.pdf`, { type: "application/pdf" });
+                  
+                  const formData = new FormData();
+                  formData.append("to", sharePdfPhone);
+                  formData.append("message", sharePdfMessage);
+                  formData.append("customerId", p.customerId);
+                  formData.append("proposalId", p.id);
+                  formData.append("userId", me.id);
+                  formData.append("userName", me.name);
+                  formData.append("file", file);
+                  
+                  const res = await fetch(apiUrl("/api/send-media"), {
+                    method: "POST",
+                    body: formData,
+                  });
+                  
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.message || err.error || "Failed to send PDF");
+                  }
+                  
+                  toast({ title: "Sent successfully", description: "PDF shared via WhatsApp." });
+                  setSharePdfId(null);
+                  setSharePdfPhone("");
+                  setSharePdfMessage("");
+                  
+                  // Optionally mark as shared if draft
+                  if (p.status === "draft") {
+                    updateProposal(p.id, { status: "shared" });
+                    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                  }
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : "Error sending PDF";
+                  toast({ title: "Failed to share", description: message, variant: "destructive" });
+                } finally {
+                  setSharePdfLoading(false);
+                }
+              }}
+            >
+              {sharePdfLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                "Send PDF"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
