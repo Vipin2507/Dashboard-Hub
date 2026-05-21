@@ -122,7 +122,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
     setTeamId(String(proposal.teamId ?? ""));
     setRegionId(String(proposal.regionId ?? ""));
     setDidAutoFetchCustomerProducts(false);
-  }, [proposalId, proposal]);
+  }, [proposalId, proposal, customers]);
 
   const mapProposalLineItemToEstimateItem = (li: Proposal["lineItems"][number]) => {
     const inv = inventoryItems.find((x) => x.id === li.inventoryItemId);
@@ -171,8 +171,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
       setItems(proposalItems);
     }
     setDidAutoFetchCustomerProducts(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proposal?.id, customers, inventoryItems, didAutoFetchCustomerProducts]);
+  }, [proposal, customers, inventoryItems, didAutoFetchCustomerProducts]);
 
   useEffect(() => {
     if (!proposalId) return;
@@ -559,12 +558,12 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs w-10">#</TableHead>
-                    <TableHead className="text-xs min-w-[320px]">Item Name &amp; Description</TableHead>
-                    <TableHead className="text-xs min-w-[240px]">Sub Description</TableHead>
-                    <TableHead className="text-xs w-[120px]">HSN/SAC</TableHead>
-                    <TableHead className="text-xs w-[220px]">Qty / Unit</TableHead>
-                    <TableHead className="text-xs w-[140px] text-right">Rate (₹)</TableHead>
-                    <TableHead className="text-xs w-[140px] text-right">Amount</TableHead>
+                    <TableHead className="text-xs min-w-[280px]">Item Name &amp; Description</TableHead>
+                    <TableHead className="text-xs min-w-[180px]">Sub Description</TableHead>
+                    <TableHead className="text-xs w-[100px]">HSN/SAC</TableHead>
+                    <TableHead className="text-xs w-[140px]">Qty / Unit</TableHead>
+                    <TableHead className="text-xs w-[100px] text-right">Rate (₹)</TableHead>
+                    <TableHead className="text-xs w-[100px] text-right">Amount</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -573,8 +572,8 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
                     const amount = (Number(it.qty) || 0) * (Number(it.rate) || 0);
                     return (
                       <TableRow key={it.id}>
-                        <TableCell className="text-xs tabular-nums">{idx + 1}</TableCell>
-                        <TableCell>
+                        <TableCell className="text-xs tabular-nums align-top">{idx + 1}</TableCell>
+                        <TableCell className="align-top">
                           <Input
                             value={it.name}
                             onChange={(e) => updateItem(it.id, { name: e.target.value })}
@@ -586,19 +585,19 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
                             onChange={(e) => updateItem(it.id, { description: e.target.value })}
                             rows={2}
                             placeholder="Description"
-                            className="min-h-[64px]"
+                            className="min-h-[56px]"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <Textarea
                             value={it.subDescription}
                             onChange={(e) => updateItem(it.id, { subDescription: e.target.value })}
-                            rows={3}
+                            rows={2}
                             placeholder="Sub description"
-                            className="min-h-[88px]"
+                            className="min-h-[56px]"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <Input
                             value={it.hsnSac}
                             onChange={(e) => updateItem(it.id, { hsnSac: e.target.value })}
@@ -606,12 +605,12 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
                             className="h-9 font-mono"
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <div className="flex items-center gap-2">
-                            <div className="w-[90px]">
+                            <div className="w-[70px]">
                               <NumericInput
                                 value={it.qty}
-                                onValueChange={(v) => updateItem(it.id, { qty: Number(v) || 0 })}
+                                onValueChange={(v) => updateItem(it.id, { qty: v })}
                                 min={0}
                                 emptyOnBlur={1}
                                 className="h-9 text-right"
@@ -621,23 +620,23 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
                               value={it.unit}
                               onChange={(e) => updateItem(it.id, { unit: e.target.value })}
                               placeholder="Licence"
-                              className="h-9"
+                              className="h-9 flex-1 text-xs"
                             />
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right align-top">
                           <NumericInput
                             value={it.rate}
-                            onValueChange={(v) => updateItem(it.id, { rate: Number(v) || 0 })}
+                            onValueChange={(v) => updateItem(it.id, { rate: v })}
                             min={0}
                             emptyOnBlur={0}
                             className="h-9 text-right"
                           />
                         </TableCell>
-                        <TableCell className="text-right font-mono text-xs tabular-nums">
+                        <TableCell className="text-right font-mono text-xs tabular-nums align-top">
                           ₹{amount.toLocaleString("en-IN")}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <Button type="button" variant="ghost" size="icon" onClick={() => removeItem(it.id)} title="Remove">
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
