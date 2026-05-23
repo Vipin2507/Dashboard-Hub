@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
+import * as XLSX from "xlsx";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
@@ -621,32 +622,61 @@ export default function Proposals() {
   }, [filtered]);
 
   const handleExportCsv = () => {
-    const headers = ["Proposal #", "Title", "Company Name", "Customer Name", "Assigned To", "Grand Total", "Status", "Valid Until"];
-    const rows = filtered.map((p) =>
-      (() => {
-        const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
-        const companyName = cust?.companyName || cust?.customerName || p.customerName || "Company";
-        const customerName = cust?.customerName || p.customerName || "";
-        return [
-          p.proposalNumber,
-          p.title,
-          companyName,
-          customerName,
-          p.assignedToName,
-          p.finalQuoteValue ?? p.grandTotal,
-          p.status,
-          p.validUntil,
-        ].join(",");
-      })()
-    );
-    const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `proposals-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const headers = [
+      "Sr No.",
+      "Date",
+      "Month",
+      "Lead Name",
+      "City",
+      "Deal Owner",
+      "Company Name",
+      "Proposal Stage",
+      "Proposal Shared",
+      "No. of License",
+      "Deal Value",
+    ];
+
+    const rows = filtered.map((p, index) => {
+      const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+      const companyName = cust?.companyName || cust?.customerName || p.customerName || "";
+      const customerName = cust?.customerName || p.customerName || "";
+      const city = cust?.address?.city || "";
+      const createdDate = p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "";
+      const month = p.createdAt
+        ? new Date(p.createdAt).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+        : "";
+      const proposalShared =
+        p.status === "shared" || p.status === "sent" || p.status === "approval_pending" || p.status === "approved"
+          ? p.sentAt
+            ? new Date(p.sentAt).toLocaleDateString("en-IN")
+            : ""
+          : "";
+
+      // Format license info with item names and quantities
+      const licenseInfo = p.lineItems
+        .map((item) => `${item.name} (${item.qty})`)
+        .join("; ");
+
+      return [
+        index + 1,
+        createdDate,
+        month,
+        customerName,
+        city,
+        p.assignedToName,
+        companyName,
+        p.status.replace(/_/g, " "),
+        proposalShared,
+        licenseInfo,
+        p.finalQuoteValue ?? p.grandTotal,
+      ];
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Proposals");
+
+    XLSX.writeFile(wb, `proposals-${new Date().toISOString().slice(0, 10)}.xlsx`);
     toast({ title: "Export done", description: `${filtered.length} proposals exported.` });
   };
 
