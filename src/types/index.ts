@@ -177,6 +177,8 @@ export interface Customer {
   pan?: string;
   industry?: string;
   website?: string;
+  /** Secondary email addresses (comma-separated) for CC in email automations */
+  secondaryEmails?: string;
   address: {
     line1?: string;
     line2?: string;

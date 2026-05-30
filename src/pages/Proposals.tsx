@@ -453,7 +453,7 @@ export default function Proposals() {
 
   const canMenu = {
     view: true,
-    edit: me.role === "super_admin" || me.role === "sales_manager",
+    edit: me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep",
     duplicate: me.role === "super_admin" || me.role === "sales_manager",
     status: me.role === "super_admin" || me.role === "sales_manager",
     sendEmail: me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep",
@@ -692,7 +692,7 @@ export default function Proposals() {
   const detailProposal = detailId ? proposals.find((p) => p.id === detailId) : null;
   const canEditProposal = (p: Proposal) => {
     if (!canUpdate) return false;
-    if (p.status !== "draft" && p.status !== "rejected" && p.status !== "negotiation") return false;
+    if (p.status !== "draft" && p.status !== "rejected" && p.status !== "negotiation" && p.status !== "approval_pending") return false;
     if (scope === "SELF" && p.assignedTo !== me.id) return false;
     return true;
   };

@@ -153,6 +153,17 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => !v || /^[6-9]\d{9}$/.test(v.replace(/\s+/g, "")), "Invalid 10-digit phone"),
+  secondaryEmails: z
+    .string()
+    .optional()
+    .refine(
+      (v) => {
+        if (!v) return true;
+        const emails = v.split(",").map(e => e.trim());
+        return emails.every(e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || e === "");
+      },
+      "Invalid email format (use comma-separated emails)"
+    ),
   regionId: z.string().min(1, "Region is required"),
   teamId: z.string().min(1, "Team is required"),
   assignedTo: z.string().min(1, "Assigned to is required"),
@@ -245,6 +256,7 @@ export function CustomerFormDialog({
       contactDesignation: "",
       contactEmail: "",
       contactPhone: "",
+      secondaryEmails: "",
       regionId: assignmentVisible ? (regions[0]?.id ?? "") : (me.regionId || (regions[0]?.id ?? "")),
       teamId: assignmentVisible ? "" : (me.teamId ?? ""),
       assignedTo: assignmentVisible ? "" : me.id,
@@ -286,6 +298,7 @@ export function CustomerFormDialog({
         contactDesignation: primary?.designation ?? "",
         contactEmail: primary?.email ?? "",
         contactPhone: primary?.phone?.replace(/\D/g, "").slice(-10) ?? "",
+        secondaryEmails: editingCustomer.secondaryEmails ?? "",
         regionId: editingCustomer.regionId,
         teamId: editingCustomer.teamId,
         assignedTo: editingCustomer.assignedTo,
@@ -317,6 +330,7 @@ export function CustomerFormDialog({
         contactDesignation: "",
         contactEmail: "",
         contactPhone: "",
+        secondaryEmails: "",
         regionId: defaultRegion,
         teamId: defaultTeam,
         assignedTo: defaultAssignee,
@@ -381,7 +395,7 @@ export function CustomerFormDialog({
       void fetch(`https://api.postalpincode.in/postoffice/${encodeURIComponent(c)}`, { signal: ac.signal })
         .then((r) => (r.ok ? r.json() : null))
         .then((data: PostalApiResponse | null) => {
-          const po = data?.[0]?.PostOffice?.find((x) => norm(x?.Pincode)) ?? data?.[0]?.PostOffice?.[0] ?? null;
+          const po = data?.[0]?.PostOffice?.[0] ?? null;
           const fetchedPin = norm(po?.Pincode);
           const fetchedState = norm(po?.State);
           if (!fetchedPin && !fetchedState) {
@@ -464,6 +478,7 @@ export function CustomerFormDialog({
         address,
         gstin: values.gstin || undefined,
         pan: values.pan || undefined,
+        secondaryEmails: values.secondaryEmails?.trim() || undefined,
         regionId,
         regionName,
         teamId,
@@ -523,6 +538,7 @@ export function CustomerFormDialog({
         address,
         gstin: values.gstin || undefined,
         pan: values.pan || undefined,
+        secondaryEmails: values.secondaryEmails?.trim() || undefined,
         contacts: [contact],
         regionId,
         regionName,
@@ -853,6 +869,27 @@ export function CustomerFormDialog({
                     </FormItem>
                   )}
                 />
+
+                <div className="col-span-1 sm:col-span-2">
+                  <FormField
+                    control={form.control}
+                    name="secondaryEmails"
+                    render={({ field }) => (
+                      <FormItem className="space-y-1.5">
+                        <FormLabel className="text-sm font-medium text-gray-700 dark:text-gray-300">Secondary Emails (CC)</FormLabel>
+                        <FormControl>
+                          <Input
+                            className="h-10 text-sm"
+                            placeholder="email2@company.com, email3@company.com"
+                            {...field}
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">Comma-separated emails to CC on mail automations</p>
+                        <FormMessage className="text-xs" />
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
                 {assignmentVisible && (
                   <>

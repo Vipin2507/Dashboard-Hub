@@ -415,6 +415,8 @@ export interface AutomationContext {
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;
+  /** Secondary email addresses (comma-separated) to CC on email automations */
+  customerSecondaryEmails?: string;
   // Invoice
   invoiceId?: string;
   invoiceNumber?: string;
@@ -494,6 +496,7 @@ function enrichAutomationContext(ctx: AutomationContext): AutomationContext {
         customerName: next.customerName ?? customer.customerName ?? customer.companyName ?? r.name,
         customerPhone: next.customerPhone ?? r.phone,
         customerEmail: next.customerEmail ?? r.email,
+        customerSecondaryEmails: next.customerSecondaryEmails ?? customer.secondaryEmails,
       };
     }
   }
@@ -630,7 +633,7 @@ export function mergeEmailCcLists(...parts: (string | undefined)[]): string {
   return out.join(", ");
 }
 
-/** Resolves `{{...}}` tokens in settings + template CC, then merges (same rules as subject/body). */
+/** Resolves `{{...}}` tokens in settings + template CC, then merges (same rules as subject/body). Also adds customer's secondary emails if provided. */
 export function resolveMergedEmailCc(
   settings: Pick<AutomationSettings, "emailCc">,
   template: Pick<AutomationTemplate, "emailCc">,
@@ -639,7 +642,8 @@ export function resolveMergedEmailCc(
   const enriched = enrichAutomationContext({ ...ctx });
   const s = resolveVariables((settings.emailCc ?? "").trim(), enriched);
   const t = resolveVariables((template.emailCc ?? "").trim(), enriched);
-  return mergeEmailCcLists(s, t);
+  const customerSecondary = enriched.customerSecondaryEmails ?? "";
+  return mergeEmailCcLists(s, t, customerSecondary);
 }
 
 async function fireN8nWebhook(

@@ -83,7 +83,7 @@ export function ProposalDetailSheet({
   const canReject = can(me.role, "proposals", "reject");
   const canSend = can(me.role, "proposals", "send");
   const canEdit =
-    (proposal.status === "draft" || proposal.status === "rejected" || proposal.status === "negotiation") &&
+    (proposal.status === "draft" || proposal.status === "rejected" || proposal.status === "negotiation" || proposal.status === "approval_pending") &&
     (me.role === "super_admin" || proposal.assignedTo === me.id);
   const canOutcome = canUpdate && (me.role === "super_admin" || proposal.assignedTo === me.id) && !proposal.dealId;
 
