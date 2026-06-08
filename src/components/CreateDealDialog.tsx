@@ -102,8 +102,13 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
   const [inventorySearch, setInventorySearch] = useState("");
 
+  // Track whether we've already initialised for this proposalId so background
+  // customer-poll refreshes don't reset form fields while the user is typing.
+  const [initialisedForId, setInitialisedForId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!proposal) return;
+    // Only (re-)initialise when the dialog opens for a new proposal.
+    if (!proposal || proposal.id === initialisedForId) return;
     const customer = customers.find((c) => c.id === proposal.customerId);
     setCompanyName((customer?.companyName ?? proposal.customerCompanyName ?? "").trim());
     setCustomerFullName((customer?.customerName ?? proposal.customerName ?? "").trim());
@@ -122,7 +127,9 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
     setTeamId(String(proposal.teamId ?? ""));
     setRegionId(String(proposal.regionId ?? ""));
     setDidAutoFetchCustomerProducts(false);
-  }, [proposalId, proposal, customers]);
+    setInitialisedForId(proposal.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proposalId, proposal?.id]);
 
   const mapProposalLineItemToEstimateItem = (li: Proposal["lineItems"][number]) => {
     const inv = inventoryItems.find((x) => x.id === li.inventoryItemId);

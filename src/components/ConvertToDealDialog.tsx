@@ -192,8 +192,20 @@ export function ConvertToDealDialog({
     },
   });
 
+  // Track the proposal id that was last used to initialise the form so we only
+  // reset when the dialog opens or the proposal itself changes — not every time
+  // the `customers` / `inventoryItems` arrays are refreshed by the background
+  // poll (which previously caused the form to reset mid-typing).
+  const [initialisedForProposalId, setInitialisedForProposalId] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!open || !proposal) return;
+    // Only (re-)initialise when the dialog opens or a different proposal is shown.
+    if (!open || !proposal) {
+      setInitialisedForProposalId(null);
+      return;
+    }
+    if (proposal.id === initialisedForProposalId) return;
+
     setStep("form");
     setPreview([]);
     const value = proposal.finalQuoteValue ?? proposal.grandTotal ?? 0;
@@ -217,7 +229,9 @@ export function ConvertToDealDialog({
       intervalMonths: 3,
       customPercentages: [25, 25, 25, 25],
     });
-  }, [open, proposal, reset, customers, inventoryItems, me.regionId, me.teamId, me.id]);
+    setInitialisedForProposalId(proposal.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, proposal?.id]);
 
   const watched = watch();
   const watchedCustomerId = watch("customerId");
