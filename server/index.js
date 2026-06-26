@@ -10,6 +10,7 @@ import { registerSubscriptionRenewalApi } from "./subscriptionRenewalApi.js";
 import { registerIntegrationProxies } from "./integrationsProxy.js";
 import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
+import { registerCustomerExtrasApi } from "./customerExtrasApi.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -2288,6 +2289,7 @@ app.delete("/api/inventory/:id", (req, res) => {
 
 registerPaymentsApi(app, db, { broadcast });
 registerDeliveryApi(app, db, { broadcast });
+registerCustomerExtrasApi(app, db, { broadcast });
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
 

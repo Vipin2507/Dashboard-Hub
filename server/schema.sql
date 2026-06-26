@@ -25,6 +25,30 @@ CREATE TABLE IF NOT EXISTS customers (
   tags TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS customer_notes (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  created_by_name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS customer_attachments (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  file_name TEXT NOT NULL,
+  file_type TEXT,
+  file_size TEXT,
+  file_data TEXT,
+  uploaded_by TEXT NOT NULL,
+  uploaded_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_notes_customer ON customer_notes(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_attachments_customer ON customer_attachments(customer_id);
+
 CREATE TABLE IF NOT EXISTS regions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL

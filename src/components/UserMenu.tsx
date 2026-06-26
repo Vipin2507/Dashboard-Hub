@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select';
 import { useAppStore } from '@/store/useAppStore';
 import { ROLE_LABELS } from '@/types';
-import { ChevronDown, LogOut, User, UserPen } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, LogOut, User, UserPen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -57,6 +57,9 @@ export function UserMenu() {
   const [currentPwd, setCurrentPwd] = useState('');
   const [nextPwd, setNextPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
+  const [showCurrentPwd, setShowCurrentPwd] = useState(false);
+  const [showNextPwd, setShowNextPwd] = useState(false);
+  const [showConfirmPwd, setShowConfirmPwd] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const profileUser = users.find((u) => u.id === me.id);
@@ -74,6 +77,9 @@ export function UserMenu() {
     setCurrentPwd('');
     setNextPwd('');
     setConfirmPwd('');
+    setShowCurrentPwd(false);
+    setShowNextPwd(false);
+    setShowConfirmPwd(false);
   }, [profileOpen, me.id]);
 
   const teamsInRegion = teams.filter((t) => t.regionId === regionId);
@@ -254,39 +260,78 @@ export function UserMenu() {
                   <Label htmlFor="profile-cur-pwd" className="text-xs">
                     Current password
                   </Label>
-                  <Input
-                    id="profile-cur-pwd"
-                    type="password"
-                    autoComplete="current-password"
-                    value={currentPwd}
-                    onChange={(e) => setCurrentPwd(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="profile-cur-pwd"
+                      type={showCurrentPwd ? "text" : "password"}
+                      autoComplete="current-password"
+                      className="pr-10"
+                      value={currentPwd}
+                      onChange={(e) => setCurrentPwd(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowCurrentPwd((v) => !v)}
+                      aria-label={showCurrentPwd ? "Hide password" : "Show password"}
+                    >
+                      {showCurrentPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="profile-new-pwd" className="text-xs">
                     New password
                   </Label>
-                  <Input
-                    id="profile-new-pwd"
-                    type="password"
-                    autoComplete="new-password"
-                    value={nextPwd}
-                    onChange={(e) => setNextPwd(e.target.value)}
-                    minLength={4}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="profile-new-pwd"
+                      type={showNextPwd ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="pr-10"
+                      value={nextPwd}
+                      onChange={(e) => setNextPwd(e.target.value)}
+                      minLength={4}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowNextPwd((v) => !v)}
+                      aria-label={showNextPwd ? "Hide password" : "Show password"}
+                    >
+                      {showNextPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="profile-cf-pwd" className="text-xs">
                     Confirm new password
                   </Label>
-                  <Input
-                    id="profile-cf-pwd"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPwd}
-                    onChange={(e) => setConfirmPwd(e.target.value)}
-                    minLength={4}
-                  />
+                  <div className="relative">
+                    <Input
+                      id="profile-cf-pwd"
+                      type={showConfirmPwd ? "text" : "password"}
+                      autoComplete="new-password"
+                      className="pr-10"
+                      value={confirmPwd}
+                      onChange={(e) => setConfirmPwd(e.target.value)}
+                      minLength={4}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      onClick={() => setShowConfirmPwd((v) => !v)}
+                      aria-label={showConfirmPwd ? "Hide password" : "Show password"}
+                    >
+                      {showConfirmPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">

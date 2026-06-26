@@ -29,8 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Switch } from "@/components/ui/switch";
 import { useAppStore } from "@/store/useAppStore";
-import { formatINR } from "@/lib/rbac";
-import { can } from "@/lib/rbac";
+import { formatINR, can, getScope, visibleWithScope } from "@/lib/rbac";
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
@@ -175,12 +174,18 @@ export function ProposalFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, lineItems, monthYear, proposals, editingProposal?.id]);
 
+  const customerScope = getScope(me.role, "customers");
+  const visibleCustomers = useMemo(
+    () => visibleWithScope(customerScope, me, customers),
+    [customerScope, me, customers],
+  );
+
   const customerOptions = useMemo(() => {
-    return customers.map((c) => ({
+    return visibleCustomers.map((c) => ({
       value: c.id,
       label: c.companyName || c.customerName || c.customerNumber,
     }));
-  }, [customers]);
+  }, [visibleCustomers]);
   const userOptions = useMemo(() => users.map((u) => ({ value: u.id, label: u.name })), [users]);
 
   const activeInventory = useMemo(() => inventoryItems.filter((it) => it.isActive), [inventoryItems]);

@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ROLE_LABELS, type Role } from '@/types';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert, Eye, EyeOff } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,7 @@ export default function UsersPage() {
   const updateUserContactInfo = useAppStore(s => s.updateUserContactInfo);
 
   const [passwordEdits, setPasswordEdits] = useState<Record<string, string>>({});
+  const [showPasswordFor, setShowPasswordFor] = useState<Record<string, boolean>>({});
   const [passwordErrors, setPasswordErrors] = useState<Record<string, string>>({});
   const [disableTarget, setDisableTarget] = useState<import('@/types').User | null>(null);
   const [transferToUserId, setTransferToUserId] = useState<string>('');
@@ -315,13 +316,25 @@ export default function UsersPage() {
                           </div>
                           <div className="space-y-1">
                             <div className="flex gap-1">
-                              <Input
-                                type="password"
-                                placeholder="New password"
-                                className="h-8 text-xs"
-                                value={passwordEdits[u.id] ?? ''}
-                                onChange={e => setPasswordEdits(prev => ({ ...prev, [u.id]: e.target.value }))}
-                              />
+                              <div className="relative flex-1">
+                                <Input
+                                  type={showPasswordFor[u.id] ? "text" : "password"}
+                                  placeholder="New password"
+                                  className="h-8 pr-9 text-xs"
+                                  value={passwordEdits[u.id] ?? ''}
+                                  onChange={e => setPasswordEdits(prev => ({ ...prev, [u.id]: e.target.value }))}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                                  onClick={() => setShowPasswordFor(prev => ({ ...prev, [u.id]: !prev[u.id] }))}
+                                  aria-label={showPasswordFor[u.id] ? "Hide password" : "Show password"}
+                                >
+                                  {showPasswordFor[u.id] ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                                </Button>
+                              </div>
                               <Button
                                 size="sm"
                                 className="h-8 text-xs"

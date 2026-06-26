@@ -723,10 +723,8 @@ export default function Proposals() {
   const markWon = (id: string) => {
     const p = proposals.find((x) => x.id === id);
     if (!p) return;
-    updateProposal(id, { status: "won" });
-    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
-    toast({ title: "Marked as won", description: "Create a deal when you are ready to track the sale." });
     setCreateDealId(id);
+    toast({ title: "Create deal", description: "Complete the deal form to finalize this win." });
   };
 
   return (
@@ -1091,6 +1089,10 @@ export default function Proposals() {
                                         key={st}
                                         className="cursor-pointer"
                                         onClick={() => {
+                                          if (st === "won") {
+                                            markWon(p.id);
+                                            return;
+                                          }
                                           updateProposal(p.id, { status: st });
                                           void queryClient.invalidateQueries({ queryKey: QK.proposals() });
                                           toast({

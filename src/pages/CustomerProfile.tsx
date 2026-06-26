@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import { api } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import {
   CustomerProposalsLiveTable,
@@ -92,6 +92,7 @@ import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import { toast } from "@/components/ui/use-toast";
 import { useCustomerPaymentSummary } from "@/hooks/usePayments";
+import { useCustomerExtrasQuery } from "@/hooks/useCustomerExtrasQuery";
 import { triggerAutomation } from "@/lib/automationService";
 import { getCustomerBrief } from "@/lib/aiMemoryService";
 import { GenerateEstimateDialog } from "@/components/GenerateEstimateDialog";
@@ -490,6 +491,7 @@ function formatDate(s: string) {
 export default function CustomerProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
   const proposals = useAppStore((s) => s.proposals);
@@ -498,7 +500,18 @@ export default function CustomerProfile() {
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
   const rawCustomer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
-  const customer = rawCustomer ? ensureCustomerArrays(rawCustomer) : null;
+  const extrasQuery = useCustomerExtrasQuery(rawCustomer?.id);
+  const customer = useMemo(() => {
+    if (!rawCustomer) return null;
+    const base = ensureCustomerArrays(rawCustomer);
+    const extras = extrasQuery.data;
+    if (!extras) return base;
+    return ensureCustomerArrays({
+      ...base,
+      notes: extras.notes,
+      attachments: extras.attachments,
+    });
+  }, [rawCustomer, extrasQuery.data]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -1251,19 +1264,27 @@ export default function CustomerProfile() {
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          onClick={() => {
-                            if (!noteInput.trim()) return;
-                            useAppStore.getState().addNote(customer.id, {
-                              id: "cn-" + makeId(),
-                              content: noteInput.trim(),
-                              createdBy: me.id,
-                              createdByName: me.name,
-                              createdAt: new Date().toISOString(),
-                              updatedAt: new Date().toISOString(),
-                            });
-                            toast({ title: "Note added" });
-                            setNoteInput("");
-                            setNoteExpanded(false);
+                          onClick={async () => {
+                            if (!noteInput.trim() || !customer) return;
+                            try {
+                              const note = await api.post<Customer["notes"][number]>(
+                                `/customers/${customer.id}/notes`,
+                                {
+                                  content: noteInput.trim(),
+                                  createdBy: me.id,
+                                  createdByName: me.name,
+                                },
+                              );
+                              useAppStore.getState().addNote(customer.id, note);
+                              await queryClient.invalidateQueries({
+                                queryKey: QK.customerNotes(customer.id),
+                              });
+                              toast({ title: "Note added" });
+                              setNoteInput("");
+                              setNoteExpanded(false);
+                            } catch {
+                              toast({ title: "Failed to save note", variant: "destructive" });
+                            }
                           }}
                         >
                           Save
@@ -1295,11 +1316,26 @@ export default function CustomerProfile() {
                                 <div className="flex gap-2">
                                   <Button
                                     size="sm"
-                                    onClick={() => {
-                                      useAppStore.getState().updateNote(customer.id, note.id, editingNoteContent);
-                                      setEditingNoteId(null);
-                                      setEditingNoteContent("");
-                                      toast({ title: "Note updated" });
+                                    onClick={async () => {
+                                      if (!customer) return;
+                                      try {
+                                        await api.put(`/customers/${customer.id}/notes/${note.id}`, {
+                                          content: editingNoteContent,
+                                        });
+                                        useAppStore.getState().updateNote(
+                                          customer.id,
+                                          note.id,
+                                          editingNoteContent,
+                                        );
+                                        await queryClient.invalidateQueries({
+                                          queryKey: QK.customerNotes(customer.id),
+                                        });
+                                        setEditingNoteId(null);
+                                        setEditingNoteContent("");
+                                        toast({ title: "Note updated" });
+                                      } catch {
+                                        toast({ title: "Failed to update note", variant: "destructive" });
+                                      }
                                     }}
                                   >
                                     Save
@@ -1332,9 +1368,18 @@ export default function CustomerProfile() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-7 text-xs text-destructive"
-                                      onClick={() => {
-                                        useAppStore.getState().deleteNote(customer.id, note.id);
-                                        toast({ title: "Note deleted" });
+                                      onClick={async () => {
+                                        if (!customer) return;
+                                        try {
+                                          await api.delete(`/customers/${customer.id}/notes/${note.id}`);
+                                          useAppStore.getState().deleteNote(customer.id, note.id);
+                                          await queryClient.invalidateQueries({
+                                            queryKey: QK.customerNotes(customer.id),
+                                          });
+                                          toast({ title: "Note deleted" });
+                                        } catch {
+                                          toast({ title: "Failed to delete note", variant: "destructive" });
+                                        }
                                       }}
                                     >
                                       Delete
@@ -1359,22 +1404,35 @@ export default function CustomerProfile() {
                     <label>
                       <input type="file" className="hidden" onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) {
-                          useAppStore.getState().updateCustomer(customer.id, {
-                            attachments: [
-                              ...customer.attachments,
+                        if (!file || !customer) return;
+                        const reader = new FileReader();
+                        reader.onload = async () => {
+                          try {
+                            const dataUrl = reader.result as string;
+                            const fileData = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+                            const att = await api.post<Customer["attachments"][number]>(
+                              `/customers/${customer.id}/attachments`,
                               {
-                                id: "ca-" + makeId(),
                                 fileName: file.name,
                                 fileType: file.type,
                                 fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+                                fileData,
                                 uploadedBy: me.id,
-                                uploadedAt: new Date().toISOString(),
                               },
-                            ],
-                          });
-                          toast({ title: "Attachment added (demo)" });
-                        }
+                            );
+                            useAppStore.getState().updateCustomer(customer.id, {
+                              attachments: [...customer.attachments, att],
+                            });
+                            await queryClient.invalidateQueries({
+                              queryKey: QK.customerNotes(customer.id),
+                            });
+                            toast({ title: "Attachment uploaded" });
+                          } catch {
+                            toast({ title: "Failed to upload attachment", variant: "destructive" });
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                        e.target.value = "";
                       }} />
                       <Upload className="w-4 h-4 mr-1" /> Upload Attachment
                     </label>
@@ -1386,7 +1444,18 @@ export default function CustomerProfile() {
                           <div className="flex items-center gap-2 min-w-0">
                             <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{att.fileName}</p>
+                              {att.url ? (
+                                <a
+                                  href={apiUrl(att.url)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm font-medium truncate block hover:underline"
+                                >
+                                  {att.fileName}
+                                </a>
+                              ) : (
+                                <p className="text-sm font-medium truncate">{att.fileName}</p>
+                              )}
                               <p className="text-xs text-muted-foreground">{att.fileSize} · {formatDate(att.uploadedAt)}</p>
                             </div>
                           </div>
@@ -1394,11 +1463,20 @@ export default function CustomerProfile() {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-destructive flex-shrink-0"
-                            onClick={() => {
-                              useAppStore.getState().updateCustomer(customer.id, {
-                                attachments: customer.attachments.filter((a) => a.id !== att.id),
-                              });
-                              toast({ title: "Attachment removed" });
+                            onClick={async () => {
+                              if (!customer) return;
+                              try {
+                                await api.delete(`/customers/${customer.id}/attachments/${att.id}`);
+                                useAppStore.getState().updateCustomer(customer.id, {
+                                  attachments: customer.attachments.filter((a) => a.id !== att.id),
+                                });
+                                await queryClient.invalidateQueries({
+                                  queryKey: QK.customerNotes(customer.id),
+                                });
+                                toast({ title: "Attachment removed" });
+                              } catch {
+                                toast({ title: "Failed to remove attachment", variant: "destructive" });
+                              }
                             }}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
