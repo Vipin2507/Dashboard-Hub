@@ -1,4 +1,5 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
+import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -219,11 +220,7 @@ function getServiceLabel(_item: ProposalLineItem): string {
 }
 
 function formatLicenseSuffix(item: ProposalLineItem): string {
-  const qty = Number(item.qty) || 0;
-  if (qty <= 0) return "";
-  const raw = String((item as unknown as { qtyLabel?: string }).qtyLabel ?? "license").trim() || "license";
-  // Keep exactly what the user typed in the PDF editor (no auto pluralization).
-  return ` (${qty} ${raw})`;
+  return formatProposalQtyBracket(item);
 }
 
 function baseAmount(item: ProposalLineItem): number {

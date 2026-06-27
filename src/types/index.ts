@@ -252,8 +252,10 @@ export interface ProposalLineItem {
   name: string;
   sku: string;
   description?: string;
-  /** Label for the quantity suffix in PDF, e.g. "license", "product", "seat". */
+  /** Label for the quantity suffix in PDF, e.g. "license", "Units", "seat". */
   qtyLabel?: string;
+  /** Optional text before qty in PDF bracket, e.g. "Up to" → "(Up to 50 Units)". */
+  qtyPrefix?: string;
   qty: number;
   unitPrice: number;
   taxRate: number;

@@ -37,6 +37,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
 import { DEFAULT_TERMS, defaultCoverHeadingTextForScope, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
+import { previewProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -865,19 +866,27 @@ export function ProposalFormDialog({
                           placeholder="Add description…"
                         />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Qty label (for bracket)</Label>
+                          <Label className="text-xs text-muted-foreground">Qty prefix (optional)</Label>
                           <Input
-                            value={(li as any).qtyLabel ?? "license"}
+                            value={li.qtyPrefix ?? ""}
+                            onChange={(e) => updateLineItem(li.id, { qtyPrefix: e.target.value })}
+                            placeholder="Up to"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Qty label</Label>
+                          <Input
+                            value={li.qtyLabel ?? "license"}
                             onChange={(e) => updateLineItem(li.id, { qtyLabel: e.target.value })}
-                            placeholder="license"
+                            placeholder="Units"
                           />
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">Bracket preview</Label>
                           <Input
-                            value={`(${li.qty} ${((li as any).qtyLabel ?? "license").trim() || "license"})`}
+                            value={previewProposalQtyBracket(li.qty, li.qtyPrefix, li.qtyLabel)}
                             readOnly
                             className="font-mono text-xs"
                           />
