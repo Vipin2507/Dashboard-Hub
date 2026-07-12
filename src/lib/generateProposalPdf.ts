@@ -1,5 +1,6 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
+import { formatProposalVersionComment } from "@/lib/proposalVersionComment";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -404,24 +405,23 @@ function renderVersionPage(
   addPdfRasterImage(doc, images.meetingPhoto, L.meetingPhotoX, L.meetingPhotoY, L.meetingPhotoW, L.meetingPhotoH);
 
   const users = useAppStore.getState().users;
-  const DEFAULT_VERSION_COMMENT = "This is the first version of Proposal to be submitted for Buildesk Annual Licenses";
   const versionData =
     proposal.versionHistory?.map((v) => {
       const user = users.find((u) => u.id === v.createdBy);
       const userName = user ? `Mr. ${cleanName(user.name)}` : cleanName(String(v.createdBy ?? ""));
-      const comment = DEFAULT_VERSION_COMMENT;
+      const versionNum = Number(v.version ?? 1);
       return [
-        Number(v.version ?? 1).toFixed(1),
+        versionNum.toFixed(1),
         formatProposalDate(v.createdAt ?? proposal.createdAt),
         userName,
-        comment,
+        formatProposalVersionComment(versionNum),
       ];
     }) ?? [
       [
         Number(proposal.currentVersion || 1).toFixed(1),
         formatProposalDate(proposal.createdAt),
         `Mr. ${cleanName(proposal.assignedToName)}`,
-        DEFAULT_VERSION_COMMENT,
+        formatProposalVersionComment(Number(proposal.currentVersion || 1)),
       ],
     ];
 

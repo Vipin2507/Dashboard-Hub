@@ -262,6 +262,9 @@ export function ProposalFormDialog({
     const now = new Date().toISOString();
     const customer = customers.find((c) => c.id === customerId);
     const assignedUser = users.find((u) => u.id === assignedTo);
+    const liveProposal = editingProposal
+      ? proposals.find((p) => p.id === editingProposal.id) ?? editingProposal
+      : null;
     const value = overrideFinal && finalQuoteValue ? Number(finalQuoteValue) : totals.grandTotal;
     const companyName = (customer?.companyName ?? "").trim() || customer?.customerName || "";
     const parsedTerms = termsAndConditionsText
@@ -288,10 +291,10 @@ export function ProposalFormDialog({
       totalTax: totals.totalTax,
       grandTotal: totals.grandTotal,
       finalQuoteValue: overrideFinal ? value : undefined,
-      versionHistory: editingProposal?.versionHistory ?? [
+      versionHistory: liveProposal?.versionHistory ?? [
         { version: 1, createdAt: now, createdBy: me.id, lineItems, setupDeploymentCharges: Number(setupDeploymentCharges) || 0, subtotal: totals.subtotal, totalDiscount: totals.totalDiscount, totalTax: totals.totalTax, grandTotal: totals.grandTotal },
       ],
-      currentVersion: editingProposal?.currentVersion ?? 1,
+      currentVersion: liveProposal?.currentVersion ?? 1,
       notes: internalNotes || undefined,
       customerNotes: customerNotes || undefined,
       createdAt: editingProposal?.createdAt ?? now,
