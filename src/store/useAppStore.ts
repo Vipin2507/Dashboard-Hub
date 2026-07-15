@@ -38,6 +38,7 @@ import {
 import { apiUrl } from '@/lib/api';
 
 const AUTH_STORAGE_KEY = 'buildesk_auth_user_id';
+const REMEMBER_EMAIL_KEY = 'buildesk_remember_email';
 
 interface AppState {
   /** Logged-in account (persisted). Impersonation does not change this. */
@@ -178,21 +179,42 @@ function persistAuthUserId(id: string | null) {
   }
 }
 
+export function readRememberedEmail(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+export function persistRememberedEmail(email: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (email) localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+    else localStorage.removeItem(REMEMBER_EMAIL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
 function getInitialState() {
   const users = structuredClone(seedUsers);
-  let authUserId = readAuthUserId();
+  /**
+   * Keep the saved session id even when the user is not in seed data.
+   * Clearing here logged everyone out on refresh for registered / API-only users
+   * before `/api/users` had a chance to hydrate the store.
+   */
+  const authUserId = readAuthUserId();
   let me: MeContext = guestMe();
   if (authUserId) {
     const logged = users.find((u) => u.id === authUserId && u.status === 'active');
     if (logged) {
       me = meFromUser(logged);
-    } else {
-      persistAuthUserId(null);
-      authUserId = null;
     }
   }
 
@@ -236,6 +258,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     const authUserId = get().authUserId;
     if (!authUserId) {
       set({ users });
+      return;
+    }
+    // Empty replace (failed/empty API) must not wipe a valid persisted session.
+    if (!Array.isArray(users) || users.length === 0) {
       return;
     }
     const logged = users.find((u) => u.id === authUserId && u.status === 'active');

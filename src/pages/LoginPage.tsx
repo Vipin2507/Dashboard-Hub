@@ -1,18 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAppStore } from "@/store/useAppStore";
+import { persistRememberedEmail, readRememberedEmail, useAppStore } from "@/store/useAppStore";
 import { toast } from "sonner";
 import { Eye, EyeOff, LayoutDashboard, ShieldCheck, Zap, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const authUserId = useAppStore((s) => s.authUserId);
   const login = useAppStore((s) => s.login);
-  const [email, setEmail] = useState("");
+  const remembered = readRememberedEmail();
+  const [email, setEmail] = useState(remembered);
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(Boolean(remembered));
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -27,6 +30,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       login(email, password);
+      if (rememberMe) {
+        persistRememberedEmail(email.trim().toLowerCase());
+      } else {
+        persistRememberedEmail(null);
+      }
       toast.success("Signed in");
       navigate("/", { replace: true });
     } catch (err) {
@@ -94,14 +102,14 @@ export default function LoginPage() {
         <div className="relative z-10 w-full max-w-sm space-y-6 rounded-xl border border-border bg-card p-6 shadow-sm">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-            
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form method="post" onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
+                name="username"
                 type="email"
                 autoComplete="username"
                 placeholder="firstname@cravingcode.in"
@@ -115,6 +123,7 @@ export default function LoginPage() {
               <div className="relative">
                 <Input
                   id="password"
+                  name="password"
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   value={password}
@@ -128,11 +137,22 @@ export default function LoginPage() {
                   size="icon"
                   className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setShowPassword((v) => !v)}
+                  tabIndex={-1}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="remember-me"
+                checked={rememberMe}
+                onCheckedChange={(v) => setRememberMe(v === true)}
+              />
+              <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">
+                Remember email
+              </Label>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}
