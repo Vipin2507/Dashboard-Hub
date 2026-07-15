@@ -303,6 +303,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   logout: () => {
     persistAuthUserId(null);
     set({ authUserId: null, effectiveUserId: null, me: guestMe() });
+    void import('@/lib/passwordCredentials').then((m) => m.preventSilentCredentialAccess()).catch(() => undefined);
   },
 
   registerUser: ({ name, email, password, role, teamId, regionId, phone }) => {

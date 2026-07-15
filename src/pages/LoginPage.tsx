@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { persistRememberedEmail, readRememberedEmail, useAppStore } from "@/store/useAppStore";
+import { offerSavePassword, tryAutofillPassword } from "@/lib/passwordCredentials";
 import { toast } from "sonner";
 import { Eye, EyeOff, LayoutDashboard, ShieldCheck, Zap, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,10 +13,11 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const authUserId = useAppStore((s) => s.authUserId);
   const login = useAppStore((s) => s.login);
+  const formRef = useRef<HTMLFormElement>(null);
   const remembered = readRememberedEmail();
   const [email, setEmail] = useState(remembered);
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(Boolean(remembered));
+  const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -25,13 +27,31 @@ export default function LoginPage() {
     }
   }, [authUserId, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Ask the browser password manager for a saved account on this site.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const saved = await tryAutofillPassword();
+      if (cancelled || !saved) return;
+      setEmail(saved.email);
+      setPassword(saved.password);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // Chrome will not treat type="text" as a password field when offering to save.
+    setShowPassword(false);
     setLoading(true);
     try {
       login(email, password);
       if (rememberMe) {
         persistRememberedEmail(email.trim().toLowerCase());
+        // Explicitly trigger the native "Save password?" popup (SPA logins skip it otherwise).
+        await offerSavePassword(formRef.current, email, password);
       } else {
         persistRememberedEmail(null);
       }
@@ -104,14 +124,23 @@ export default function LoginPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
           </div>
 
-          <form method="post" onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+          <form
+            ref={formRef}
+            id="login-form"
+            method="post"
+            action="/login"
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            autoComplete="on"
+          >
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="username">Email</Label>
               <Input
-                id="email"
+                id="username"
                 name="username"
                 type="email"
                 autoComplete="username"
+                inputMode="email"
                 placeholder="firstname@cravingcode.in"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -151,7 +180,7 @@ export default function LoginPage() {
                 onCheckedChange={(v) => setRememberMe(v === true)}
               />
               <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">
-                Remember email
+                Remember me (save email &amp; password in browser)
               </Label>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
