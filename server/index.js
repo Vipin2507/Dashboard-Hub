@@ -84,12 +84,38 @@ app.get("/api/auth/browser-password-save", (_req, res) => {
 });
 
 /**
+ * Where to send the browser after login/logout redirects.
+ * Production API is on api.buildesk.ae while the SPA is on dashboard.buildesk.ae —
+ * relative redirects would land on the API host and break the app.
+ */
+function resolveAppOrigin(req) {
+  const fromEnv = String(process.env.APP_PUBLIC_URL || process.env.DASHBOARD_URL || "")
+    .trim()
+    .replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+
+  const referer = req.get("referer") || req.get("referrer");
+  if (referer) {
+    try {
+      return new URL(referer).origin;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const xfProto = req.get("x-forwarded-proto");
+  const proto = xfProto || req.protocol || "https";
+  const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
+  return `${proto}://${host}`;
+}
+
+/**
  * Real login navigation target for the browser password manager.
  * Form POST (not XHR) → Chrome can offer "Save password?".
- * Returns a tiny HTML bridge that writes the session id into localStorage
- * then redirects into the SPA.
+ * Then 303 back to the SPA with ?auth=… so the session is restored.
  */
 app.post("/api/auth/login", (req, res) => {
+  const appOrigin = resolveAppOrigin(req);
   const username = String(req.body?.username ?? req.body?.email ?? "")
     .trim()
     .toLowerCase();
@@ -97,7 +123,7 @@ app.post("/api/auth/login", (req, res) => {
   const remember = String(req.body?.remember ?? "") === "1";
 
   if (!username || !password) {
-    return res.redirect(302, "/login?error=missing");
+    return res.redirect(302, `${appOrigin}/login?error=missing`);
   }
 
   const user = db
@@ -105,13 +131,13 @@ app.post("/api/auth/login", (req, res) => {
     .get(username);
 
   if (!user) {
-    return res.redirect(302, "/login?error=invalid");
+    return res.redirect(302, `${appOrigin}/login?error=invalid`);
   }
   if (String(user.status) !== "active") {
-    return res.redirect(302, "/login?error=disabled");
+    return res.redirect(302, `${appOrigin}/login?error=disabled`);
   }
   if (String(user.password) !== password) {
-    return res.redirect(302, "/login?error=invalid");
+    return res.redirect(302, `${appOrigin}/login?error=invalid`);
   }
 
   // 303 after a top-level form POST is what Chrome’s password manager looks for.
@@ -120,7 +146,7 @@ app.post("/api/auth/login", (req, res) => {
     remember: remember ? "1" : "0",
   });
   if (remember && user.email) q.set("email", String(user.email));
-  return res.redirect(303, `/?${q.toString()}`);
+  return res.redirect(303, `${appOrigin}/?${q.toString()}`);
 });
 
 // ---------------------------------------------------------

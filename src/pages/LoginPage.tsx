@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { apiUrl } from "@/lib/api";
 import { persistRememberedEmail, readRememberedEmail, useAppStore } from "@/store/useAppStore";
 import { tryAutofillPassword } from "@/lib/passwordCredentials";
 import { toast } from "sonner";
@@ -10,9 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 
 /**
- * Login uses a real top-level form POST to `/api/auth/login` (no preventDefault).
+ * Login uses a real top-level form POST to the API (no preventDefault).
  * That is what Chrome needs to show the native “Save password?” bubble.
- * The server validates credentials and returns HTML that sets localStorage, then redirects.
+ * Production API is on api.buildesk.ae — form action must use apiUrl(), not a relative /api path
+ * (relative would hit dashboard.buildesk.ae static nginx → 405 Method Not Allowed).
  */
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const loginAction = apiUrl("/api/auth/login");
 
   useEffect(() => {
     if (authUserId) {
@@ -129,7 +132,7 @@ export default function LoginPage() {
           <form
             id="login-form"
             method="post"
-            action="/api/auth/login"
+            action={loginAction}
             onSubmit={handleSubmit}
             className="space-y-4"
             autoComplete="on"

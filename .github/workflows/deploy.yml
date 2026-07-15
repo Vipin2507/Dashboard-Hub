@@ -63,9 +63,8 @@ jobs:
             # 4. Install dependencies
             sudo -u buildesk-api npm install
             
-            # 5. Smart Restart
-            sudo -u buildesk-api pm2 restart buildesk-api --update-env || sudo -u buildesk-api pm2 start server/index.js --name buildesk-api
-
+            # 5. Restart API with APP_PUBLIC_URL so login redirects return to the SPA host
+            sudo -u buildesk-api bash -lc 'cd /home/buildesk-api/htdocs/api.buildesk.ae && pm2 delete buildesk-api 2>/dev/null; APP_PUBLIC_URL=https://dashboard.buildesk.ae pm2 start server/index.js --name buildesk-api && pm2 save'
       # --- FINAL PERMISSIONS & RELOAD ---
       - name: Permissions & Reload Nginx
         uses: appleboy/ssh-action@v1.0.3
