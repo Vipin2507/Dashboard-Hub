@@ -83,6 +83,46 @@ app.get("/api/auth/browser-password-save", (_req, res) => {
   res.status(204).end();
 });
 
+/**
+ * Real login navigation target for the browser password manager.
+ * Form POST (not XHR) → Chrome can offer "Save password?".
+ * Returns a tiny HTML bridge that writes the session id into localStorage
+ * then redirects into the SPA.
+ */
+app.post("/api/auth/login", (req, res) => {
+  const username = String(req.body?.username ?? req.body?.email ?? "")
+    .trim()
+    .toLowerCase();
+  const password = String(req.body?.password ?? "");
+  const remember = String(req.body?.remember ?? "") === "1";
+
+  if (!username || !password) {
+    return res.redirect(302, "/login?error=missing");
+  }
+
+  const user = db
+    .prepare("SELECT id, email, password, status FROM users WHERE lower(email) = ?")
+    .get(username);
+
+  if (!user) {
+    return res.redirect(302, "/login?error=invalid");
+  }
+  if (String(user.status) !== "active") {
+    return res.redirect(302, "/login?error=disabled");
+  }
+  if (String(user.password) !== password) {
+    return res.redirect(302, "/login?error=invalid");
+  }
+
+  // 303 after a top-level form POST is what Chrome’s password manager looks for.
+  const q = new URLSearchParams({
+    auth: String(user.id),
+    remember: remember ? "1" : "0",
+  });
+  if (remember && user.email) q.set("email", String(user.email));
+  return res.redirect(303, `/?${q.toString()}`);
+});
+
 // ---------------------------------------------------------
 // 5. REMAINING API REGISTRATIONS (payments API registered once below with broadcast)
 // ---------------------------------------------------------

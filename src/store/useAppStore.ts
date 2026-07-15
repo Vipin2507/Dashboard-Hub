@@ -198,11 +198,37 @@ export function persistRememberedEmail(email: string | null) {
   }
 }
 
+/** Apply `/?auth=…` from the server login redirect before the store boots. */
+function consumeAuthRedirectParams() {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    const auth = url.searchParams.get('auth');
+    if (!auth) return;
+    localStorage.setItem(AUTH_STORAGE_KEY, auth);
+    const remember = url.searchParams.get('remember');
+    if (remember === '1') {
+      const email = url.searchParams.get('email');
+      if (email) localStorage.setItem(REMEMBER_EMAIL_KEY, email);
+    } else if (remember === '0') {
+      localStorage.removeItem(REMEMBER_EMAIL_KEY);
+    }
+    url.searchParams.delete('auth');
+    url.searchParams.delete('remember');
+    url.searchParams.delete('email');
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState({}, '', next);
+  } catch {
+    /* ignore */
+  }
+}
+
 function makeId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
 function getInitialState() {
+  consumeAuthRedirectParams();
   const users = structuredClone(seedUsers);
   /**
    * Keep the saved session id even when the user is not in seed data.

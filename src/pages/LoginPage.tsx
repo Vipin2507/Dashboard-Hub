@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { persistRememberedEmail, readRememberedEmail, useAppStore } from "@/store/useAppStore";
-import { offerSavePassword, tryAutofillPassword } from "@/lib/passwordCredentials";
+import { tryAutofillPassword } from "@/lib/passwordCredentials";
 import { toast } from "sonner";
 import { Eye, EyeOff, LayoutDashboard, ShieldCheck, Zap, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,17 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 
+/**
+ * Login uses a real top-level form POST to `/api/auth/login` (no preventDefault).
+ * That is what Chrome needs to show the native “Save password?” bubble.
+ * The server validates credentials and returns HTML that sets localStorage, then redirects.
+ */
 export default function LoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const authUserId = useAppStore((s) => s.authUserId);
-  const login = useAppStore((s) => s.login);
-  const formRef = useRef<HTMLFormElement>(null);
   const remembered = readRememberedEmail();
   const [email, setEmail] = useState(remembered);
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (authUserId) {
@@ -27,7 +31,14 @@ export default function LoginPage() {
     }
   }, [authUserId, navigate]);
 
-  // Ask the browser password manager for a saved account on this site.
+  useEffect(() => {
+    const err = searchParams.get("error");
+    if (!err) return;
+    if (err === "disabled") toast.error("Account is disabled");
+    else if (err === "missing") toast.error("Email and password are required");
+    else toast.error("Invalid email or password");
+  }, [searchParams]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -41,32 +52,18 @@ export default function LoginPage() {
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    // Chrome will not treat type="text" as a password field when offering to save.
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    // Do NOT call preventDefault — allow a real browser navigation so Chrome
+    // can offer to save the password after a successful form POST.
+    const form = e.currentTarget;
+    const pwd = form.querySelector<HTMLInputElement>('input[name="password"]');
+    if (pwd) pwd.type = "password";
     setShowPassword(false);
-    setLoading(true);
-    try {
-      login(email, password);
-      if (rememberMe) {
-        persistRememberedEmail(email.trim().toLowerCase());
-        const result = await offerSavePassword(formRef.current, email, password);
-        if (!result.offered && result.reason) {
-          toast.message("Browser cannot save password here", {
-            description: result.reason,
-            duration: 8000,
-          });
-        }
-      } else {
-        persistRememberedEmail(null);
-      }
-      toast.success("Signed in");
-      navigate("/", { replace: true });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Sign-in failed";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
+    setSubmitting(true);
+    if (rememberMe) {
+      persistRememberedEmail(email.trim().toLowerCase());
+    } else {
+      persistRememberedEmail(null);
     }
   };
 
@@ -130,14 +127,14 @@ export default function LoginPage() {
           </div>
 
           <form
-            ref={formRef}
             id="login-form"
             method="post"
-            action="/login"
+            action="/api/auth/login"
             onSubmit={handleSubmit}
             className="space-y-4"
             autoComplete="on"
           >
+            <input type="hidden" name="remember" value={rememberMe ? "1" : "0"} />
             <div className="space-y-2">
               <Label htmlFor="username">Email</Label>
               <Input
@@ -188,8 +185,8 @@ export default function LoginPage() {
                 Remember me
               </Label>
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Signing in…" : "Sign in"}
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Signing in…" : "Sign in"}
             </Button>
           </form>
 
