@@ -12,6 +12,17 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
     proxy: {
+      // Same-origin /api in dev so Chrome password-save form POSTs stay on :8080.
+      "/api": {
+        target: "http://localhost:4000",
+        changeOrigin: true,
+        secure: false,
+      },
+      "/ws": {
+        target: "ws://localhost:4000",
+        ws: true,
+        changeOrigin: true,
+      },
       // Dev-only proxy to avoid CORS when calling WAHA directly.
       "/waha": {
         target: "http://72.60.200.185:3000",

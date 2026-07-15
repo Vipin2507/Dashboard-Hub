@@ -72,6 +72,17 @@ app.use(attachInteractionLogger(db));
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ extended: true, limit: "100mb" }));
 
+/**
+ * Same-origin no-op used only so Chrome/Edge can detect a login form POST and
+ * offer to save the password. Body is discarded; nothing is authenticated here.
+ */
+app.post("/api/auth/browser-password-save", (_req, res) => {
+  res.status(204).end();
+});
+app.get("/api/auth/browser-password-save", (_req, res) => {
+  res.status(204).end();
+});
+
 // ---------------------------------------------------------
 // 5. REMAINING API REGISTRATIONS (payments API registered once below with broadcast)
 // ---------------------------------------------------------

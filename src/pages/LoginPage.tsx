@@ -50,8 +50,13 @@ export default function LoginPage() {
       login(email, password);
       if (rememberMe) {
         persistRememberedEmail(email.trim().toLowerCase());
-        // Explicitly trigger the native "Save password?" popup (SPA logins skip it otherwise).
-        await offerSavePassword(formRef.current, email, password);
+        const result = await offerSavePassword(formRef.current, email, password);
+        if (!result.offered && result.reason) {
+          toast.message("Browser cannot save password here", {
+            description: result.reason,
+            duration: 8000,
+          });
+        }
       } else {
         persistRememberedEmail(null);
       }
