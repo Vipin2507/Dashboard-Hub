@@ -18,6 +18,8 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { makeProposalNumber } from "@/lib/proposalNumber";
+import { currentMonthYmd } from "@/lib/dateRange";
+import { FilterPanel } from "@/components/FilterPanel";
 import {
   FileText,
   Plus,
@@ -284,8 +286,8 @@ export default function Proposals() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
   const [suspectWonOnly, setSuspectWonOnly] = useState(false);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => currentMonthYmd().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthYmd().to);
   const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [page, setPage] = useState(1);
@@ -302,8 +304,8 @@ export default function Proposals() {
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">("all");
   const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(false);
-  const [draftDateFrom, setDraftDateFrom] = useState("");
-  const [draftDateTo, setDraftDateTo] = useState("");
+  const [draftDateFrom, setDraftDateFrom] = useState(() => currentMonthYmd().from);
+  const [draftDateTo, setDraftDateTo] = useState(() => currentMonthYmd().to);
   const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>("all");
   const [draftSortBy, setDraftSortBy] = useState<SortKey>("date");
   const statusFromUrl = searchParams.get("status");
@@ -329,7 +331,6 @@ export default function Proposals() {
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
   const [draftTeamQueryFilter, setDraftTeamQueryFilter] = useState<string>("all");
   const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [sharePdfId, setSharePdfId] = useState<string | null>(null);
   const [sharePdfPhone, setSharePdfPhone] = useState("");
@@ -373,11 +374,12 @@ export default function Proposals() {
   };
 
   const clearFilters = () => {
+    const month = currentMonthYmd();
     setDraftSearch("");
     setDraftStatusFilter("all");
     setDraftSuspectWonOnly(false);
-    setDraftDateFrom("");
-    setDraftDateTo("");
+    setDraftDateFrom(month.from);
+    setDraftDateTo(month.to);
     setDraftAssignedToFilter("all");
     setDraftSortBy("date");
     setDraftTeamQueryFilter("all");
@@ -385,8 +387,8 @@ export default function Proposals() {
     setSearch("");
     setStatusFilter("all");
     setSuspectWonOnly(false);
-    setDateFrom("");
-    setDateTo("");
+    setDateFrom(month.from);
+    setDateTo(month.to);
     setAssignedToFilter("all");
     setSortBy("date");
     setTeamQueryFilter("all");
@@ -539,8 +541,14 @@ export default function Proposals() {
     if (ownerFromUrl) setAssignedToFilter(ownerFromUrl);
     if (teamFromUrl) setTeamQueryFilter(teamFromUrl);
     if (regionFromUrl) setRegionQueryFilter(regionFromUrl);
-    if (fromFromUrl) setDateFrom(fromFromUrl);
-    if (toFromUrl) setDateTo(toFromUrl);
+    if (fromFromUrl) {
+      setDateFrom(fromFromUrl);
+      setDraftDateFrom(fromFromUrl);
+    }
+    if (toFromUrl) {
+      setDateTo(toFromUrl);
+      setDraftDateTo(toFromUrl);
+    }
   }, [ownerFromUrl, teamFromUrl, regionFromUrl, fromFromUrl, toFromUrl]);
 
   const filtered = useMemo(() => {
@@ -775,7 +783,7 @@ export default function Proposals() {
         <ProposalKPICards data={kpiMetrics} />
 
         {/* Search + filters */}
-        <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <FilterPanel title="Filters" storageKey="ui:proposals:filtersOpen">
           <div className="flex flex-col gap-3">
             {/* Search */}
             <div className="relative w-full">
@@ -895,7 +903,7 @@ export default function Proposals() {
               </div>
             </div>
           </div>
-        </div>
+        </FilterPanel>
 
         {/* Table */}
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">

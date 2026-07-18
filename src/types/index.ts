@@ -14,7 +14,8 @@ export type Module =
   | 'masters'
   | 'inventory'
   | 'payments'
-  | 'data_control_center';
+  | 'data_control_center'
+  | 'executive_performance';
 
 export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'SELF' | 'NONE';
 

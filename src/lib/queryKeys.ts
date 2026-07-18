@@ -67,6 +67,8 @@ export const QK = {
   dataControlMeta: () => ["data-control", "meta"] as const,
   dataControlRows: (moduleId: string) => ["data-control", "rows", moduleId] as const,
 
+  executivePerformance: (params?: object) => ["analytics", "executive-performance", params] as const,
+
   subscriptionTracker: () => ["subscriptions", "tracker"] as const,
   subscriptionSettings: () => ["subscriptions", "settings"] as const,
 };

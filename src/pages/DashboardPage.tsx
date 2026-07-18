@@ -49,6 +49,8 @@ import {
   Legend,
 } from 'recharts';
 import { format, formatDistanceToNow } from 'date-fns';
+import { currentMonthDateRange } from '@/lib/dateRange';
+import { FilterPanel } from '@/components/FilterPanel';
 import type { ProposalStatus } from '@/types';
 import { normalizeDealStatus } from '@/lib/dealStatus';
 import { cn } from '@/lib/utils';
@@ -173,15 +175,15 @@ export default function DashboardPage() {
   const revenueBarSize = smUp ? 32 : 20;
   const axisTickX = smUp ? 12 : 10;
   const yAxisWidth = smUp ? 56 : 40;
-  // Applied filters (used by all sections)
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  // Applied filters (used by all sections) — default: current calendar month
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>(() => currentMonthDateRange());
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [teamFilter, setTeamFilter] = useState('all');
   const [regionFilter, setRegionFilter] = useState('all');
   const [proposalStatusFilter, setProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
 
   // Draft filters (edit here, then click Apply)
-  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>(() => currentMonthDateRange());
   const [draftOwnerFilter, setDraftOwnerFilter] = useState('all');
   const [draftTeamFilter, setDraftTeamFilter] = useState('all');
   const [draftRegionFilter, setDraftRegionFilter] = useState('all');
@@ -211,14 +213,14 @@ export default function DashboardPage() {
   };
 
   const clearFilters = () => {
-    const clearedRange: [Date | null, Date | null] = [null, null];
-    setDraftDateRange(clearedRange);
+    const month = currentMonthDateRange();
+    setDraftDateRange(month);
     setDraftOwnerFilter('all');
     setDraftTeamFilter('all');
     setDraftRegionFilter('all');
     setDraftProposalStatusFilter('all');
 
-    setDateRange(clearedRange);
+    setDateRange(month);
     setOwnerFilter('all');
     setTeamFilter('all');
     setRegionFilter('all');
@@ -552,8 +554,7 @@ export default function DashboardPage() {
         }
       />
       <div className="space-y-4 sm:space-y-6">
-        <Card className="bg-card border border-border">
-          <CardContent className="p-4">
+        <FilterPanel title="Filters" storageKey="ui:dashboard:filtersOpen">
             <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
               <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
                 <div className="space-y-1 min-w-[220px] flex-1">
@@ -667,8 +668,7 @@ export default function DashboardPage() {
                 </Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+        </FilterPanel>
         {dashboardLoading && (
           <p className="text-xs text-muted-foreground flex items-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" /> Loading live metrics from API…

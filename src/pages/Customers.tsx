@@ -19,6 +19,9 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
+import { currentMonthYmd } from "@/lib/dateRange";
+import { FilterPanel } from "@/components/FilterPanel";
 import {
   Building2,
   Plus,
@@ -169,8 +172,8 @@ export default function Customers() {
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
   const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [tagsFilter, setTagsFilter] = useState<string>("");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>(() => currentMonthYmd().from);
+  const [dateTo, setDateTo] = useState<string>(() => currentMonthYmd().to);
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
@@ -455,8 +458,8 @@ export default function Customers() {
               </div>
 
               {/* FILTERS */}
-              <div className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <FilterPanel title="Filters" storageKey="ui:customers:filtersOpen">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
                   <div className="relative min-w-0 max-w-sm flex-1">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                     <Input
@@ -490,6 +493,25 @@ export default function Customers() {
                     ))}
                   </div>
                   <div className="ml-auto flex flex-shrink-0 flex-wrap items-center gap-2">
+                    <div className="min-w-[200px]">
+                      <Datepicker
+                        controls={["calendar"]}
+                        select="range"
+                        touchUi={true}
+                        inputComponent="input"
+                        inputProps={{
+                          placeholder: "Created date…",
+                          className: "h-9 w-full text-sm",
+                        }}
+                        value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
+                        onChange={(ev) => {
+                          const [f, t] = ev.value;
+                          setDateFrom(f ? dateToYmd(f) : "");
+                          setDateTo(t ? dateToYmd(t) : "");
+                          setPage(1);
+                        }}
+                      />
+                    </div>
                     <Select
                       value={regionFilter}
                       onValueChange={(v) => {
@@ -550,7 +572,7 @@ export default function Customers() {
                     )}
                   </div>
                 </div>
-              </div>
+              </FilterPanel>
 
               {/* TABLE */}
               {effectiveViewMode === "table" && (

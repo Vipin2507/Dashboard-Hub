@@ -123,8 +123,8 @@ export async function offerSavePassword(
   await postLoginFormViaIframe(email, password);
   await storeViaCredentialApi(form, email, password);
 
-  // Give Chrome time to paint the save bubble before SPA navigation tears the page down.
-  await new Promise((r) => window.setTimeout(r, 900));
+  // Short pause only — do not block login UX for long.
+  await new Promise((r) => window.setTimeout(r, 200));
   return { offered: true };
 }
 

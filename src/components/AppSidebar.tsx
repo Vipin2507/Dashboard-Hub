@@ -23,6 +23,7 @@ import {
   Database,
   X,
   Truck,
+  BarChart3,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -67,6 +68,12 @@ const NAV_GROUPS: NavGroup[] = [
       { label: 'Email Log', module: 'email_log', path: '/email-log', icon: Mail },
       { label: 'Masters', module: 'masters', path: '/masters', icon: Settings },
       { label: 'Data Control', module: 'data_control_center', path: '/admin/data-control', icon: Database },
+      {
+        label: 'Executive Performance',
+        module: 'executive_performance',
+        path: '/admin/executive-performance',
+        icon: BarChart3,
+      },
     ],
   },
 ];

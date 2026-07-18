@@ -1,32 +1,37 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { apiUrl } from "@/lib/api";
-import { persistRememberedEmail, readRememberedEmail, useAppStore } from "@/store/useAppStore";
-import { tryAutofillPassword } from "@/lib/passwordCredentials";
+import { api } from "@/lib/api";
+import {
+  persistRememberedCredentials,
+  readRememberedCredentials,
+  useAppStore,
+} from "@/store/useAppStore";
+import { offerSavePassword } from "@/lib/passwordCredentials";
 import { toast } from "sonner";
 import { Eye, EyeOff, LayoutDashboard, ShieldCheck, Zap, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import type { User } from "@/types";
 
 /**
- * Login uses a real top-level form POST to the API (no preventDefault).
- * That is what Chrome needs to show the native “Save password?” bubble.
- * Production API is on api.buildesk.ae — form action must use apiUrl(), not a relative /api path
- * (relative would hit dashboard.buildesk.ae static nginx → 405 Method Not Allowed).
+ * Client-side login (reliable on split hosts dashboard.buildesk.ae / api.buildesk.ae).
+ * “Remember me” stores email + password locally and prefills next visit.
+ * Chrome’s native Save-password bubble cannot be forced across those separate hosts.
  */
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const authUserId = useAppStore((s) => s.authUserId);
-  const remembered = readRememberedEmail();
-  const [email, setEmail] = useState(remembered);
-  const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const login = useAppStore((s) => s.login);
+  const setUsers = useAppStore((s) => s.setUsers);
+  const saved = readRememberedCredentials();
+  const [email, setEmail] = useState(saved?.email ?? "");
+  const [password, setPassword] = useState(saved?.password ?? "");
+  const [rememberMe, setRememberMe] = useState(Boolean(saved?.email));
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const loginAction = apiUrl("/api/auth/login");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (authUserId) {
@@ -42,31 +47,36 @@ export default function LoginPage() {
     else toast.error("Invalid email or password");
   }, [searchParams]);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      const saved = await tryAutofillPassword();
-      if (cancelled || !saved) return;
-      setEmail(saved.email);
-      setPassword(saved.password);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    // Do NOT call preventDefault — allow a real browser navigation so Chrome
-    // can offer to save the password after a successful form POST.
-    const form = e.currentTarget;
-    const pwd = form.querySelector<HTMLInputElement>('input[name="password"]');
-    if (pwd) pwd.type = "password";
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     setShowPassword(false);
-    setSubmitting(true);
-    if (rememberMe) {
-      persistRememberedEmail(email.trim().toLowerCase());
-    } else {
-      persistRememberedEmail(null);
+    setLoading(true);
+    try {
+      // Prefer fresh API users so login matches production accounts, not only seed data.
+      try {
+        const remote = await api.get<User[]>("/users");
+        if (Array.isArray(remote) && remote.length) setUsers(remote);
+      } catch {
+        /* keep existing store users */
+      }
+
+      login(email, password);
+
+      if (rememberMe) {
+        persistRememberedCredentials({ email, password });
+        // Best-effort Chrome prompt (often ignored when API is on another host).
+        await offerSavePassword(e.currentTarget, email, password);
+      } else {
+        persistRememberedCredentials(null);
+      }
+
+      toast.success("Signed in");
+      navigate("/", { replace: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Sign-in failed";
+      toast.error(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -132,12 +142,10 @@ export default function LoginPage() {
           <form
             id="login-form"
             method="post"
-            action={loginAction}
             onSubmit={handleSubmit}
             className="space-y-4"
             autoComplete="on"
           >
-            <input type="hidden" name="remember" value={rememberMe ? "1" : "0"} />
             <div className="space-y-2">
               <Label htmlFor="username">Email</Label>
               <Input
@@ -185,11 +193,11 @@ export default function LoginPage() {
                 onCheckedChange={(v) => setRememberMe(v === true)}
               />
               <Label htmlFor="remember-me" className="text-sm font-normal cursor-pointer">
-                Remember me
+                Remember email &amp; password
               </Label>
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>
 

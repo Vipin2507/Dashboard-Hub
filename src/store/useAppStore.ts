@@ -39,6 +39,7 @@ import { apiUrl } from '@/lib/api';
 
 const AUTH_STORAGE_KEY = 'buildesk_auth_user_id';
 const REMEMBER_EMAIL_KEY = 'buildesk_remember_email';
+const REMEMBER_CREDS_KEY = 'buildesk_remember_creds_v1';
 
 interface AppState {
   /** Logged-in account (persisted). Impersonation does not change this. */
@@ -182,6 +183,8 @@ function persistAuthUserId(id: string | null) {
 export function readRememberedEmail(): string {
   if (typeof window === 'undefined') return '';
   try {
+    const creds = readRememberedCredentials();
+    if (creds?.email) return creds.email;
     return localStorage.getItem(REMEMBER_EMAIL_KEY) ?? '';
   } catch {
     return '';
@@ -193,6 +196,39 @@ export function persistRememberedEmail(email: string | null) {
   try {
     if (email) localStorage.setItem(REMEMBER_EMAIL_KEY, email);
     else localStorage.removeItem(REMEMBER_EMAIL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Email + password for app-level “Remember me” (Chrome popup is unreliable across dashboard/api hosts). */
+export function readRememberedCredentials(): { email: string; password: string } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(REMEMBER_CREDS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(atob(raw)) as { email?: string; password?: string };
+    if (!parsed?.email || typeof parsed.password !== 'string') return null;
+    return { email: parsed.email, password: parsed.password };
+  } catch {
+    return null;
+  }
+}
+
+export function persistRememberedCredentials(creds: { email: string; password: string } | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!creds?.email) {
+      localStorage.removeItem(REMEMBER_CREDS_KEY);
+      persistRememberedEmail(null);
+      return;
+    }
+    const email = creds.email.trim().toLowerCase();
+    localStorage.setItem(
+      REMEMBER_CREDS_KEY,
+      btoa(JSON.stringify({ email, password: creds.password })),
+    );
+    persistRememberedEmail(email);
   } catch {
     /* ignore */
   }

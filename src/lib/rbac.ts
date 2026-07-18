@@ -23,6 +23,7 @@ export const RBAC_POLICY: RBACPolicy = {
     payments: { scope: 'ALL', actions: ['view', 'create', 'update', 'delete', 'export'] },
     delivery: { scope: 'ALL', actions: ['view', 'update'] },
     data_control_center: { scope: 'ALL', actions: ['view', 'update', 'export'] },
+    executive_performance: { scope: 'ALL', actions: ['view', 'export'] },
   },
   finance: {
     dashboard: { scope: 'ALL', actions: ['view'] },

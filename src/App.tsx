@@ -20,6 +20,7 @@ import Inventory from "@/pages/Inventory";
 import Payments from "@/pages/Payments";
 import Automation from "@/pages/Automation";
 import DataControlCenterPage from "@/pages/DataControlCenterPage";
+import ExecutivePerformancePage from "@/pages/ExecutivePerformancePage";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import NotFound from "./pages/NotFound.tsx";
@@ -138,6 +139,7 @@ const App = () => (
             <Route path="/masters" element={<MastersPage />} />
             <Route path="/automation" element={<Automation />} />
             <Route path="/admin/data-control" element={<DataControlCenterPage />} />
+            <Route path="/admin/executive-performance" element={<ExecutivePerformancePage />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFound />} />

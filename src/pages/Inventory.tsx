@@ -35,6 +35,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { InventoryItemDialog } from "@/components/InventoryItemDialog";
 import { DataTablePagination } from "@/components/DataTablePagination";
+import { FilterPanel } from "@/components/FilterPanel";
 import type { InventoryItem, ItemType } from "@/types";
 import { apiUrl } from "@/lib/api";
 import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
@@ -265,111 +266,120 @@ export default function Inventory() {
         subtitle="Manage products, services & pricing"
       />
       <div className="space-y-4">
-        <div className="mb-4 space-y-3 sm:mb-5 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
-          <div className="relative w-full sm:max-w-xs sm:flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              className="h-9 w-full pl-9 text-sm"
-              placeholder="Search name, item code, category..."
-              value={invFilters.draft.search}
-              onChange={(e) => {
-                invFilters.setDraft({ ...invFilters.draft, search: e.target.value });
-              }}
-            />
-          </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2">
-            <Select
-              value={invFilters.draft.itemType}
-              onValueChange={(v) => {
-                invFilters.setDraft({ ...invFilters.draft, itemType: v });
-              }}
-            >
-              <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-36">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
-                <SelectItem value="product">Product</SelectItem>
-                <SelectItem value="service">Service</SelectItem>
-                <SelectItem value="subscription">Subscription</SelectItem>
-                <SelectItem value="bundle">Bundle</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={invFilters.draft.active}
-              onValueChange={(v) => {
-                invFilters.setDraft({ ...invFilters.draft, active: v });
-              }}
-            >
-              <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-32">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-            <Button
-              type="button"
-              className="h-9 gap-2"
-              disabled={!invFilters.hasChanges}
-              onClick={() => {
-                invFilters.apply();
-                setPage(1);
-              }}
-            >
-              <Check className="h-4 w-4" />
-              Apply
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9"
-              onClick={() => {
-                invFilters.clear();
-                setPage(1);
-              }}
-            >
-              Clear
-            </Button>
-            <div className="flex gap-0.5 rounded-md border border-border p-0.5">
+        <FilterPanel
+          title="Filters"
+          storageKey="ui:inventory:filtersOpen"
+          headerActions={
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-0.5 rounded-md border border-border p-0.5">
+                <Button
+                  type="button"
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 gap-1 px-2"
+                  onClick={() => setViewMode("table")}
+                  title="Table view"
+                >
+                  <List className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === "grid" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="h-8 gap-1 px-2"
+                  onClick={() => setViewMode("grid")}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {canExport && (
+                <Button variant="outline" size="sm" className="h-8 text-xs" onClick={exportCsv}>
+                  <FileDown className="mr-1.5 h-4 w-4" />
+                  Export
+                </Button>
+              )}
+              {canCreate && (
+                <Button size="sm" className="h-8 text-xs" onClick={() => { setEditingItem(null); setAddOpen(true); }}>
+                  + Add Item
+                </Button>
+              )}
+            </div>
+          }
+        >
+          <div className="space-y-3 sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:space-y-0">
+            <div className="relative w-full sm:max-w-xs sm:flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="h-9 w-full pl-9 text-sm"
+                placeholder="Search name, item code, category..."
+                value={invFilters.draft.search}
+                onChange={(e) => {
+                  invFilters.setDraft({ ...invFilters.draft, search: e.target.value });
+                }}
+              />
+            </div>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-2">
+              <Select
+                value={invFilters.draft.itemType}
+                onValueChange={(v) => {
+                  invFilters.setDraft({ ...invFilters.draft, itemType: v });
+                }}
+              >
+                <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-36">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="product">Product</SelectItem>
+                  <SelectItem value="service">Service</SelectItem>
+                  <SelectItem value="subscription">Subscription</SelectItem>
+                  <SelectItem value="bundle">Bundle</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={invFilters.draft.active}
+                onValueChange={(v) => {
+                  invFilters.setDraft({ ...invFilters.draft, active: v });
+                }}
+              >
+                <SelectTrigger className="h-9 w-full min-w-0 text-xs sm:w-32">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
               <Button
                 type="button"
-                variant={viewMode === "table" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 gap-1 px-2"
-                onClick={() => setViewMode("table")}
-                title="Table view"
+                className="h-9 gap-2"
+                disabled={!invFilters.hasChanges}
+                onClick={() => {
+                  invFilters.apply();
+                  setPage(1);
+                }}
               >
-                <List className="h-3.5 w-3.5" />
+                <Check className="h-4 w-4" />
+                Apply
               </Button>
               <Button
                 type="button"
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 gap-1 px-2"
-                onClick={() => setViewMode("grid")}
-                title="Grid view"
+                variant="outline"
+                className="h-9"
+                onClick={() => {
+                  invFilters.clear();
+                  setPage(1);
+                }}
               >
-                <LayoutGrid className="h-3.5 w-3.5" />
+                Clear
               </Button>
             </div>
-            {canExport && (
-              <Button variant="outline" size="sm" className="h-9 flex-1 text-xs sm:flex-none" onClick={exportCsv}>
-                <FileDown className="mr-1.5 h-4 w-4" />
-                Export
-              </Button>
-            )}
-            {canCreate && (
-              <Button size="sm" className="h-9 flex-1 text-xs sm:flex-none" onClick={() => { setEditingItem(null); setAddOpen(true); }}>
-                + Add Item
-              </Button>
-            )}
           </div>
-        </div>
+        </FilterPanel>
 
         <Card className="overflow-hidden border border-border bg-card">
           <CardContent className="p-0">

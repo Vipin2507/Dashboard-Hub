@@ -77,6 +77,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
+import { FilterPanel } from "@/components/FilterPanel";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
 import { generateEstimatePdf, generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
@@ -442,7 +443,7 @@ export default function DealsPage() {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [teamFilter, setTeamFilter] = useState("all");
   const [regionFilter, setRegionFilter] = useState("all");
-  const [timeRangeFilter, setTimeRangeFilter] = useState("all");
+  const [timeRangeFilter, setTimeRangeFilter] = useState("this_month");
   const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
   // Draft filters (edit, then Apply)
   const [draftSearch, setDraftSearch] = useState("");
@@ -451,7 +452,7 @@ export default function DealsPage() {
   const [draftOwnerFilter, setDraftOwnerFilter] = useState("all");
   const [draftTeamFilter, setDraftTeamFilter] = useState("all");
   const [draftRegionFilter, setDraftRegionFilter] = useState("all");
-  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState("all");
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState("this_month");
   const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
@@ -1266,7 +1267,7 @@ export default function DealsPage() {
     setDraftOwnerFilter("all");
     setDraftTeamFilter("all");
     setDraftRegionFilter("all");
-    setDraftTimeRangeFilter("all");
+    setDraftTimeRangeFilter("this_month");
     setDraftCustomDateRange([null, null]);
     setSearch("");
     setStageFilter("all");
@@ -1274,7 +1275,7 @@ export default function DealsPage() {
     setOwnerFilter("all");
     setTeamFilter("all");
     setRegionFilter("all");
-    setTimeRangeFilter("all");
+    setTimeRangeFilter("this_month");
     setCustomDateRange([null, null]);
   };
 
@@ -1616,7 +1617,7 @@ export default function DealsPage() {
 
         {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
 
-        <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 dark:border-gray-800 dark:bg-gray-900">
+        <FilterPanel title="Filters" storageKey="ui:deals:filtersOpen">
           <div className="flex flex-col gap-3">
             <div className="grid grid-cols-1 gap-2 lg:grid-cols-12 lg:items-center">
               <div className="relative min-w-0 lg:col-span-4">
@@ -1790,7 +1791,7 @@ export default function DealsPage() {
               </div>
             </div>
           </div>
-        </div>
+        </FilterPanel>
 
         {/* Deal dashboard */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

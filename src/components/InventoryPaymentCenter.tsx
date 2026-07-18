@@ -35,6 +35,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
+import { currentMonthYmd } from "@/lib/dateRange";
+import { FilterPanel } from "@/components/FilterPanel";
 import type { Proposal } from "@/types";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -191,12 +193,15 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
   const [reminderSettings, setReminderSettings] = useState<InstallmentReminderSettings>(() =>
     getInstallmentReminderSettings(),
   );
-  const [historyFilters, setHistoryFilters] = useState({
-    from: "",
-    to: "",
-    mode: "all",
-    cycle: "all",
-    status: "all" as "all" | "pending" | "confirmed" | "failed",
+  const [historyFilters, setHistoryFilters] = useState(() => {
+    const month = currentMonthYmd();
+    return {
+      from: month.from,
+      to: month.to,
+      mode: "all",
+      cycle: "all",
+      status: "all" as "all" | "pending" | "confirmed" | "failed",
+    };
   });
   const [remainingCategoryFilter, setRemainingCategoryFilter] = useState<
     "all" | "upcoming" | "grace" | "overdue" | "paid"
@@ -855,6 +860,7 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
             <p className="text-xs text-muted-foreground">
               Scoped to the customer selected above{customerId ? "" : " (all customers)"}.
             </p>
+            <FilterPanel title="History filters" storageKey="ui:payments:historyFiltersOpen" className="border-border">
             <div className="flex flex-wrap gap-2 items-end">
               <div className="min-w-[200px] space-y-1">
                 <Label className="text-xs">Payment date</Label>
@@ -944,6 +950,7 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
                 </>
               )}
             </div>
+            </FilterPanel>
             <div className="overflow-hidden rounded-lg border border-border">
               <Table responsiveShell={false} className="min-w-[600px]">
                 <TableHeader>
