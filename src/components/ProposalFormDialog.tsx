@@ -869,7 +869,7 @@ export function ProposalFormDialog({
                           placeholder="Add description…"
                         />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">Qty prefix (optional)</Label>
                           <Input
@@ -885,6 +885,19 @@ export function ProposalFormDialog({
                             onChange={(e) => updateLineItem(li.id, { qtyLabel: e.target.value })}
                             placeholder="Units"
                           />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs text-muted-foreground">Service (PDF column)</Label>
+                          <Input
+                            value={li.serviceLabel ?? "12 Months"}
+                            onChange={(e) => updateLineItem(li.id, { serviceLabel: e.target.value })}
+                            placeholder="12 Months"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            Shown in the PDF Service column (e.g. 12 Months, 6 Months, One-time).
+                          </p>
                         </div>
                         <div className="space-y-1">
                           <Label className="text-xs text-muted-foreground">Bracket preview</Label>

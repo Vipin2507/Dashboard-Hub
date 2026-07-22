@@ -257,6 +257,11 @@ export interface ProposalLineItem {
   qtyLabel?: string;
   /** Optional text before qty in PDF bracket, e.g. "Up to" → "(Up to 50 Units)". */
   qtyPrefix?: string;
+  /**
+   * PDF "Service" column text (e.g. "12 Months", "6 Months", "One-time").
+   * Defaults to "12 Months" when empty.
+   */
+  serviceLabel?: string;
   qty: number;
   unitPrice: number;
   taxRate: number;

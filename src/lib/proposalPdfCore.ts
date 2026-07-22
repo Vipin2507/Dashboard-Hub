@@ -194,8 +194,9 @@ function formatProposalDate(iso: string): string {
   return `${day}${getOrdinalSuffix(day)} ${months[d.getMonth()]}, ${d.getFullYear()}`;
 }
 
-function getServiceLabel(_item: ProposalLineItem): string {
-  return "12 Months";
+function getServiceLabel(item: ProposalLineItem): string {
+  const label = String(item.serviceLabel ?? "").trim();
+  return label || "12 Months";
 }
 
 function formatLicenseSuffix(item: ProposalLineItem): string {
