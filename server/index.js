@@ -1361,6 +1361,18 @@ app.put("/api/deals/:id", (req, res) => {
     ...(remarks !== undefined && {
       remarks: remarks != null && String(remarks).trim() ? String(remarks).trim() : null,
     }),
+    ...(deliveryAssigneeUserId !== undefined && {
+      deliveryAssigneeUserId:
+        deliveryAssigneeUserId != null && String(deliveryAssigneeUserId).trim()
+          ? String(deliveryAssigneeUserId).trim()
+          : null,
+    }),
+    ...(deliveryAssigneeName !== undefined && {
+      deliveryAssigneeName:
+        deliveryAssigneeName != null && String(deliveryAssigneeName).trim()
+          ? String(deliveryAssigneeName).trim()
+          : null,
+    }),
   };
   if (deal.estimateJson && !deal.estimateNumber) {
     deal.estimateNumber = allocateEstimateNumber();
