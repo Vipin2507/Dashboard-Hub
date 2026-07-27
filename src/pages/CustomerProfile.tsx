@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useState, type ComponentType } from "reac
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiUrl } from "@/lib/api";
-import { toApiCustomerPayload } from "@/lib/customerApiPayload";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
+import { patchCustomerRowInStore, persistCustomerUpdate } from "@/lib/customerPersistence";
 import {
   CustomerProposalsLiveTable,
   CustomerDealsLiveTable,
@@ -498,6 +498,7 @@ export default function CustomerProfile() {
   const proposals = useAppStore((s) => s.proposals);
   const deals = useAppStore((s) => s.deals);
   const users = useAppStore((s) => s.users);
+  const regions = useAppStore((s) => s.regions);
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
   const rawCustomer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
@@ -566,19 +567,9 @@ export default function CustomerProfile() {
   const canUpdateCustomer = customer && (scope === "ALL" || customer.assignedTo === me.id);
 
   const updateCustomerMutation = useMutation({
-    mutationFn: async (updated: Customer) => {
-      const res = await fetch(apiUrl(`/api/customers/${updated.id}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toApiCustomerPayload(updated, users)),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || "Failed to update customer");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
+    mutationFn: (updated: Customer) => persistCustomerUpdate(updated, users),
+    onSuccess: (row) => {
+      patchCustomerRowInStore(row, { regions, users, me });
       void queryClient.invalidateQueries({ queryKey: QK.customers() });
     },
   });

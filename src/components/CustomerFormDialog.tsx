@@ -227,7 +227,6 @@ export function CustomerFormDialog({
   const users = useAppStore((s) => s.users);
   const addCustomer = useAppStore((s) => s.addCustomer);
   const updateCustomer = useAppStore((s) => s.updateCustomer);
-  const updateContact = useAppStore((s) => s.updateContact);
   const appendActivityLog = useAppStore((s) => s.appendActivityLog);
 
   const assignmentVisible = me.role === "super_admin";
@@ -486,34 +485,42 @@ export function CustomerFormDialog({
         assignedToName: assignedUser?.name ?? "",
         tags: uniqueTags,
       };
-      updateCustomer(editingCustomer.id, updates);
-      if (primary) {
-        updateContact(editingCustomer.id, primary.id, {
-          name: safeCustomerName,
-          designation: values.contactDesignation || undefined,
-          email: values.contactEmail,
-          phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
-        });
-      }
+      const nextContacts: CustomerContact[] = primary
+        ? editingCustomer.contacts.map((c) =>
+            c.id === primary.id
+              ? {
+                  ...c,
+                  name: safeCustomerName,
+                  designation: values.contactDesignation || undefined,
+                  email: values.contactEmail.trim(),
+                  phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
+                }
+              : c,
+          )
+        : [
+            {
+              id: "cc-" + makeId(),
+              name: safeCustomerName,
+              designation: values.contactDesignation || undefined,
+              email: values.contactEmail.trim(),
+              phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
+              isPrimary: true,
+            },
+          ];
+      updateCustomer(editingCustomer.id, { ...updates, contacts: nextContacts });
       const updatedCustomer: Customer = {
         ...editingCustomer,
         ...updates,
-        contacts: primary
-          ? editingCustomer.contacts.map((c) =>
-              c.id === primary.id
-                ? {
-                    ...c,
-                    name: safeCustomerName,
-                    designation: values.contactDesignation || undefined,
-                    email: values.contactEmail,
-                    phone: values.contactPhone ? `+91 ${values.contactPhone}` : undefined,
-                  }
-                : c
-            )
-          : editingCustomer.contacts,
+        contacts: nextContacts,
         updatedAt: new Date().toISOString(),
       };
-      await onPersist?.(updatedCustomer, "update");
+      try {
+        await onPersist?.(updatedCustomer, "update");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to save customer";
+        toast({ title: "Could not save customer", description: message, variant: "destructive" });
+        return;
+      }
       toast({ title: "Customer updated", description: `${companyName} has been updated.` });
       onSaved(updatedCustomer, "update");
     } else {
@@ -562,7 +569,13 @@ export function CustomerFormDialog({
         createdBy: me.id,
       };
       addCustomer(newCustomer);
-      await onPersist?.(newCustomer, "create");
+      try {
+        await onPersist?.(newCustomer, "create");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to create customer";
+        toast({ title: "Could not create customer", description: message, variant: "destructive" });
+        return;
+      }
       appendActivityLog(newCustomer.id, {
         id: "cal-" + makeId(),
         action: "Customer created",

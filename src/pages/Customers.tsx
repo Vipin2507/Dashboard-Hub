@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
-import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
+import { mapCustomersApiRowsToStore, patchCustomerRowInStore, persistCustomerCreate, persistCustomerUpdate } from "@/lib/customerPersistence";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { apiUrl } from "@/lib/api";
@@ -141,34 +141,25 @@ export default function Customers() {
   const updateCustomer = useAppStore((s) => s.updateCustomer);
   const deleteCustomer = useAppStore((s) => s.deleteCustomer);
 
-import { toApiCustomerPayload } from "@/lib/customerApiPayload";
   const customersQuery = useCustomersListQuery();
 
   useEffect(() => {
     if (!customersQuery.data) return;
-    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+    setCustomers(mapCustomersApiRowsToStore(customersQuery.data, { regions, users, me }));
   }, [customersQuery.data, regions, users, me.id, setCustomers]);
 
   const createCustomerMutation = useMutation({
-    mutationFn: async (customer: Customer) => {
-      const res = await fetch(apiUrl("/api/customers"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toApiCustomerPayload(customer, users)),
-      });
-      if (!res.ok) throw new Error("Failed to create customer");
+    mutationFn: (customer: Customer) => persistCustomerCreate(customer, users),
+    onSuccess: (row) => {
+      patchCustomerRowInStore(row, { regions, users, me });
     },
     onSettled: () => customersQuery.refetch(),
   });
 
   const updateCustomerMutation = useMutation({
-    mutationFn: async (customer: Customer) => {
-      const res = await fetch(apiUrl(`/api/customers/${customer.id}`), {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toApiCustomerPayload(customer, users)),
-      });
-      if (!res.ok) throw new Error("Failed to update customer");
+    mutationFn: (customer: Customer) => persistCustomerUpdate(customer, users),
+    onSuccess: (row) => {
+      patchCustomerRowInStore(row, { regions, users, me });
     },
     onSettled: () => customersQuery.refetch(),
   });

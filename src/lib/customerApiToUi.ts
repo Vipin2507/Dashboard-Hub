@@ -1,4 +1,4 @@
-import type { Customer, CustomerStatus, MeContext, Region, User } from "@/types";
+import type { Customer, CustomerContact, CustomerStatus, MeContext, Region, User } from "@/types";
 import type { CustomersApiListRow } from "@/hooks/useCustomersListQuery";
 
 function normalizeTags(input: unknown): string[] {
@@ -84,5 +84,78 @@ export function mapApiCustomerRowToCustomer(row: CustomersApiListRow, ctx: MapCu
     createdAt: nowIso,
     updatedAt: nowIso,
     createdBy: me.id,
+  };
+}
+
+function syncPrimaryContactFromApi(
+  contacts: CustomerContact[],
+  row: CustomersApiListRow,
+  fallbackName: string,
+): CustomerContact[] {
+  const apiEmail = row.email?.trim() || undefined;
+  const apiPhone = row.primaryPhone?.trim() || undefined;
+  if (contacts.length === 0) {
+    return [
+      {
+        id: `ct-${row.id}`,
+        name: fallbackName,
+        email: apiEmail,
+        phone: apiPhone,
+        isPrimary: true,
+      },
+    ];
+  }
+  const primaryIdx = contacts.findIndex((c) => c.isPrimary);
+  const idx = primaryIdx >= 0 ? primaryIdx : 0;
+  return contacts.map((c, i) =>
+    i === idx
+      ? {
+          ...c,
+          email: apiEmail ?? c.email,
+          phone: apiPhone ?? c.phone,
+        }
+      : c,
+  );
+}
+
+/**
+ * Merge an API list row into an existing UI customer.
+ * API fields (email, phone, assignment) win; local-only fields (extra contacts, address lines) are kept.
+ */
+export function mergeApiCustomerRowToCustomer(
+  row: CustomersApiListRow,
+  existing: Customer | undefined,
+  ctx: MapCustomerApiContext,
+): Customer {
+  const fromApi = mapApiCustomerRowToCustomer(row, ctx);
+  if (!existing) return fromApi;
+
+  const person = (row.customerName ?? "").trim();
+  const company = (row.companyName ?? "").trim();
+  const fallback = (company || person || row.name || "Customer").trim();
+
+  return {
+    ...existing,
+    id: fromApi.id,
+    customerNumber: fromApi.customerNumber,
+    customerName: fromApi.customerName,
+    companyName: fromApi.companyName,
+    status: fromApi.status,
+    gstin: fromApi.gstin,
+    regionId: fromApi.regionId,
+    regionName: fromApi.regionName,
+    teamId: fromApi.teamId,
+    assignedTo: fromApi.assignedTo,
+    assignedToName: fromApi.assignedToName,
+    tags: fromApi.tags,
+    createdAt: fromApi.createdAt,
+    updatedAt: new Date().toISOString(),
+    address: {
+      ...existing.address,
+      city: row.city ?? existing.address?.city,
+      state: row.state ?? existing.address?.state,
+      country: existing.address?.country ?? "India",
+    },
+    contacts: syncPrimaryContactFromApi(existing.contacts ?? [], row, person || fallback),
   };
 }

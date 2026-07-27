@@ -2187,6 +2187,7 @@ app.put("/api/customers/:id", (req, res) => {
     WHERE id=@id
   `).run(updated);
 
+  broadcast({ type: "change", entity: "customers", action: "updated", id: updated.id });
   res.json(updated);
 });
 

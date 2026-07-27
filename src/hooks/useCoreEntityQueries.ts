@@ -5,7 +5,7 @@ import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal, Proposal } from "@/types";
-import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
+import { mapCustomersApiRowsToStore } from "@/lib/customerPersistence";
 
 type PaymentRemainingRow = {
   customerId: string;
@@ -91,7 +91,7 @@ export function useCoreEntityQueries() {
 
   useEffect(() => {
     if (!customersQuery.data) return;
-    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+    setCustomers(mapCustomersApiRowsToStore(customersQuery.data, { regions, users, me }));
   }, [customersQuery.data, regions, users, me, setCustomers]);
 
   const paymentsRemainingQuery = useQuery({
