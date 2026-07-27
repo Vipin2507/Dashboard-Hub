@@ -112,7 +112,7 @@ const COMPARISON_METRICS: {
 }[] = [
   { key: "wonValue", label: "Won value", format: "inr", detailType: "deals_won" },
   { key: "dealsWon", label: "Deals won", format: "count", detailType: "deals_won" },
-  { key: "dealsCreated", label: "Deals created", format: "count", detailType: "deals_created" },
+  { key: "dealsCreated", label: "Deals", format: "count", detailType: "deals_created" },
   { key: "proposalsCreated", label: "Proposals", format: "count", detailType: "proposals_created" },
   { key: "proposalsApproved", label: "Proposals approved", format: "count", detailType: "proposals_approved" },
   { key: "customersNew", label: "Customers", format: "count", detailType: "customers_new" },

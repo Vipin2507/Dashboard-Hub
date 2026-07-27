@@ -59,7 +59,7 @@ import {
 import { FilterPanel } from '@/components/FilterPanel';
 import type { ProposalStatus } from '@/types';
 import { resolveDealPipelineStatus } from '@/lib/dealStatus';
-import { getDealDate } from '@/lib/dealDate';
+import { getDealDateForFilter } from '@/lib/dealDate';
 import { cn } from '@/lib/utils';
 import { useSmUp } from '@/hooks/useSmUp';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
@@ -352,7 +352,7 @@ export default function DashboardPage() {
   const dealsClosedCount = useMemo(() => {
     return filteredDeals.filter((d) => {
       if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return false;
-      const ts = getDealDate(d) ?? "";
+      const ts = getDealDateForFilter(d) ?? "";
       return inDateRange(ts);
     }).length;
   }, [filteredDeals, dateFrom, dateTo]);

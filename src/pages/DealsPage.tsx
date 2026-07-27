@@ -21,7 +21,7 @@ import {
   dealStageLabel,
   normalizeDealStage,
 } from "@/lib/dealStage";
-import { getDealDate } from "@/lib/dealDate";
+import { getDealDate, getDealDateForFilter } from "@/lib/dealDate";
 import {
   checkDealFollowUpReminders,
   sendDealInvoiceN8n,
@@ -1164,7 +1164,7 @@ export default function DealsPage() {
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
       
       if (timeRangeFilter !== "all") {
-        const t = getDealDate(d);
+        const t = getDealDateForFilter(d);
         if (!t) return false;
         const dt = new Date(t.includes("T") ? t : `${t.slice(0, 10)}T00:00:00`);
         if (Number.isNaN(dt.getTime())) return false;
@@ -1261,7 +1261,7 @@ export default function DealsPage() {
     const mo = now.getMonth();
     return visible.reduce((sum, d) => {
       if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return sum;
-      const t = getDealDate(d);
+      const t = getDealDateForFilter(d);
       if (!t) return sum;
       const dt = new Date(t.includes("T") ? t : `${t.slice(0, 10)}T00:00:00`);
       if (Number.isNaN(dt.getTime())) return sum;

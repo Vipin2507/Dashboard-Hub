@@ -192,8 +192,17 @@ function resolveDealPipelineStatus(dealStatus, invoiceStatus) {
   return raw || "Active";
 }
 
+/**
+ * Business Deal Date for period analytics.
+ * Prefer invoice/estimate/expected-close — never system createdAt/updatedAt.
+ */
 function getDealDateValue(d) {
-  return d?.invoiceDate || d?.estimateDate || d?.createdAt || d?.updatedAt || null;
+  const candidates = [d?.invoiceDate, d?.estimateDate, d?.expectedCloseDate];
+  for (const c of candidates) {
+    const s = String(c ?? "").trim();
+    if (s) return s;
+  }
+  return null;
 }
 
 function getDealDateYmd(d) {
@@ -204,21 +213,17 @@ function resolveWonLostEvents(deals, audits) {
   /** @type {Map<string, { dealId: string, to: string, at: string, coverage: string, lossReason?: string }>} */
   const byDeal = new Map();
 
+  /** Latest closed status from audits (status only — date comes from Deal Date). */
+  const auditClosed = new Map();
   for (const a of audits) {
     if (a.action !== "deal_status_changed") continue;
     const detail = parseAuditDetail(a.detailJson);
     const to = detail?.to ? String(detail.to) : "";
     if (to !== "Closed/Won" && to !== "Closed/Lost") continue;
-    const at = timestampToYmd(a.at);
-    if (!at) continue;
-    const prev = byDeal.get(a.dealId);
-    // Prefer the latest closed transition.
+    const prev = auditClosed.get(a.dealId);
     if (!prev || a.at >= (prev._rawAt || "")) {
-      byDeal.set(a.dealId, {
-        dealId: a.dealId,
+      auditClosed.set(a.dealId, {
         to,
-        at,
-        coverage: "exact",
         lossReason: detail?.lossReason ? String(detail.lossReason) : undefined,
         _rawAt: a.at,
       });
@@ -226,18 +231,19 @@ function resolveWonLostEvents(deals, audits) {
   }
 
   for (const d of deals) {
-    const status = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
+    const fromAudit = auditClosed.get(d.id);
+    const status = fromAudit?.to || resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
     if (status !== "Closed/Won" && status !== "Closed/Lost") continue;
-    if (byDeal.has(d.id)) continue;
-    // Use business Deal Date (invoice/estimate), not system createdAt.
-    const at = getDealDateYmd(d) || timestampToYmd(d.expectedCloseDate);
+
+    const at = getDealDateYmd(d);
     if (!at) continue;
+
     byDeal.set(d.id, {
       dealId: d.id,
       to: status,
       at,
-      coverage: "legacy_fallback",
-      lossReason: d.lossReason || undefined,
+      coverage: fromAudit ? "exact" : "legacy_fallback",
+      lossReason: fromAudit?.lossReason || d.lossReason || undefined,
     });
   }
 
@@ -524,7 +530,7 @@ export function registerExecutivePerformanceApi(app, db) {
         }
       }
 
-      // --- Deals created + pipeline (current snapshot, not date-filtered for pipeline value) ---
+      // --- Deals in period (by Deal Date) + pipeline snapshot ---
       for (const d of deals) {
         if (!passUser(d.ownerUserId)) continue;
         const stats = byExec.get(d.ownerUserId);
@@ -546,7 +552,7 @@ export function registerExecutivePerformanceApi(app, db) {
               amount: value,
               status,
               reason: d.lossReason || undefined,
-              at: getDealDateValue(d) || d.createdAt,
+              at: getDealDateValue(d),
               href: `/deals?q=${encodeURIComponent(d.id)}`,
               coverage: "exact",
             });
@@ -568,7 +574,7 @@ export function registerExecutivePerformanceApi(app, db) {
               executiveName: userById[d.ownerUserId]?.name,
               amount: value,
               status,
-              at: d.updatedAt || d.createdAt,
+              at: getDealDateValue(d) || d.updatedAt || d.createdAt,
               href: `/deals?q=${encodeURIComponent(d.id)}`,
               coverage: "exact",
             });
@@ -611,7 +617,7 @@ export function registerExecutivePerformanceApi(app, db) {
             executiveName: userById[d.ownerUserId]?.name,
             amount: value,
             status: "Closed/Won",
-            at: ev.at,
+            at: getDealDateValue(d) || ev.at,
             href: `/deals?q=${encodeURIComponent(d.id)}`,
             coverage: ev.coverage,
           });
@@ -634,7 +640,7 @@ export function registerExecutivePerformanceApi(app, db) {
             amount: value,
             status: "Closed/Lost",
             reason: d.lossReason || lossLabel,
-            at: ev.at,
+            at: getDealDateValue(d) || ev.at,
             href: `/deals?q=${encodeURIComponent(d.id)}`,
             coverage: ev.coverage,
             reasonKey: lossLabel,
@@ -802,7 +808,7 @@ export function registerExecutivePerformanceApi(app, db) {
         { key: "proposals_created", label: "Proposals created", count: summary.proposalsCreated, value: 0 },
         { key: "proposals_sent", label: "Proposals sent", count: summary.proposalsSent, value: 0 },
         { key: "proposals_approved", label: "Proposals approved", count: summary.proposalsApproved, value: 0 },
-        { key: "deals_created", label: "Deals created", count: summary.dealsCreated, value: 0 },
+        { key: "deals_created", label: "Deals", count: summary.dealsCreated, value: 0 },
         { key: "deals_won", label: "Deals won", count: summary.dealsWon, value: summary.wonValue },
       ];
 
@@ -828,9 +834,12 @@ export function registerExecutivePerformanceApi(app, db) {
       });
 
       const coverageNotes = [];
+      coverageNotes.push(
+        "Deal metrics (count, won, lost) are attributed by Deal Date (invoice / estimate date), not system created date.",
+      );
       if (usedLegacyWonLost) {
         coverageNotes.push(
-          "Some won/lost dates use deal updatedAt because no deal_status_changed audit was found.",
+          "Some won/lost statuses use invoice Paid/Lost when dealStatus is still open.",
         );
       }
       if (approxCustomer) {
