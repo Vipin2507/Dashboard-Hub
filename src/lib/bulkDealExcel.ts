@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 import type { Deal, MeContext, User, Team } from "@/types";
 import { apiUrl } from "@/lib/api";
-import { DEAL_STATUSES, normalizeDealStatus } from "@/lib/dealStatus";
+import { DEAL_STATUSES, normalizeDealStatus, resolveDealPipelineStatus } from "@/lib/dealStatus";
 
 export type ParseError = { row: number; message: string };
 
@@ -510,13 +510,13 @@ function mapCrmStatus(raw: string): { dealStatus: string; invoiceStatus: string 
   if ((DEAL_STATUSES as readonly string[]).includes(t)) {
     return { dealStatus: normalizeDealStatus(t), invoiceStatus: null };
   }
-  if (lower === "paid" || lower === "closed won" || lower === "won") {
+  if (lower === "paid" || lower === "closed won" || lower === "won" || lower === "closed/won") {
     return { dealStatus: "Closed/Won", invoiceStatus: t };
   }
-  if (lower === "lost" || lower === "closed lost") {
+  if (lower === "lost" || lower === "closed lost" || lower === "closed/lost") {
     return { dealStatus: "Closed/Lost", invoiceStatus: t };
   }
-  if (lower.includes("pending") || lower.includes("due") || lower.includes("partial")) {
+  if (lower.includes("pending") || lower.includes("due") || lower.includes("partial") || lower === "overdue") {
     return { dealStatus: "Pending", invoiceStatus: t };
   }
   return { dealStatus: "Active", invoiceStatus: t };
@@ -663,7 +663,15 @@ export async function buildDealsFromExcelRows(
     const deliveryRaw = data.deliveryMember.trim();
     const deliveryUser = deliveryRaw ? matchUserByName(ctx.users, deliveryRaw) : undefined;
 
-    const { dealStatus, invoiceStatus } = mapCrmStatus(data.status);
+    const { dealStatus: mappedStatus, invoiceStatus: mappedInvoice } = mapCrmStatus(data.status);
+    const invoiceStatus = mappedInvoice || data.status.trim() || existing?.invoiceStatus || null;
+    // Paid invoices are won even when the CRM Status column still says Active.
+    const dealStatus =
+      resolveDealPipelineStatus(mappedStatus, invoiceStatus) === "Closed/Won"
+        ? "Closed/Won"
+        : resolveDealPipelineStatus(mappedStatus, invoiceStatus) === "Closed/Lost"
+          ? "Closed/Lost"
+          : mappedStatus;
     const moduleName = (data.subscribedModules || data.serviceName || "").trim();
     const clientId = data.clientId.trim() || data.invoiceNumber.trim();
     const titleParts = [moduleName, clientId].filter(Boolean);
@@ -686,14 +694,14 @@ export async function buildDealsFromExcelRows(
       ownerUserId: owner?.id || ctx.me.id,
       teamId,
       regionId,
-      stage: existing?.stage || "Won",
+      stage: existing?.stage || "Prospecting",
       value: total,
       locked: false,
       proposalId: existing?.proposalId ?? null,
       dealStatus,
       deliveryAssigneeUserId: deliveryUser?.id ?? existing?.deliveryAssigneeUserId ?? null,
       deliveryAssigneeName: deliveryUser?.name ?? (deliveryRaw || existing?.deliveryAssigneeName) ?? null,
-      invoiceStatus: invoiceStatus || data.status.trim() || existing?.invoiceStatus || null,
+      invoiceStatus,
       invoiceDate,
       invoiceNumber: clientId || existing?.invoiceNumber || null,
       totalAmount: total,

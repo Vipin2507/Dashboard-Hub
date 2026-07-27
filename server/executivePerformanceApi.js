@@ -167,6 +167,31 @@ function parseAuditDetail(detailJson) {
   }
 }
 
+function resolveDealPipelineStatus(dealStatus, invoiceStatus) {
+  const raw = String(dealStatus || "").trim();
+  const closed = new Set(["Closed/Won", "Closed/Lost"]);
+  if (closed.has(raw)) return raw;
+
+  const lower = raw.toLowerCase();
+  if (lower === "won" || lower === "closed won" || lower === "closed/won" || lower === "closed-won") {
+    return "Closed/Won";
+  }
+  if (lower === "lost" || lower === "closed lost" || lower === "closed/lost" || lower === "closed-lost") {
+    return "Closed/Lost";
+  }
+
+  const inv = String(invoiceStatus || "")
+    .trim()
+    .toLowerCase();
+  if (inv === "paid" || inv === "won" || inv === "closed won" || inv === "closed/won") {
+    return "Closed/Won";
+  }
+  if (inv === "lost" || inv === "closed lost" || inv === "closed/lost") {
+    return "Closed/Lost";
+  }
+  return raw || "Active";
+}
+
 function resolveWonLostEvents(deals, audits) {
   /** @type {Map<string, { dealId: string, to: string, at: string, coverage: string, lossReason?: string }>} */
   const byDeal = new Map();
@@ -193,10 +218,14 @@ function resolveWonLostEvents(deals, audits) {
   }
 
   for (const d of deals) {
-    const status = String(d.dealStatus || "");
+    const status = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
     if (status !== "Closed/Won" && status !== "Closed/Lost") continue;
     if (byDeal.has(d.id)) continue;
-    const at = timestampToYmd(d.updatedAt) || timestampToYmd(d.createdAt);
+    const at =
+      timestampToYmd(d.invoiceDate) ||
+      timestampToYmd(d.expectedCloseDate) ||
+      timestampToYmd(d.updatedAt) ||
+      timestampToYmd(d.createdAt);
     if (!at) continue;
     byDeal.set(d.id, {
       dealId: d.id,
@@ -495,7 +524,7 @@ export function registerExecutivePerformanceApi(app, db) {
         if (!passUser(d.ownerUserId)) continue;
         const stats = byExec.get(d.ownerUserId);
         const createdYmd = timestampToYmd(d.createdAt);
-        const status = String(d.dealStatus || "");
+        const status = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
         const value = Number(d.value) || 0;
 
         if (inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday)) {

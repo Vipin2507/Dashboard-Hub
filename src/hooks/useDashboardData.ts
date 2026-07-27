@@ -5,7 +5,7 @@ import { useCoreEntityQueries } from "@/hooks/useCoreEntityQueries";
 import { type CustomersApiListRow } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope } from "@/lib/rbac";
-import { normalizeDealStatus } from "@/lib/dealStatus";
+import { resolveDealPipelineStatus } from "@/lib/dealStatus";
 import type { Customer, Deal, Proposal, Scope } from "@/types";
 
 /** @deprecated use CustomersApiListRow from useCustomersListQuery */
@@ -143,12 +143,12 @@ export function useDashboardData() {
     const totalProposalValue = proposalList.reduce((s, p) => s + (p.grandTotal ?? 0), 0);
 
     const dealsInPipeline = dealList.filter((d) => {
-      const st = normalizeDealStatus(d.dealStatus);
+      const st = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
       return st !== "Closed/Won" && st !== "Closed/Lost";
     }).length;
 
     const dealsWonMonth = dealList.filter((d) => {
-      if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return false;
+      if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return false;
       const ts = d.updatedAt ?? d.lastActivityAt ?? "";
       if (!ts) return false;
       const dt = new Date(ts);
@@ -156,7 +156,7 @@ export function useDashboardData() {
     }).length;
 
     const totalRevenue = dealList
-      .filter((d) => normalizeDealStatus(d.dealStatus) === "Closed/Won")
+      .filter((d) => resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) === "Closed/Won")
       .reduce((s, d) => s + (d.value ?? 0), 0);
 
     const overduePayments =

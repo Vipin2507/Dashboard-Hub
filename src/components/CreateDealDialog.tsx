@@ -76,7 +76,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
   const [ownerUserId, setOwnerUserId] = useState(proposal?.assignedTo ?? "");
   const [teamId, setTeamId] = useState(proposal?.teamId ?? "");
   const [regionId, setRegionId] = useState(proposal?.regionId ?? "");
-  const [stage, setStage] = useState("Won");
+  const [stage, setStage] = useState("Prospecting");
 
   const DEAL_STAGES = ["Won", "Proposal", "Negotiation", "Closing", "Lost"] as const;
 

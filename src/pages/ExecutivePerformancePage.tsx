@@ -94,6 +94,32 @@ import { useToast } from "@/hooks/use-toast";
 
 type AppliedFilters = ExecutiveUrlFilters;
 
+type ComparisonMetricKey =
+  | "wonValue"
+  | "dealsWon"
+  | "proposalsCreated"
+  | "proposalsApproved"
+  | "customersNew"
+  | "collectedRevenue"
+  | "pipelineValue"
+  | "dealsCreated";
+
+const COMPARISON_METRICS: {
+  key: ComparisonMetricKey;
+  label: string;
+  format: "inr" | "count";
+  detailType?: ExecutiveDetailType;
+}[] = [
+  { key: "wonValue", label: "Won value", format: "inr", detailType: "deals_won" },
+  { key: "dealsWon", label: "Deals won", format: "count", detailType: "deals_won" },
+  { key: "dealsCreated", label: "Deals created", format: "count", detailType: "deals_created" },
+  { key: "proposalsCreated", label: "Proposals", format: "count", detailType: "proposals_created" },
+  { key: "proposalsApproved", label: "Proposals approved", format: "count", detailType: "proposals_approved" },
+  { key: "customersNew", label: "Customers", format: "count", detailType: "customers_new" },
+  { key: "collectedRevenue", label: "Collected revenue", format: "inr", detailType: "payments_collected" },
+  { key: "pipelineValue", label: "Pipeline value", format: "inr", detailType: "pipeline" },
+];
+
 function loadInitialExecutiveFilters(params: URLSearchParams): AppliedFilters {
   if (
     hasAnySearchParam(params, [
@@ -404,17 +430,26 @@ function ChartCard({
   description,
   children,
   className,
+  action,
 }: {
   title: string;
   description?: string;
   children: React.ReactNode;
   className?: string;
+  action?: React.ReactNode;
 }) {
   return (
     <Card className={cn("overflow-hidden transition-shadow duration-200 hover:shadow-md", className)}>
       <CardHeader className="space-y-1 pb-2">
-        <CardTitle className="text-base font-semibold">{title}</CardTitle>
-        {description ? <CardDescription className="text-xs leading-relaxed">{description}</CardDescription> : null}
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-base font-semibold">{title}</CardTitle>
+            {description ? (
+              <CardDescription className="text-xs leading-relaxed">{description}</CardDescription>
+            ) : null}
+          </div>
+          {action ? <div className="shrink-0">{action}</div> : null}
+        </div>
       </CardHeader>
       <CardContent className="pt-2">{children}</CardContent>
     </Card>
@@ -447,6 +482,7 @@ export default function ExecutivePerformancePage() {
   const [detailType, setDetailType] = useState<ExecutiveDetailType | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailPage, setDetailPage] = useState(1);
+  const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetricKey>("wonValue");
 
   useEffect(() => {
     const next = readExecutiveFiltersFromParams(searchParams);
@@ -565,6 +601,13 @@ export default function ExecutivePerformancePage() {
     wonValue: { label: "Won value", color: CHART_COLORS[0] },
   } satisfies ChartConfig;
 
+  const comparisonConfig = {
+    metric: {
+      label: COMPARISON_METRICS.find((m) => m.key === comparisonMetric)?.label ?? "Metric",
+      color: CHART_COLORS[0],
+    },
+  } satisfies ChartConfig;
+
   const winRateConfig = {
     winRate: { label: "Win rate %", color: CHART_COLORS[1] },
   } satisfies ChartConfig;
@@ -583,12 +626,34 @@ export default function ExecutivePerformancePage() {
     count: { label: "Count", color: CHART_COLORS[3] },
   } satisfies ChartConfig;
 
-  const rankingData = (data?.executives ?? []).slice(0, 12).map((e) => ({
-    name: e.name.length > 18 ? `${e.name.slice(0, 16)}…` : e.name,
-    fullName: e.name,
-    wonValue: e.wonValue,
-    userId: e.userId,
-  }));
+  const comparisonMetricMeta =
+    COMPARISON_METRICS.find((m) => m.key === comparisonMetric) ?? COMPARISON_METRICS[0];
+
+  const wonRankingData = useMemo(() => {
+    return [...(data?.executives ?? [])]
+      .map((e) => ({
+        name: e.name.length > 18 ? `${e.name.slice(0, 16)}…` : e.name,
+        fullName: e.name,
+        wonValue: e.wonValue,
+        userId: e.userId,
+      }))
+      .filter((r) => r.wonValue > 0)
+      .sort((a, b) => b.wonValue - a.wonValue)
+      .slice(0, 12);
+  }, [data?.executives]);
+
+  const rankingData = useMemo(() => {
+    return [...(data?.executives ?? [])]
+      .map((e) => ({
+        name: e.name.length > 18 ? `${e.name.slice(0, 16)}…` : e.name,
+        fullName: e.name,
+        metric: Number(e[comparisonMetric] ?? 0),
+        userId: e.userId,
+      }))
+      .filter((r) => r.metric > 0)
+      .sort((a, b) => b.metric - a.metric)
+      .slice(0, 12);
+  }, [comparisonMetric, data?.executives]);
 
   const winRateData = (data?.executives ?? []).slice(0, 12).map((e) => ({
     name: e.name.length > 18 ? `${e.name.slice(0, 16)}…` : e.name,
@@ -964,16 +1029,16 @@ export default function ExecutivePerformancePage() {
                     title={applied.executiveId === "all" ? "Top executives by won value" : "Won value"}
                     description="Horizontal ranking keeps labels readable — click a bar to open won deals."
                   >
-                    {rankingData.length === 0 ? (
+                    {wonRankingData.length === 0 ? (
                       <EmptyChart message="No executive wins in this period." />
                     ) : (
                       <ChartContainer
                         config={rankingConfig}
                         className="h-64 w-full sm:h-72 lg:h-80"
-                        style={{ height: Math.max(256, rankingData.length * 36) }}
+                        style={{ height: Math.max(256, wonRankingData.length * 36) }}
                       >
                         <BarChart
-                          data={rankingData}
+                          data={wonRankingData}
                           layout="vertical"
                           margin={{ left: 8, right: 16, top: 4, bottom: 4 }}
                         >
@@ -1066,19 +1131,67 @@ export default function ExecutivePerformancePage() {
               >
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <ChartCard
-                    title="Won value by executive"
-                    description="Spacious horizontal bars — one metric per chart to avoid clutter."
+                    title={`${comparisonMetricMeta.label} by executive`}
+                    description="Pick a metric to compare executives — one series keeps the chart readable."
+                    action={
+                      <Select
+                        value={comparisonMetric}
+                        onValueChange={(v) => setComparisonMetric(v as ComparisonMetricKey)}
+                      >
+                        <SelectTrigger className="h-8 w-[180px] text-xs">
+                          <SelectValue placeholder="Metric" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {COMPARISON_METRICS.map((m) => (
+                            <SelectItem key={m.key} value={m.key}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    }
                   >
                     {rankingData.length === 0 ? (
-                      <EmptyChart message="No comparison data." />
+                      <EmptyChart message="No comparison data for this metric." />
                     ) : (
-                      <ChartContainer config={rankingConfig} className="h-72 w-full lg:h-80">
+                      <ChartContainer config={comparisonConfig} className="h-72 w-full lg:h-80">
                         <BarChart data={rankingData} layout="vertical" margin={{ left: 8, right: 16 }}>
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
-                          <XAxis type="number" tickLine={false} axisLine={false} />
+                          <XAxis
+                            type="number"
+                            tickLine={false}
+                            axisLine={false}
+                            tickFormatter={(v) =>
+                              comparisonMetricMeta.format === "inr"
+                                ? v >= 1_000_000
+                                  ? `${(v / 1_000_000).toFixed(1)}M`
+                                  : v >= 1000
+                                    ? `${(v / 1000).toFixed(0)}k`
+                                    : String(v)
+                                : String(v)
+                            }
+                          />
                           <YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar dataKey="wonValue" fill="var(--color-wonValue)" radius={[0, 6, 6, 0]} />
+                          <ChartTooltip
+                            content={
+                              <ChartTooltipContent
+                                formatter={(value) =>
+                                  comparisonMetricMeta.format === "inr"
+                                    ? formatINR(Number(value) || 0)
+                                    : String(value)
+                                }
+                              />
+                            }
+                          />
+                          <Bar
+                            dataKey="metric"
+                            fill="var(--color-metric)"
+                            radius={[0, 6, 6, 0]}
+                            cursor={comparisonMetricMeta.detailType ? "pointer" : undefined}
+                            onClick={() => {
+                              if (comparisonMetricMeta.detailType) openDetail(comparisonMetricMeta.detailType);
+                            }}
+                          />
                         </BarChart>
                       </ChartContainer>
                     )}

@@ -13,6 +13,7 @@ import {
   DEAL_SOURCES,
   DEAL_PRIORITIES,
   normalizeDealStatus,
+  resolveDealPipelineStatus,
   type DealPipelineStatus,
 } from "@/lib/dealStatus";
 import {
@@ -285,12 +286,14 @@ function formatINRAmount(n: number | null | undefined) {
 }
 
 type DealStatusKey = "Active" | "Closed/Won" | "Closed/Lost" | "In Progress" | "Pending";
-function normalizeDealStatusKey(s: unknown): DealStatusKey {
-  const raw = String(s ?? "").trim();
-  if (raw === "Closed/Won") return "Closed/Won";
-  if (raw === "Closed/Lost") return "Closed/Lost";
-  if (raw.toLowerCase() === "in progress") return "In Progress";
-  if (raw.toLowerCase() === "pending") return "Pending";
+function normalizeDealStatusKey(dealStatus: unknown, invoiceStatus?: string | null): DealStatusKey {
+  const resolved = resolveDealPipelineStatus(
+    typeof dealStatus === "string" ? dealStatus : undefined,
+    invoiceStatus,
+  );
+  if (resolved === "Closed/Won") return "Closed/Won";
+  if (resolved === "Closed/Lost") return "Closed/Lost";
+  if (resolved === "Pending") return "Pending";
   return "Active";
 }
 
@@ -544,7 +547,7 @@ export default function DealsPage() {
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
-  const [stage, setStage] = useState("Won");
+  const [stage, setStage] = useState("Prospecting");
   const [value, setValue] = useState("");
   const [locked, setLocked] = useState(false);
   const [proposalId, setProposalId] = useState("");
@@ -904,7 +907,7 @@ export default function DealsPage() {
       setName("");
       setCustomerId(customers[0]?.id ?? "");
       setOwnerUserId(users[0]?.id ?? me.id);
-      setStage("Won");
+      setStage("Prospecting");
       setValue("");
       setLocked(false);
       setProposalId("");
@@ -1106,7 +1109,7 @@ export default function DealsPage() {
       c[s] = 0;
     });
     scopedActiveDeals.forEach((d) => {
-      c[normalizeDealStatus(d.dealStatus)]++;
+      c[resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus)]++;
     });
     return c;
   }, [scopedActiveDeals]);
@@ -1154,7 +1157,7 @@ export default function DealsPage() {
         }
       }
       if (stageFilter !== "all" && normalizeDealStage(d.stage) !== normalizeDealStage(stageFilter)) return false;
-      if (statusFilter !== "all" && normalizeDealStatus(d.dealStatus) !== statusFilter) return false;
+      if (statusFilter !== "all" && resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== statusFilter) return false;
       if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
@@ -1244,7 +1247,7 @@ export default function DealsPage() {
   const activeDealsCount = useMemo(
     () =>
       visible.filter((d) => {
-        const s = normalizeDealStatus(d.dealStatus);
+        const s = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
         return s !== "Closed/Won" && s !== "Closed/Lost";
       }).length,
     [visible],
@@ -1255,7 +1258,7 @@ export default function DealsPage() {
     const y = now.getFullYear();
     const mo = now.getMonth();
     return visible.reduce((sum, d) => {
-      if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return sum;
+      if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return sum;
       const t = d.updatedAt || d.createdAt;
       if (!t) return sum;
       const dt = new Date(t);
@@ -2107,7 +2110,7 @@ export default function DealsPage() {
                       >
                         <td className="px-4 py-3.5 pl-5 text-sm font-medium">
                           {(() => {
-                            const st = normalizeDealStatusKey(deal.dealStatus);
+                            const st = normalizeDealStatusKey(deal.dealStatus, deal.invoiceStatus);
                             return (
                               <Badge variant="secondary" className={cn("whitespace-nowrap", dealStatusPillClass(st))}>
                                 {st}

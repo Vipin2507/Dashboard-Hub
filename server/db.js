@@ -94,6 +94,22 @@ function migrateDealSchema() {
   ).run();
   // Safe after ALTERs: older DBs may not have had dealStatus until migrateDealSchema ran.
   db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_dealStatus ON deals(dealStatus)`);
+
+  // CRM imports often stored invoiceStatus=Paid while leaving dealStatus=Active.
+  // Align pipeline status so Won filters and executive analytics count them.
+  const paidWon = db
+    .prepare(
+      `UPDATE deals
+       SET dealStatus = 'Closed/Won'
+       WHERE deletedAt IS NULL
+         AND lower(trim(COALESCE(invoiceStatus, ''))) IN ('paid', 'won', 'closed won', 'closed/won')
+         AND COALESCE(dealStatus, '') NOT IN ('Closed/Won', 'Closed/Lost')`,
+    )
+    .run();
+  if (paidWon.changes > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[buildesk] repaired ${paidWon.changes} paid deal(s) → Closed/Won`);
+  }
 }
 migrateDealSchema();
 

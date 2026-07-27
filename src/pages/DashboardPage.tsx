@@ -58,7 +58,7 @@ import {
 } from '@/lib/filterSessionPersistence';
 import { FilterPanel } from '@/components/FilterPanel';
 import type { ProposalStatus } from '@/types';
-import { normalizeDealStatus } from '@/lib/dealStatus';
+import { resolveDealPipelineStatus } from '@/lib/dealStatus';
 import { cn } from '@/lib/utils';
 import { useSmUp } from '@/hooks/useSmUp';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
@@ -350,7 +350,7 @@ export default function DashboardPage() {
 
   const dealsClosedCount = useMemo(() => {
     return filteredDeals.filter((d) => {
-      if (normalizeDealStatus(d.dealStatus) !== "Closed/Won") return false;
+      if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return false;
       const ts = d.updatedAt ?? d.lastActivityAt ?? "";
       return inDateRange(ts);
     }).length;
@@ -512,7 +512,7 @@ export default function DashboardPage() {
   const teamPerformance = useMemo(() => {
     if (!isAdminView) return [];
     const reps = users.filter((u) => u.role === "sales_rep");
-    const dealsWon = filteredDeals.filter((d) => normalizeDealStatus(d.dealStatus) === "Closed/Won");
+    const dealsWon = filteredDeals.filter((d) => resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) === "Closed/Won");
     return reps
       .map((u) => {
         const proposalCount = filteredProposals.filter((p) => p.assignedTo === u.id).length;

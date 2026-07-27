@@ -58,8 +58,64 @@ export type DealSource = (typeof DEAL_SOURCES)[number];
 export const DEAL_PRIORITIES = ["High", "Medium", "Low"] as const;
 export type DealPriority = (typeof DEAL_PRIORITIES)[number];
 
+/** Map free-text / CRM aliases onto canonical pipeline statuses. */
 export function normalizeDealStatus(s: string | null | undefined): DealPipelineStatus {
   const v = (s ?? "Active").trim();
   if ((DEAL_STATUSES as readonly string[]).includes(v)) return v as DealPipelineStatus;
+  const lower = v.toLowerCase();
+  if (
+    lower === "won" ||
+    lower === "closed won" ||
+    lower === "closed/won" ||
+    lower === "closed-won"
+  ) {
+    return "Closed/Won";
+  }
+  if (
+    lower === "lost" ||
+    lower === "closed lost" ||
+    lower === "closed/lost" ||
+    lower === "closed-lost"
+  ) {
+    return "Closed/Lost";
+  }
+  if (lower === "in progress" || lower === "in_progress") return "Active";
   return "Active";
+}
+
+/**
+ * Effective pipeline status for filters/analytics.
+ * CRM imports often keep dealStatus as Active while invoiceStatus is Paid.
+ */
+export function resolveDealPipelineStatus(
+  dealStatus: string | null | undefined,
+  invoiceStatus?: string | null,
+): DealPipelineStatus {
+  const raw = (dealStatus ?? "").trim();
+  if ((DEAL_STATUSES as readonly string[]).includes(raw)) {
+    const canonical = raw as DealPipelineStatus;
+    // Explicit closed states always win.
+    if (canonical === "Closed/Won" || canonical === "Closed/Lost") return canonical;
+  } else if (raw) {
+    const aliased = normalizeDealStatus(raw);
+    if (aliased === "Closed/Won" || aliased === "Closed/Lost") return aliased;
+  }
+
+  const inv = String(invoiceStatus ?? "").trim().toLowerCase();
+  if (inv === "paid" || inv === "closed won" || inv === "won") return "Closed/Won";
+  if (inv === "lost" || inv === "closed lost") return "Closed/Lost";
+  if (inv.includes("pending") || inv.includes("due") || inv.includes("partial") || inv === "overdue") {
+    return raw && (DEAL_STATUSES as readonly string[]).includes(raw)
+      ? (raw as DealPipelineStatus)
+      : "Pending";
+  }
+
+  return normalizeDealStatus(dealStatus);
+}
+
+export function isDealWonStatus(
+  dealStatus: string | null | undefined,
+  invoiceStatus?: string | null,
+): boolean {
+  return resolveDealPipelineStatus(dealStatus, invoiceStatus) === "Closed/Won";
 }
