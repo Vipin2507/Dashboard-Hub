@@ -1,4 +1,4 @@
-import { currentMonthYmd } from "@/lib/dateRange";
+import { yearToDateYmd } from "@/lib/dateRange";
 
 export type ExecutiveUrlFilters = {
   from: string;
@@ -12,10 +12,11 @@ export type ExecutiveUrlFilters = {
 };
 
 export function readExecutiveFiltersFromParams(params: URLSearchParams): ExecutiveUrlFilters {
-  const month = currentMonthYmd();
+  // Year-to-date: CRM wins often land outside the current calendar month.
+  const ytd = yearToDateYmd();
   return {
-    from: params.get("from") || month.from,
-    to: params.get("to") || month.to,
+    from: params.get("from") || ytd.from,
+    to: params.get("to") || ytd.to,
     executiveId: params.get("executive") || "all",
     teamId: params.get("team") || "all",
     regionId: params.get("region") || "all",

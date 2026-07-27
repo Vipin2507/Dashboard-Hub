@@ -825,8 +825,21 @@ export function registerExecutivePerformanceApi(app, db) {
       const coverageNotes = [];
       if (usedLegacyWonLost) {
         coverageNotes.push(
-          "Some won/lost dates use deal updatedAt because no deal_status_changed audit was found.",
+          "Some won/lost dates use invoice date (or updatedAt) because no deal_status_changed audit was found.",
         );
+      }
+      // Help when the selected range has no wins but CRM paid/closed deals exist elsewhere.
+      if (summary.dealsWon === 0) {
+        let outsideWon = 0;
+        for (const ev of wonLostByDeal.values()) {
+          if (ev.to !== "Closed/Won") continue;
+          if (!inRange(ev.at, from, to)) outsideWon += 1;
+        }
+        if (outsideWon > 0) {
+          coverageNotes.push(
+            `${outsideWon} Closed/Won (or Paid) deal(s) exist outside this date range — widen From/To to include them.`,
+          );
+        }
       }
       if (approxCustomer) {
         coverageNotes.push(

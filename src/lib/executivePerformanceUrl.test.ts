@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { currentMonthYmd } from "@/lib/dateRange";
+import { yearToDateYmd } from "@/lib/dateRange";
 import {
   executiveFiltersToSearchParams,
   readExecutiveFiltersFromParams,
 } from "./executivePerformanceUrl";
 
 describe("executivePerformanceUrl", () => {
-  it("defaults to current month and all scopes", () => {
-    const month = currentMonthYmd();
+  it("defaults to year-to-date and all scopes", () => {
+    const ytd = yearToDateYmd();
     const filters = readExecutiveFiltersFromParams(new URLSearchParams());
-    expect(filters.from).toBe(month.from);
-    expect(filters.to).toBe(month.to);
+    expect(filters.from).toBe(ytd.from);
+    expect(filters.to).toBe(ytd.to);
     expect(filters.executiveId).toBe("all");
     expect(filters.weekday).toBe("all");
   });
@@ -41,11 +41,11 @@ describe("executivePerformanceUrl", () => {
   });
 
   it("omits overview tab from the URL", () => {
-    const month = currentMonthYmd();
+    const ytd = yearToDateYmd();
     const params = executiveFiltersToSearchParams(
       {
-        from: month.from,
-        to: month.to,
+        from: ytd.from,
+        to: ytd.to,
         executiveId: "all",
         teamId: "all",
         regionId: "all",

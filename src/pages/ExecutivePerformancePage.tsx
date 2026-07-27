@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/chart";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { currentMonthYmd } from "@/lib/dateRange";
+import { yearToDateYmd } from "@/lib/dateRange";
 import { WEEKDAY_LABELS } from "@/lib/executivePerformanceMetrics";
 import { exportExecutivePerformanceXlsx } from "@/lib/executivePerformanceExport";
 import {
@@ -544,10 +544,10 @@ export default function ExecutivePerformancePage() {
   };
 
   const clearFilters = () => {
-    const month = currentMonthYmd();
+    const ytd = yearToDateYmd();
     const next: AppliedFilters = {
-      from: month.from,
-      to: month.to,
+      from: ytd.from,
+      to: ytd.to,
       executiveId: "all",
       teamId: "all",
       regionId: "all",
@@ -562,10 +562,10 @@ export default function ExecutivePerformancePage() {
     setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
   };
 
-  const monthDefault = currentMonthYmd();
+  const ytdDefault = yearToDateYmd();
   const hasActiveAppliedFilters =
-    applied.from !== monthDefault.from ||
-    applied.to !== monthDefault.to ||
+    applied.from !== ytdDefault.from ||
+    applied.to !== ytdDefault.to ||
     applied.executiveId !== "all" ||
     applied.teamId !== "all" ||
     applied.regionId !== "all" ||

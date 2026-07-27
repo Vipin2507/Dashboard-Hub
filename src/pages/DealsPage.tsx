@@ -58,10 +58,12 @@ import {
   Receipt,
   AlertTriangle,
   ArrowRightLeft,
+  Tags,
 } from "lucide-react";
 import type { Deal, Proposal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
 import { BulkUpdateDealStageDialog } from "@/components/BulkUpdateDealStageDialog";
+import { BulkUpdateDealStatusDialog } from "@/components/BulkUpdateDealStatusDialog";
 import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -480,6 +482,7 @@ export default function DealsPage() {
   const canCreate = can(me.role, "deals", "create");
   const canUpdateDeal = canEditDeal(me.role);
   const canChangeStage = canChangeDealStage(me.role);
+  const canBulkSelect = canChangeStage || canUpdateDeal;
   const canRemoveDeal = canDeleteDeal(me.role);
 
   const persistedFilters = useMemo(() => loadPersistedDealFilters(), []);
@@ -533,6 +536,7 @@ export default function DealsPage() {
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [bulkStageOpen, setBulkStageOpen] = useState(false);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   const [selectedDealIds, setSelectedDealIds] = useState<string[]>([]);
   const [sendEstimateOpen, setSendEstimateOpen] = useState<null | { deal: Deal; channel: "email" | "whatsapp" }>(null);
   /** `${dealId}:deal` or `${dealId}:${installmentId}` while sending invoice webhook */
@@ -1737,6 +1741,12 @@ export default function DealsPage() {
                 Bulk stage
               </Button>
             )}
+            {canUpdateDeal && (
+              <Button type="button" variant="outline" className="h-9" onClick={() => setBulkStatusOpen(true)}>
+                <Tags className="h-4 w-4 mr-1.5" />
+                Bulk status
+              </Button>
+            )}
             {canCreate && (
               <>
                 <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
@@ -2072,20 +2082,33 @@ export default function DealsPage() {
         {/* List view */}
         {viewMode === "list" && (
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
-            {canChangeStage && selectedDealIds.length > 0 && (
+            {canBulkSelect && selectedDealIds.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 border-b border-border bg-blue-50/80 px-3 py-2 dark:bg-blue-950/30">
                 <span className="text-xs font-medium text-blue-900 dark:text-blue-100">
                   {selectedDealIds.length} selected
                 </span>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setBulkStageOpen(true)}
-                >
-                  <ArrowRightLeft className="mr-1 h-3.5 w-3.5" />
-                  Change stage
-                </Button>
+                {canChangeStage && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setBulkStageOpen(true)}
+                  >
+                    <ArrowRightLeft className="mr-1 h-3.5 w-3.5" />
+                    Change stage
+                  </Button>
+                )}
+                {canUpdateDeal && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setBulkStatusOpen(true)}
+                  >
+                    <Tags className="mr-1 h-3.5 w-3.5" />
+                    Change status
+                  </Button>
+                )}
                 {selectedDealIds.length < visible.filter((d) => !d.locked).length && (
                   <Button
                     type="button"
@@ -2127,7 +2150,7 @@ export default function DealsPage() {
               <table className="w-full min-w-[1520px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
-                    {canChangeStage && (
+                    {canBulkSelect && (
                       <th className="w-10 px-3 py-3">
                         <Checkbox
                           checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
@@ -2196,7 +2219,7 @@ export default function DealsPage() {
                         key={deal.id}
                         className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
                       >
-                        {canChangeStage && (
+                        {canBulkSelect && (
                           <td className="px-3 py-3.5">
                             <Checkbox
                               checked={selectedDealIds.includes(deal.id)}
@@ -3515,6 +3538,17 @@ export default function DealsPage() {
         onOpenChange={setBulkStageOpen}
         deals={visible}
         stageOptions={stageSelectOptions}
+        selectedIds={selectedDealIds}
+        onCompleted={() => {
+          setSelectedDealIds([]);
+          void dealsQuery.refetch();
+        }}
+      />
+
+      <BulkUpdateDealStatusDialog
+        open={bulkStatusOpen}
+        onOpenChange={setBulkStatusOpen}
+        deals={visible}
         selectedIds={selectedDealIds}
         onCompleted={() => {
           setSelectedDealIds([]);
