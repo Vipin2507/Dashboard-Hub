@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowRightLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,31 @@ type Props = {
   onCompleted?: () => void;
 };
 
+const ANY_STAGE = "__any__";
+
+function stageCounts(list: Deal[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const d of list) {
+    if (d.locked) continue;
+    const key = normalizeDealStage(d.stage);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return map;
+}
+
+function pickDefaultFromStage(options: string[], counts: Map<string, number>): string {
+  let best = options[0] ?? "Prospecting";
+  let bestCount = -1;
+  for (const s of options) {
+    const c = counts.get(s) ?? 0;
+    if (c > bestCount) {
+      best = s;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
 export function BulkUpdateDealStageDialog({
   open,
   onOpenChange,
@@ -60,34 +85,47 @@ export function BulkUpdateDealStageDialog({
   );
 
   const hasSelection = selectedIds.length > 0;
-  const [mode, setMode] = useState<"selected" | "by_stage">(
-    hasSelection ? "selected" : "by_stage",
-  );
-  const [fromStage, setFromStage] = useState<string>(options[0] ?? "Prospecting");
-  const [toStage, setToStage] = useState<string>(options[1] ?? options[0] ?? "Won");
+  const [mode, setMode] = useState<"selected" | "by_stage">("by_stage");
+  const [fromStage, setFromStage] = useState<string>(ANY_STAGE);
+  const [toStage, setToStage] = useState<string>(options[0] ?? "Won");
 
-  // Sync mode when dialog opens with/without selection.
-  const effectiveMode = open ? (hasSelection && mode === "selected" ? "selected" : mode) : mode;
+  const counts = useMemo(() => stageCounts(deals), [deals]);
+
+  // Reset defaults whenever the dialog opens so From is visible and points at an active stage.
+  useEffect(() => {
+    if (!open) return;
+    const nextMode = hasSelection ? "selected" : "by_stage";
+    setMode(nextMode);
+    const defaultFrom = pickDefaultFromStage(options, counts);
+    setFromStage(nextMode === "selected" ? ANY_STAGE : defaultFrom);
+    const toCandidate =
+      options.find((s) => s !== defaultFrom) ?? options[0] ?? "Won";
+    setToStage(toCandidate);
+  }, [open, hasSelection, options, counts]);
 
   const previewDeals = useMemo(() => {
-    if (effectiveMode === "selected") {
+    let list = deals.filter((d) => !d.locked);
+    if (mode === "selected") {
       const idSet = new Set(selectedIds);
-      return deals.filter((d) => idSet.has(d.id) && !d.locked);
+      list = list.filter((d) => idSet.has(d.id));
     }
-    return deals.filter(
-      (d) => !d.locked && normalizeDealStage(d.stage) === normalizeDealStage(fromStage),
-    );
-  }, [deals, effectiveMode, fromStage, selectedIds]);
+    if (fromStage !== ANY_STAGE) {
+      list = list.filter((d) => normalizeDealStage(d.stage) === normalizeDealStage(fromStage));
+    }
+    return list;
+  }, [deals, mode, fromStage, selectedIds]);
 
   const lockedInScope = useMemo(() => {
-    if (effectiveMode === "selected") {
+    let list = deals.filter((d) => d.locked);
+    if (mode === "selected") {
       const idSet = new Set(selectedIds);
-      return deals.filter((d) => idSet.has(d.id) && d.locked).length;
+      list = list.filter((d) => idSet.has(d.id));
     }
-    return deals.filter(
-      (d) => d.locked && normalizeDealStage(d.stage) === normalizeDealStage(fromStage),
-    ).length;
-  }, [deals, effectiveMode, fromStage, selectedIds]);
+    if (fromStage !== ANY_STAGE) {
+      list = list.filter((d) => normalizeDealStage(d.stage) === normalizeDealStage(fromStage));
+    }
+    return list.length;
+  }, [deals, mode, fromStage, selectedIds]);
 
   const unchangedCount = previewDeals.filter(
     (d) => normalizeDealStage(d.stage) === normalizeDealStage(toStage),
@@ -105,19 +143,20 @@ export function BulkUpdateDealStageDialog({
         changedByName: me.name,
         toStage: normalizeDealStage(toStage),
       };
-      if (effectiveMode === "selected") {
+      if (mode === "selected") {
         body.dealIds = selectedIds;
-      } else {
+      }
+      if (fromStage !== ANY_STAGE) {
         body.fromStage = normalizeDealStage(fromStage);
+      } else if (mode !== "selected") {
+        throw new Error("Choose a From stage");
       }
       return api.post<BulkStageResult>("/deals/bulk-stage", body);
     },
     onSuccess: (result) => {
       if (result.deals?.length) {
         const byId = new Map(result.deals.map((d) => [d.id, d]));
-        setDeals(
-          useAppStore.getState().deals.map((d) => byId.get(d.id) ?? d),
-        );
+        setDeals(useAppStore.getState().deals.map((d) => byId.get(d.id) ?? d));
       }
       void queryClient.invalidateQueries({ queryKey: ["deals"] });
       const parts = [`Updated ${result.updated} deal${result.updated === 1 ? "" : "s"}`];
@@ -133,20 +172,13 @@ export function BulkUpdateDealStageDialog({
   });
 
   const sameStage =
-    effectiveMode === "by_stage" &&
+    fromStage !== ANY_STAGE &&
     normalizeDealStage(fromStage) === normalizeDealStage(toStage);
 
+  const fromInvalid = mode === "by_stage" && fromStage === ANY_STAGE;
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onOpenChange(false);
-        else {
-          setMode(hasSelection ? "selected" : "by_stage");
-          onOpenChange(true);
-        }
-      }}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -163,8 +195,15 @@ export function BulkUpdateDealStageDialog({
             <div className="space-y-1.5">
               <Label className="text-xs">Scope</Label>
               <Select
-                value={effectiveMode}
-                onValueChange={(v) => setMode(v as "selected" | "by_stage")}
+                value={mode}
+                onValueChange={(v) => {
+                  const next = v as "selected" | "by_stage";
+                  setMode(next);
+                  if (next === "by_stage" && fromStage === ANY_STAGE) {
+                    setFromStage(pickDefaultFromStage(options, counts));
+                  }
+                  if (next === "selected") setFromStage(ANY_STAGE);
+                }}
               >
                 <SelectTrigger className="h-9">
                   <SelectValue />
@@ -179,23 +218,28 @@ export function BulkUpdateDealStageDialog({
             </div>
           )}
 
-          {effectiveMode === "by_stage" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">From stage</Label>
-              <Select value={fromStage} onValueChange={setFromStage}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="From stage" />
-                </SelectTrigger>
-                <SelectContent>
-                  {options.map((s) => (
+          <div className="space-y-1.5">
+            <Label className="text-xs">From stage</Label>
+            <Select value={fromStage} onValueChange={setFromStage}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="From stage" />
+              </SelectTrigger>
+              <SelectContent>
+                {mode === "selected" && (
+                  <SelectItem value={ANY_STAGE}>Any stage (all selected)</SelectItem>
+                )}
+                {options.map((s) => {
+                  const c = counts.get(s) ?? 0;
+                  return (
                     <SelectItem key={s} value={s}>
                       {dealStageLabel(s)}
+                      {c > 0 ? ` (${c})` : ""}
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="space-y-1.5">
             <Label className="text-xs">To stage</Label>
@@ -213,20 +257,25 @@ export function BulkUpdateDealStageDialog({
             </Select>
           </div>
 
-          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+          <div className="space-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
             <p>
               <span className="font-medium text-foreground">{willUpdate}</span> deal
               {willUpdate === 1 ? "" : "s"} will move to{" "}
               <span className="font-medium text-foreground">{dealStageLabel(toStage)}</span>
             </p>
-            {unchangedCount > 0 && (
-              <p>{unchangedCount} already in the target stage</p>
-            )}
-            {lockedInScope > 0 && <p>{lockedInScope} locked deal{lockedInScope === 1 ? "" : "s"} will be skipped</p>}
-            {effectiveMode === "by_stage" && (
+            {unchangedCount > 0 && <p>{unchangedCount} already in the target stage</p>}
+            {lockedInScope > 0 && (
               <p>
-                Matching filtered deals currently in{" "}
+                {lockedInScope} locked deal{lockedInScope === 1 ? "" : "s"} will be skipped
+              </p>
+            )}
+            {fromStage !== ANY_STAGE && (
+              <p>
+                Matching deals currently in{" "}
                 <span className="font-medium text-foreground">{dealStageLabel(fromStage)}</span>
+                {(counts.get(normalizeDealStage(fromStage)) ?? 0) > 0
+                  ? ` (${counts.get(normalizeDealStage(fromStage))})`
+                  : ""}
               </p>
             )}
           </div>
@@ -238,7 +287,7 @@ export function BulkUpdateDealStageDialog({
           </Button>
           <Button
             type="button"
-            disabled={mutation.isPending || willUpdate <= 0 || sameStage}
+            disabled={mutation.isPending || willUpdate <= 0 || sameStage || fromInvalid}
             onClick={() => mutation.mutate()}
           >
             {mutation.isPending ? (
