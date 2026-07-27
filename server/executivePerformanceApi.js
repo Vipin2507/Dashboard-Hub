@@ -192,6 +192,14 @@ function resolveDealPipelineStatus(dealStatus, invoiceStatus) {
   return raw || "Active";
 }
 
+function getDealDateValue(d) {
+  return d?.invoiceDate || d?.estimateDate || d?.createdAt || d?.updatedAt || null;
+}
+
+function getDealDateYmd(d) {
+  return timestampToYmd(getDealDateValue(d));
+}
+
 function resolveWonLostEvents(deals, audits) {
   /** @type {Map<string, { dealId: string, to: string, at: string, coverage: string, lossReason?: string }>} */
   const byDeal = new Map();
@@ -221,11 +229,8 @@ function resolveWonLostEvents(deals, audits) {
     const status = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
     if (status !== "Closed/Won" && status !== "Closed/Lost") continue;
     if (byDeal.has(d.id)) continue;
-    const at =
-      timestampToYmd(d.invoiceDate) ||
-      timestampToYmd(d.expectedCloseDate) ||
-      timestampToYmd(d.updatedAt) ||
-      timestampToYmd(d.createdAt);
+    // Use business Deal Date (invoice/estimate), not system createdAt.
+    const at = getDealDateYmd(d) || timestampToYmd(d.expectedCloseDate);
     if (!at) continue;
     byDeal.set(d.id, {
       dealId: d.id,
@@ -523,11 +528,11 @@ export function registerExecutivePerformanceApi(app, db) {
       for (const d of deals) {
         if (!passUser(d.ownerUserId)) continue;
         const stats = byExec.get(d.ownerUserId);
-        const createdYmd = timestampToYmd(d.createdAt);
+        const dealDateYmd = getDealDateYmd(d);
         const status = resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus);
         const value = Number(d.value) || 0;
 
-        if (inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday)) {
+        if (inRange(dealDateYmd, from, to) && matchesWeekday(dealDateYmd, weekday)) {
           if (!reasonType) {
             stats.dealsCreated += 1;
             detailPool.push({
@@ -541,7 +546,7 @@ export function registerExecutivePerformanceApi(app, db) {
               amount: value,
               status,
               reason: d.lossReason || undefined,
-              at: d.createdAt,
+              at: getDealDateValue(d) || d.createdAt,
               href: `/deals?q=${encodeURIComponent(d.id)}`,
               coverage: "exact",
             });
@@ -825,21 +830,8 @@ export function registerExecutivePerformanceApi(app, db) {
       const coverageNotes = [];
       if (usedLegacyWonLost) {
         coverageNotes.push(
-          "Some won/lost dates use invoice date (or updatedAt) because no deal_status_changed audit was found.",
+          "Some won/lost dates use deal updatedAt because no deal_status_changed audit was found.",
         );
-      }
-      // Help when the selected range has no wins but CRM paid/closed deals exist elsewhere.
-      if (summary.dealsWon === 0) {
-        let outsideWon = 0;
-        for (const ev of wonLostByDeal.values()) {
-          if (ev.to !== "Closed/Won") continue;
-          if (!inRange(ev.at, from, to)) outsideWon += 1;
-        }
-        if (outsideWon > 0) {
-          coverageNotes.push(
-            `${outsideWon} Closed/Won (or Paid) deal(s) exist outside this date range — widen From/To to include them.`,
-          );
-        }
       }
       if (approxCustomer) {
         coverageNotes.push(

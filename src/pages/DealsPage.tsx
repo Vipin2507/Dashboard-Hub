@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "@/store/useAppStore";
 import { can, getScope, visibleWithScope } from "@/lib/rbac";
-import { canDeleteDeal, canEditDeal, canChangeDealStage, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
+import { canDeleteDeal, canEditDeal, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
 import { apiUrl } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useUpdateDealStage } from "@/hooks/useWorkflow";
@@ -21,6 +21,7 @@ import {
   dealStageLabel,
   normalizeDealStage,
 } from "@/lib/dealStage";
+import { getDealDate } from "@/lib/dealDate";
 import {
   checkDealFollowUpReminders,
   sendDealInvoiceN8n,
@@ -57,13 +58,9 @@ import {
   Send,
   Receipt,
   AlertTriangle,
-  ArrowRightLeft,
-  Tags,
 } from "lucide-react";
 import type { Deal, Proposal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
-import { BulkUpdateDealStageDialog } from "@/components/BulkUpdateDealStageDialog";
-import { BulkUpdateDealStatusDialog } from "@/components/BulkUpdateDealStatusDialog";
 import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -217,8 +214,8 @@ const DEAL_STAGE_VISUAL: StageVisual[] = [
     dotColor: "bg-slate-400",
   },
   {
-    key: "Qualified",
-    label: "Qualified",
+    key: "Won",
+    label: "Won",
     pillColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
     dotColor: "bg-blue-500",
   },
@@ -481,8 +478,6 @@ export default function DealsPage() {
   }, [deals, me, scope]);
   const canCreate = can(me.role, "deals", "create");
   const canUpdateDeal = canEditDeal(me.role);
-  const canChangeStage = canChangeDealStage(me.role);
-  const canBulkSelect = canChangeStage || canUpdateDeal;
   const canRemoveDeal = canDeleteDeal(me.role);
 
   const persistedFilters = useMemo(() => loadPersistedDealFilters(), []);
@@ -535,9 +530,6 @@ export default function DealsPage() {
   const [lossReasonDraft, setLossReasonDraft] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
-  const [bulkStageOpen, setBulkStageOpen] = useState(false);
-  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
-  const [selectedDealIds, setSelectedDealIds] = useState<string[]>([]);
   const [sendEstimateOpen, setSendEstimateOpen] = useState<null | { deal: Deal; channel: "email" | "whatsapp" }>(null);
   /** `${dealId}:deal` or `${dealId}:${installmentId}` while sending invoice webhook */
   const [invoiceSendBusyKey, setInvoiceSendBusyKey] = useState<string | null>(null);
@@ -1172,9 +1164,10 @@ export default function DealsPage() {
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
       
       if (timeRangeFilter !== "all") {
-        const t = d.createdAt || d.updatedAt;
+        const t = getDealDate(d);
         if (!t) return false;
-        const dt = new Date(t);
+        const dt = new Date(t.includes("T") ? t : `${t.slice(0, 10)}T00:00:00`);
+        if (Number.isNaN(dt.getTime())) return false;
         if (rangeStart && dt < rangeStart) return false;
         if (rangeEnd && dt >= rangeEnd) return false;
       }
@@ -1194,7 +1187,6 @@ export default function DealsPage() {
   });
   useEffect(() => {
     setListPage(1);
-    setSelectedDealIds([]);
   }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, timeRangeFilter, customDateRange]);
 
   const listTotalPages = Math.max(1, Math.ceil(visible.length / listPageSize));
@@ -1203,37 +1195,6 @@ export default function DealsPage() {
     const start = (listCurrentPage - 1) * listPageSize;
     return visible.slice(start, start + listPageSize);
   }, [visible, listCurrentPage, listPageSize]);
-
-  const listSelectableIds = useMemo(
-    () => listItems.filter((d) => !d.locked).map((d) => d.id),
-    [listItems],
-  );
-  const allPageSelected =
-    listSelectableIds.length > 0 && listSelectableIds.every((id) => selectedDealIds.includes(id));
-  const somePageSelected = listSelectableIds.some((id) => selectedDealIds.includes(id));
-
-  const toggleSelectDeal = (id: string, checked: boolean) => {
-    setSelectedDealIds((prev) => {
-      if (checked) return prev.includes(id) ? prev : [...prev, id];
-      return prev.filter((x) => x !== id);
-    });
-  };
-
-  const toggleSelectPage = (checked: boolean) => {
-    setSelectedDealIds((prev) => {
-      if (checked) {
-        const set = new Set(prev);
-        listSelectableIds.forEach((id) => set.add(id));
-        return Array.from(set);
-      }
-      const drop = new Set(listSelectableIds);
-      return prev.filter((id) => !drop.has(id));
-    });
-  };
-
-  const selectAllFiltered = () => {
-    setSelectedDealIds(visible.filter((d) => !d.locked).map((d) => d.id));
-  };
 
   useEffect(() => {
     try {
@@ -1300,9 +1261,10 @@ export default function DealsPage() {
     const mo = now.getMonth();
     return visible.reduce((sum, d) => {
       if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return sum;
-      const t = d.updatedAt || d.createdAt;
+      const t = getDealDate(d);
       if (!t) return sum;
-      const dt = new Date(t);
+      const dt = new Date(t.includes("T") ? t : `${t.slice(0, 10)}T00:00:00`);
+      if (Number.isNaN(dt.getTime())) return sum;
       if (dt.getFullYear() !== y || dt.getMonth() !== mo) return sum;
       return sum + d.value;
     }, 0);
@@ -1735,18 +1697,6 @@ export default function DealsPage() {
                 List
               </Button>
             </div>
-            {canChangeStage && (
-              <Button type="button" variant="outline" className="h-9" onClick={() => setBulkStageOpen(true)}>
-                <ArrowRightLeft className="h-4 w-4 mr-1.5" />
-                Bulk stage
-              </Button>
-            )}
-            {canUpdateDeal && (
-              <Button type="button" variant="outline" className="h-9" onClick={() => setBulkStatusOpen(true)}>
-                <Tags className="h-4 w-4 mr-1.5" />
-                Bulk status
-              </Button>
-            )}
             {canCreate && (
               <>
                 <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
@@ -2082,55 +2032,6 @@ export default function DealsPage() {
         {/* List view */}
         {viewMode === "list" && (
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
-            {canBulkSelect && selectedDealIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 border-b border-border bg-blue-50/80 px-3 py-2 dark:bg-blue-950/30">
-                <span className="text-xs font-medium text-blue-900 dark:text-blue-100">
-                  {selectedDealIds.length} selected
-                </span>
-                {canChangeStage && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setBulkStageOpen(true)}
-                  >
-                    <ArrowRightLeft className="mr-1 h-3.5 w-3.5" />
-                    Change stage
-                  </Button>
-                )}
-                {canUpdateDeal && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setBulkStatusOpen(true)}
-                  >
-                    <Tags className="mr-1 h-3.5 w-3.5" />
-                    Change status
-                  </Button>
-                )}
-                {selectedDealIds.length < visible.filter((d) => !d.locked).length && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs"
-                    onClick={selectAllFiltered}
-                  >
-                    Select all filtered ({visible.filter((d) => !d.locked).length})
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  onClick={() => setSelectedDealIds([])}
-                >
-                  Clear
-                </Button>
-              </div>
-            )}
             {/* Top horizontal scrollbar (synced with table) */}
             <div
               ref={topHScrollRef}
@@ -2147,18 +2048,9 @@ export default function DealsPage() {
               style={{ scrollbarGutter: "stable" }}
               onScroll={() => syncListHScroll("bottom")}
             >
-              <table className="w-full min-w-[1520px]">
+              <table className="w-full min-w-[1480px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
-                    {canBulkSelect && (
-                      <th className="w-10 px-3 py-3">
-                        <Checkbox
-                          checked={allPageSelected ? true : somePageSelected ? "indeterminate" : false}
-                          onCheckedChange={(v) => toggleSelectPage(v === true)}
-                          aria-label="Select page"
-                        />
-                      </th>
-                    )}
                     {[
                       "Status",
                       "Deal Date",
@@ -2219,16 +2111,6 @@ export default function DealsPage() {
                         key={deal.id}
                         className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
                       >
-                        {canBulkSelect && (
-                          <td className="px-3 py-3.5">
-                            <Checkbox
-                              checked={selectedDealIds.includes(deal.id)}
-                              disabled={!!deal.locked}
-                              onCheckedChange={(v) => toggleSelectDeal(deal.id, v === true)}
-                              aria-label={`Select ${deal.id}`}
-                            />
-                          </td>
-                        )}
                         <td className="px-4 py-3.5 pl-5 text-sm font-medium">
                           {(() => {
                             const st = normalizeDealStatusKey(deal.dealStatus, deal.invoiceStatus);
@@ -2241,7 +2123,7 @@ export default function DealsPage() {
                         </td>
                         <td className="px-4 py-3.5 text-sm tabular-nums">
                           {(() => {
-                            const d = deal.invoiceDate ?? (deal as any).estimateDate ?? deal.createdAt ?? deal.updatedAt ?? null;
+                            const d = getDealDate(deal);
                             return formatDDMMYYYY(d);
                           })()}
                         </td>
@@ -2339,7 +2221,7 @@ export default function DealsPage() {
                             <DealStageSelector
                               deal={deal}
                               options={stageSelectOptions}
-                              disabled={!canChangeStage || !!deal.locked}
+                              disabled={!canUpdateDeal || !!deal.locked}
                               pending={updateDealStage.isPending}
                               onStageChange={(d, st) =>
                                 updateDealStage.mutate({
@@ -2645,7 +2527,7 @@ export default function DealsPage() {
                   <Input
                     value={stage}
                     onChange={(e) => setStage(e.target.value)}
-                    placeholder="Qualified"
+                    placeholder="Won"
                     disabled={sheetMode === "view"}
                   />
                 </div>
@@ -3530,29 +3412,6 @@ export default function DealsPage() {
         onImported={async () => {
           await queryClient.invalidateQueries({ queryKey: [...QK.deals({ role: me.role })] });
           await dealsQuery.refetch();
-        }}
-      />
-
-      <BulkUpdateDealStageDialog
-        open={bulkStageOpen}
-        onOpenChange={setBulkStageOpen}
-        deals={visible}
-        stageOptions={stageSelectOptions}
-        selectedIds={selectedDealIds}
-        onCompleted={() => {
-          setSelectedDealIds([]);
-          void dealsQuery.refetch();
-        }}
-      />
-
-      <BulkUpdateDealStatusDialog
-        open={bulkStatusOpen}
-        onOpenChange={setBulkStatusOpen}
-        deals={visible}
-        selectedIds={selectedDealIds}
-        onCompleted={() => {
-          setSelectedDealIds([]);
-          void dealsQuery.refetch();
         }}
       />
 
