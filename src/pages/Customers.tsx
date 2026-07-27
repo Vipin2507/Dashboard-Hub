@@ -141,29 +141,7 @@ export default function Customers() {
   const updateCustomer = useAppStore((s) => s.updateCustomer);
   const deleteCustomer = useAppStore((s) => s.deleteCustomer);
 
-  const toApiPayload = (customer: Customer) => {
-    const primary = customer.contacts.find((c) => c.isPrimary) ?? customer.contacts[0];
-    const displayName = (customer.companyName || customer.customerName || customer.customerNumber).trim();
-    return {
-      id: customer.id,
-      leadId: customer.customerNumber,
-      name: displayName,
-      customerName: customer.customerName,
-      companyName: customer.companyName || null,
-      state: customer.address?.state ?? null,
-      gstin: customer.gstin ?? null,
-      regionId: customer.regionId,
-      city: customer.address?.city ?? null,
-      email: primary?.email ?? null,
-      primaryPhone: primary?.phone ?? null,
-      status: customer.status,
-      salesExecutive: users.find((u) => u.id === customer.assignedTo)?.name ?? customer.assignedToName ?? null,
-      accountManager: null,
-      deliveryExecutive: null,
-      tags: customer.tags ?? [],
-    };
-  };
-
+import { toApiCustomerPayload } from "@/lib/customerApiPayload";
   const customersQuery = useCustomersListQuery();
 
   useEffect(() => {
@@ -176,7 +154,7 @@ export default function Customers() {
       const res = await fetch(apiUrl("/api/customers"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toApiPayload(customer)),
+        body: JSON.stringify(toApiCustomerPayload(customer, users)),
       });
       if (!res.ok) throw new Error("Failed to create customer");
     },
@@ -188,7 +166,7 @@ export default function Customers() {
       const res = await fetch(apiUrl(`/api/customers/${customer.id}`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(toApiPayload(customer)),
+        body: JSON.stringify(toApiCustomerPayload(customer, users)),
       });
       if (!res.ok) throw new Error("Failed to update customer");
     },

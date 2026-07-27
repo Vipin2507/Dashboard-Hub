@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { api, apiUrl } from "@/lib/api";
+import { toApiCustomerPayload } from "@/lib/customerApiPayload";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import {
   CustomerProposalsLiveTable,
@@ -563,6 +564,24 @@ export default function CustomerProfile() {
   const canDelete = can(me.role, "customers", "delete");
   const canManageTickets = can(me.role, "customers", "manage_tickets");
   const canUpdateCustomer = customer && (scope === "ALL" || customer.assignedTo === me.id);
+
+  const updateCustomerMutation = useMutation({
+    mutationFn: async (updated: Customer) => {
+      const res = await fetch(apiUrl(`/api/customers/${updated.id}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toApiCustomerPayload(updated, users)),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Failed to update customer");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: QK.customers() });
+    },
+  });
 
   const { data: liveProposals = [] } = useQuery({
     queryKey: QK.customerProposals(customer?.id ?? ""),
@@ -1714,6 +1733,10 @@ export default function CustomerProfile() {
         open={editOpen}
         onOpenChange={setEditOpen}
         editingCustomer={customer}
+        onPersist={async (updated, mode) => {
+          if (mode !== "update") return;
+          await updateCustomerMutation.mutateAsync(updated);
+        }}
         onSaved={() => setEditOpen(false)}
       />
 
