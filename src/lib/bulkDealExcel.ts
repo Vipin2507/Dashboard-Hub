@@ -686,7 +686,7 @@ export async function buildDealsFromExcelRows(
       ownerUserId: owner?.id || ctx.me.id,
       teamId,
       regionId,
-      stage: existing?.stage || "Qualified",
+      stage: existing?.stage || "Won",
       value: total,
       locked: false,
       proposalId: existing?.proposalId ?? null,

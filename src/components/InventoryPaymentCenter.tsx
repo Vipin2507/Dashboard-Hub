@@ -36,6 +36,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { currentMonthYmd } from "@/lib/dateRange";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { FilterPanel } from "@/components/FilterPanel";
 import type { Proposal } from "@/types";
 import { jsPDF } from "jspdf";
@@ -179,6 +185,29 @@ function paymentHealth(plan: CustomerPaymentPlan | null, category: string | unde
   return "Current";
 }
 
+type HistoryFilters = {
+  from: string;
+  to: string;
+  mode: string;
+  cycle: string;
+  status: "all" | "pending" | "confirmed" | "failed";
+};
+
+function defaultHistoryFilters(): HistoryFilters {
+  const month = currentMonthYmd();
+  return {
+    from: month.from,
+    to: month.to,
+    mode: "all",
+    cycle: "all",
+    status: "all",
+  };
+}
+
+function loadHistoryFilters(): HistoryFilters {
+  return loadSessionFilters<HistoryFilters>(FILTER_SESSION_KEYS.paymentsHistory) ?? defaultHistoryFilters();
+}
+
 export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerId?: string } = {}) {
   const queryClient = useQueryClient();
   const me = useAppStore((s) => s.me);
@@ -193,16 +222,7 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
   const [reminderSettings, setReminderSettings] = useState<InstallmentReminderSettings>(() =>
     getInstallmentReminderSettings(),
   );
-  const [historyFilters, setHistoryFilters] = useState(() => {
-    const month = currentMonthYmd();
-    return {
-      from: month.from,
-      to: month.to,
-      mode: "all",
-      cycle: "all",
-      status: "all" as "all" | "pending" | "confirmed" | "failed",
-    };
-  });
+  const [historyFilters, setHistoryFilters] = useState<HistoryFilters>(() => loadHistoryFilters());
   const [remainingCategoryFilter, setRemainingCategoryFilter] = useState<
     "all" | "upcoming" | "grace" | "overdue" | "paid"
   >("all");
@@ -288,6 +308,23 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
   useEffect(() => {
     if (initialCustomerId) setCustomerId(initialCustomerId);
   }, [initialCustomerId]);
+
+  useEffect(() => {
+    saveSessionFilters(FILTER_SESSION_KEYS.paymentsHistory, historyFilters);
+  }, [historyFilters]);
+
+  const defaultHistory = defaultHistoryFilters();
+  const hasActiveHistoryFilters =
+    historyFilters.from !== defaultHistory.from ||
+    historyFilters.to !== defaultHistory.to ||
+    historyFilters.mode !== "all" ||
+    historyFilters.cycle !== "all" ||
+    historyFilters.status !== "all";
+
+  const clearHistoryFilters = () => {
+    setHistoryFilters(defaultHistoryFilters());
+    clearSessionFilters(FILTER_SESSION_KEYS.paymentsHistory);
+  };
 
   useEffect(() => {
     if (!remainingQ.data?.length) return;
@@ -949,6 +986,16 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
                   </Button>
                 </>
               )}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9"
+                disabled={!hasActiveHistoryFilters}
+                onClick={clearHistoryFilters}
+              >
+                Clear
+              </Button>
             </div>
             </FilterPanel>
             <div className="overflow-hidden rounded-lg border border-border">

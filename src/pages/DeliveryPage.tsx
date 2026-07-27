@@ -12,6 +12,12 @@ import { toast } from "@/components/ui/use-toast";
 import { apiUrl } from "@/lib/api";
 import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { can } from "@/lib/rbac";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { useAppStore } from "@/store/useAppStore";
 import { cn } from "@/lib/utils";
 import { ClipboardList, RefreshCw } from "lucide-react";
@@ -106,14 +112,32 @@ export default function DeliveryPage() {
     refetchOnMount: "always",
   });
 
-  const [dealFilter, setDealFilter] = useState<"all" | "active" | "won">("all");
-  const [draftDealFilter, setDraftDealFilter] = useState<"all" | "active" | "won">("all");
+  const [dealFilter, setDealFilter] = useState<"all" | "active" | "won">(() => {
+    const saved = loadSessionFilters<{ dealFilter: "all" | "active" | "won" }>(FILTER_SESSION_KEYS.delivery);
+    return saved?.dealFilter ?? "all";
+  });
+  const [draftDealFilter, setDraftDealFilter] = useState<"all" | "active" | "won">(() => {
+    const saved = loadSessionFilters<{ dealFilter: "all" | "active" | "won" }>(FILTER_SESSION_KEYS.delivery);
+    return saved?.dealFilter ?? "all";
+  });
 
   useEffect(() => {
     setDraftDealFilter(dealFilter);
   }, [dealFilter]);
 
   const hasPendingFilterChanges = draftDealFilter !== dealFilter;
+  const hasActiveAppliedFilters = dealFilter !== "all";
+
+  const applyDealFilter = () => {
+    setDealFilter(draftDealFilter);
+    saveSessionFilters(FILTER_SESSION_KEYS.delivery, { dealFilter: draftDealFilter });
+  };
+
+  const clearDealFilter = () => {
+    setDraftDealFilter("all");
+    setDealFilter("all");
+    clearSessionFilters(FILTER_SESSION_KEYS.delivery);
+  };
 
   const rows = useMemo(() => {
     const all = dealsQ.data ?? [];
@@ -237,9 +261,18 @@ export default function DeliveryPage() {
               variant="outline"
               className="h-9"
               disabled={!hasPendingFilterChanges}
-              onClick={() => setDealFilter(draftDealFilter)}
+              onClick={applyDealFilter}
             >
               Apply
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9"
+              disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
+              onClick={clearDealFilter}
+            >
+              Clear
             </Button>
             <Button
               type="button"

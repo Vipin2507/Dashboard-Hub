@@ -218,7 +218,7 @@ export function useCreateDealFromProposal() {
         ownerUserId: proposal.assignedTo,
         teamId: proposal.teamId,
         regionId: proposal.regionId,
-        stage: "Qualified",
+        stage: "Won",
         value,
         locked: true,
         proposalId: proposal.id,
@@ -269,7 +269,7 @@ export function useUpdateDealStage() {
   return useMutation({
     mutationFn: async (input: {
       dealId: string;
-      /** Sales stage (e.g. Qualified, Negotiation) */
+      /** Sales stage (e.g. Won, Negotiation) */
       stage?: string;
       /** Pipeline card status — use "Closed/Won" / "Closed/Lost" with lossReason when applicable */
       dealStatus?: string;

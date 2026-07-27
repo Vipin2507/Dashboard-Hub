@@ -74,6 +74,13 @@ import {
   readExecutiveFiltersFromParams,
   type ExecutiveUrlFilters,
 } from "@/lib/executivePerformanceUrl";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  hasAnySearchParam,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { useExecutivePerformanceQuery } from "@/hooks/useExecutivePerformanceQuery";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
@@ -86,6 +93,28 @@ import type {
 import { useToast } from "@/hooks/use-toast";
 
 type AppliedFilters = ExecutiveUrlFilters;
+
+function loadInitialExecutiveFilters(params: URLSearchParams): AppliedFilters {
+  if (
+    hasAnySearchParam(params, [
+      "executive",
+      "team",
+      "region",
+      "weekday",
+      "reasonType",
+      "reason",
+      "from",
+      "to",
+      "tab",
+    ])
+  ) {
+    return readExecutiveFiltersFromParams(params);
+  }
+  return (
+    loadSessionFilters<AppliedFilters>(FILTER_SESSION_KEYS.executivePerformance) ??
+    readExecutiveFiltersFromParams(params)
+  );
+}
 
 const CHART_COLORS = [
   "hsl(221, 83%, 53%)",
@@ -412,12 +441,8 @@ export default function ExecutivePerformancePage() {
   const loggedInUser = users.find((u) => u.id === authUserId);
   const isSuperAdmin = loggedInUser?.role === "super_admin";
 
-  const [applied, setApplied] = useState<AppliedFilters>(() =>
-    readExecutiveFiltersFromParams(searchParams),
-  );
-  const [draft, setDraft] = useState<AppliedFilters>(() =>
-    readExecutiveFiltersFromParams(searchParams),
-  );
+  const [applied, setApplied] = useState<AppliedFilters>(() => loadInitialExecutiveFilters(searchParams));
+  const [draft, setDraft] = useState<AppliedFilters>(() => loadInitialExecutiveFilters(searchParams));
   const [tab, setTab] = useState(searchParams.get("tab") || "overview");
   const [detailType, setDetailType] = useState<ExecutiveDetailType | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -478,6 +503,7 @@ export default function ExecutivePerformancePage() {
     }
     setApplied(next);
     setDetailPage(1);
+    saveSessionFilters(FILTER_SESSION_KEYS.executivePerformance, next);
     setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
   };
 
@@ -496,8 +522,20 @@ export default function ExecutivePerformancePage() {
     setDraft(next);
     setApplied(next);
     setDetailPage(1);
+    clearSessionFilters(FILTER_SESSION_KEYS.executivePerformance);
     setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
   };
+
+  const monthDefault = currentMonthYmd();
+  const hasActiveAppliedFilters =
+    applied.from !== monthDefault.from ||
+    applied.to !== monthDefault.to ||
+    applied.executiveId !== "all" ||
+    applied.teamId !== "all" ||
+    applied.regionId !== "all" ||
+    applied.weekday !== "all" ||
+    applied.reasonType !== "all" ||
+    applied.reason !== "all";
 
   const onTabChange = (value: string) => {
     setTab(value);
@@ -751,7 +789,13 @@ export default function ExecutivePerformancePage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-              <Button type="button" variant="outline" className="h-9" onClick={clearFilters}>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9"
+                disabled={!hasActiveAppliedFilters && !hasPending}
+                onClick={clearFilters}
+              >
                 Clear
               </Button>
               <Button type="button" className="h-9" disabled={!hasPending} onClick={applyFilters}>

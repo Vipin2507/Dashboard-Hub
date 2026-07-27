@@ -601,7 +601,7 @@ export const seedDeals: Deal[] = [
     ownerUserId: 'u5',
     teamId: 't1',
     regionId: 'r2',
-    stage: 'Qualified',
+    stage: 'Won',
     value: 220000,
     locked: false,
     proposalId: null,

@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/sheet";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
-import { useAppliedState } from "@/hooks/useAppliedState";
+import { usePersistedAppliedState } from "@/hooks/usePersistedAppliedState";
+import { FILTER_SESSION_KEYS } from "@/lib/filterSessionPersistence";
 import {
   Select,
   SelectTrigger,
@@ -135,7 +136,8 @@ export default function Inventory() {
     },
   });
 
-  const invFilters = useAppliedState(
+  const invFilters = usePersistedAppliedState(
+    FILTER_SESSION_KEYS.inventory,
     { search: "", itemType: "all" as string, active: "all" as string },
     {
       isEqual: (a, b) => a.search === b.search && a.itemType === b.itemType && a.active === b.active,
@@ -370,6 +372,7 @@ export default function Inventory() {
                 type="button"
                 variant="outline"
                 className="h-9"
+                disabled={!invFilters.hasActiveAppliedFilters && !invFilters.hasChanges}
                 onClick={() => {
                   invFilters.clear();
                   setPage(1);

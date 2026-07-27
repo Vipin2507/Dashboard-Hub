@@ -19,6 +19,13 @@ import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import { currentMonthYmd } from "@/lib/dateRange";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  hasAnySearchParam,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { FilterPanel } from "@/components/FilterPanel";
 import {
   FileText,
@@ -270,6 +277,18 @@ function ProposalStatusBadge({ status }: { status: ProposalStatus }) {
   );
 }
 
+type PersistedProposalsFilters = {
+  search: string;
+  statusFilter: ProposalStatus | "all";
+  suspectWonOnly: boolean;
+  dateFrom: string;
+  dateTo: string;
+  assignedToFilter: string;
+  sortBy: SortKey;
+  teamQueryFilter: string;
+  regionQueryFilter: string;
+};
+
 export default function Proposals() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -283,13 +302,26 @@ export default function Proposals() {
 
   const scope = getScope(me.role, "proposals");
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">("all");
-  const [suspectWonOnly, setSuspectWonOnly] = useState(false);
-  const [dateFrom, setDateFrom] = useState(() => currentMonthYmd().from);
-  const [dateTo, setDateTo] = useState(() => currentMonthYmd().to);
-  const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<SortKey>("date");
+  const persistedProposalsFilters = useMemo(() => {
+    if (hasAnySearchParam(searchParams, ["status", "owner", "team", "region", "from", "to"])) {
+      return null;
+    }
+    return loadSessionFilters<PersistedProposalsFilters>(FILTER_SESSION_KEYS.proposals);
+  }, [searchParams]);
+
+  const defaultMonth = currentMonthYmd();
+
+  const [search, setSearch] = useState(() => persistedProposalsFilters?.search ?? "");
+  const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">(
+    () => persistedProposalsFilters?.statusFilter ?? "all",
+  );
+  const [suspectWonOnly, setSuspectWonOnly] = useState(() => persistedProposalsFilters?.suspectWonOnly ?? false);
+  const [dateFrom, setDateFrom] = useState(() => persistedProposalsFilters?.dateFrom ?? defaultMonth.from);
+  const [dateTo, setDateTo] = useState(() => persistedProposalsFilters?.dateTo ?? defaultMonth.to);
+  const [assignedToFilter, setAssignedToFilter] = useState<string>(
+    () => persistedProposalsFilters?.assignedToFilter ?? "all",
+  );
+  const [sortBy, setSortBy] = useState<SortKey>(() => persistedProposalsFilters?.sortBy ?? "date");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(() => {
     try {
@@ -301,13 +333,19 @@ export default function Proposals() {
     }
   });
   // Draft filters (edit, then Apply)
-  const [draftSearch, setDraftSearch] = useState("");
-  const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">("all");
-  const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(false);
-  const [draftDateFrom, setDraftDateFrom] = useState(() => currentMonthYmd().from);
-  const [draftDateTo, setDraftDateTo] = useState(() => currentMonthYmd().to);
-  const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>("all");
-  const [draftSortBy, setDraftSortBy] = useState<SortKey>("date");
+  const [draftSearch, setDraftSearch] = useState(() => persistedProposalsFilters?.search ?? "");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">(
+    () => persistedProposalsFilters?.statusFilter ?? "all",
+  );
+  const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(
+    () => persistedProposalsFilters?.suspectWonOnly ?? false,
+  );
+  const [draftDateFrom, setDraftDateFrom] = useState(() => persistedProposalsFilters?.dateFrom ?? defaultMonth.from);
+  const [draftDateTo, setDraftDateTo] = useState(() => persistedProposalsFilters?.dateTo ?? defaultMonth.to);
+  const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>(
+    () => persistedProposalsFilters?.assignedToFilter ?? "all",
+  );
+  const [draftSortBy, setDraftSortBy] = useState<SortKey>(() => persistedProposalsFilters?.sortBy ?? "date");
   const statusFromUrl = searchParams.get("status");
   const ownerFromUrl = searchParams.get("owner");
   const teamFromUrl = searchParams.get("team");
@@ -327,10 +365,18 @@ export default function Proposals() {
   const [noteDraft, setNoteDraft] = useState("");
   const [deliveryAssignId, setDeliveryAssignId] = useState<string | null>(null);
   const [deliveryAssigneeId, setDeliveryAssigneeId] = useState<string>("");
-  const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
-  const [regionQueryFilter, setRegionQueryFilter] = useState<string>("all");
-  const [draftTeamQueryFilter, setDraftTeamQueryFilter] = useState<string>("all");
-  const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>("all");
+  const [teamQueryFilter, setTeamQueryFilter] = useState<string>(
+    () => persistedProposalsFilters?.teamQueryFilter ?? "all",
+  );
+  const [regionQueryFilter, setRegionQueryFilter] = useState<string>(
+    () => persistedProposalsFilters?.regionQueryFilter ?? "all",
+  );
+  const [draftTeamQueryFilter, setDraftTeamQueryFilter] = useState<string>(
+    () => persistedProposalsFilters?.teamQueryFilter ?? "all",
+  );
+  const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>(
+    () => persistedProposalsFilters?.regionQueryFilter ?? "all",
+  );
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [sharePdfId, setSharePdfId] = useState<string | null>(null);
   const [sharePdfPhone, setSharePdfPhone] = useState("");
@@ -371,6 +417,17 @@ export default function Proposals() {
     setTeamQueryFilter(draftTeamQueryFilter);
     setRegionQueryFilter(draftRegionQueryFilter);
     setPage(1);
+    saveSessionFilters(FILTER_SESSION_KEYS.proposals, {
+      search: draftSearch,
+      statusFilter: draftStatusFilter,
+      suspectWonOnly: draftSuspectWonOnly,
+      dateFrom: draftDateFrom,
+      dateTo: draftDateTo,
+      assignedToFilter: draftAssignedToFilter,
+      sortBy: draftSortBy,
+      teamQueryFilter: draftTeamQueryFilter,
+      regionQueryFilter: draftRegionQueryFilter,
+    });
   };
 
   const clearFilters = () => {
@@ -394,7 +451,19 @@ export default function Proposals() {
     setTeamQueryFilter("all");
     setRegionQueryFilter("all");
     setPage(1);
+    clearSessionFilters(FILTER_SESSION_KEYS.proposals);
   };
+
+  const hasActiveAppliedFilters =
+    search !== "" ||
+    statusFilter !== "all" ||
+    suspectWonOnly ||
+    dateFrom !== defaultMonth.from ||
+    dateTo !== defaultMonth.to ||
+    assignedToFilter !== "all" ||
+    sortBy !== "date" ||
+    teamQueryFilter !== "all" ||
+    regionQueryFilter !== "all";
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -889,7 +958,13 @@ export default function Proposals() {
               </Select>
 
               <div className="col-span-2 flex flex-wrap items-center justify-end gap-2">
-                <Button type="button" variant="outline" className="h-9 w-[140px]" onClick={clearFilters}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9 w-[140px]"
+                  disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
+                  onClick={clearFilters}
+                >
                   Clear
                 </Button>
                 <Button

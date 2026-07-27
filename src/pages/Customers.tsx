@@ -21,6 +21,13 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { currentMonthYmd } from "@/lib/dateRange";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  hasAnySearchParam,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { FilterPanel } from "@/components/FilterPanel";
 import {
   Building2,
@@ -86,6 +93,40 @@ function CustomerStatusBadge({ status }: { status: CustomerStatus }) {
       {status}
     </span>
   );
+}
+
+type PersistedCustomerFilters = {
+  search: string;
+  statusFilter: CustomerStatus | "all";
+  regionFilter: string;
+  assignedToFilter: string;
+  teamQueryFilter: string;
+  industryFilter: string;
+  tagsFilter: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+function defaultCustomerFilters(): PersistedCustomerFilters {
+  const month = currentMonthYmd();
+  return {
+    search: "",
+    statusFilter: "all",
+    regionFilter: "all",
+    assignedToFilter: "all",
+    teamQueryFilter: "all",
+    industryFilter: "all",
+    tagsFilter: "",
+    dateFrom: month.from,
+    dateTo: month.to,
+  };
+}
+
+function loadInitialCustomerFilters(searchParams: URLSearchParams): PersistedCustomerFilters {
+  if (hasAnySearchParam(searchParams, ["q", "status", "owner", "team", "region", "from", "to"])) {
+    return defaultCustomerFilters();
+  }
+  return loadSessionFilters<PersistedCustomerFilters>(FILTER_SESSION_KEYS.customers) ?? defaultCustomerFilters();
 }
 
 export default function Customers() {
@@ -165,15 +206,24 @@ export default function Customers() {
   const scope = getScope(me.role, "customers");
   const visible = visibleWithScope(scope, me, customers);
 
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<CustomerStatus | "all">("all");
-  const [regionFilter, setRegionFilter] = useState<string>("all");
-  const [assignedToFilter, setAssignedToFilter] = useState<string>("all");
-  const [teamQueryFilter, setTeamQueryFilter] = useState<string>("all");
-  const [industryFilter, setIndustryFilter] = useState<string>("all");
-  const [tagsFilter, setTagsFilter] = useState<string>("");
-  const [dateFrom, setDateFrom] = useState<string>(() => currentMonthYmd().from);
-  const [dateTo, setDateTo] = useState<string>(() => currentMonthYmd().to);
+  const initialCustomerFilters = useMemo(
+    () => loadInitialCustomerFilters(searchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- restore session once on mount
+    [],
+  );
+  const defaultFilters = defaultCustomerFilters();
+
+  const [search, setSearch] = useState(() => initialCustomerFilters.search);
+  const [statusFilter, setStatusFilter] = useState<CustomerStatus | "all">(
+    () => initialCustomerFilters.statusFilter,
+  );
+  const [regionFilter, setRegionFilter] = useState<string>(() => initialCustomerFilters.regionFilter);
+  const [assignedToFilter, setAssignedToFilter] = useState<string>(() => initialCustomerFilters.assignedToFilter);
+  const [teamQueryFilter, setTeamQueryFilter] = useState<string>(() => initialCustomerFilters.teamQueryFilter);
+  const [industryFilter, setIndustryFilter] = useState<string>(() => initialCustomerFilters.industryFilter);
+  const [tagsFilter, setTagsFilter] = useState<string>(() => initialCustomerFilters.tagsFilter);
+  const [dateFrom, setDateFrom] = useState<string>(() => initialCustomerFilters.dateFrom);
+  const [dateTo, setDateTo] = useState<string>(() => initialCustomerFilters.dateTo);
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
@@ -204,6 +254,46 @@ export default function Customers() {
     if (from) setDateFrom(from);
     if (to) setDateTo(to);
   }, [searchParams]);
+
+  useEffect(() => {
+    saveSessionFilters(FILTER_SESSION_KEYS.customers, {
+      search,
+      statusFilter,
+      regionFilter,
+      assignedToFilter,
+      teamQueryFilter,
+      industryFilter,
+      tagsFilter,
+      dateFrom,
+      dateTo,
+    });
+  }, [search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, industryFilter, tagsFilter, dateFrom, dateTo]);
+
+  const hasActiveAppliedFilters =
+    search !== "" ||
+    statusFilter !== "all" ||
+    regionFilter !== "all" ||
+    assignedToFilter !== "all" ||
+    teamQueryFilter !== "all" ||
+    industryFilter !== "all" ||
+    tagsFilter !== "" ||
+    dateFrom !== defaultFilters.dateFrom ||
+    dateTo !== defaultFilters.dateTo;
+
+  const clearFilters = () => {
+    const next = defaultCustomerFilters();
+    setSearch(next.search);
+    setStatusFilter(next.statusFilter);
+    setRegionFilter(next.regionFilter);
+    setAssignedToFilter(next.assignedToFilter);
+    setTeamQueryFilter(next.teamQueryFilter);
+    setIndustryFilter(next.industryFilter);
+    setTagsFilter(next.tagsFilter);
+    setDateFrom(next.dateFrom);
+    setDateTo(next.dateTo);
+    setPage(1);
+    clearSessionFilters(FILTER_SESSION_KEYS.customers);
+  };
   const persistView = (mode: "table" | "card") => {
     setViewMode(mode);
     localStorage.setItem(VIEW_STORAGE_KEY, mode);
@@ -570,6 +660,16 @@ export default function Customers() {
                         <FileDown className="mr-1.5 h-4 w-4" /> Export
                       </Button>
                     )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9"
+                      disabled={!hasActiveAppliedFilters}
+                      onClick={clearFilters}
+                    >
+                      Clear
+                    </Button>
                   </div>
                 </div>
               </FilterPanel>

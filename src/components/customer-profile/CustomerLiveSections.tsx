@@ -34,7 +34,9 @@ import {
   useUpdateDealStage,
 } from "@/hooks/useWorkflow";
 
-const DEFAULT_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"];
+import { DEFAULT_SALES_STAGES, dealStageLabel, normalizeDealStage } from "@/lib/dealStage";
+
+const DEFAULT_STAGES = [...DEFAULT_SALES_STAGES];
 
 type PaymentSummary = {
   decision: unknown;
@@ -258,7 +260,10 @@ export function CustomerDealsLiveTable({
   }, [data, dealIdAllowlist]);
 
   const stageOptions = useMemo(() => {
-    const s = new Set([...DEFAULT_STAGES, ...filteredDeals.map((d) => d.stage)]);
+    const s = new Set([
+      ...DEFAULT_STAGES,
+      ...filteredDeals.map((d) => normalizeDealStage(d.stage)),
+    ]);
     return Array.from(s);
   }, [filteredDeals]);
 
@@ -293,7 +298,7 @@ export function CustomerDealsLiveTable({
               <TableCell>
                 {canUpdate && !d.locked ? (
                   <Select
-                    value={d.stage}
+                    value={normalizeDealStage(d.stage)}
                     disabled={updateStage.isPending}
                     onValueChange={(v) =>
                       updateStage.mutate({
@@ -309,14 +314,14 @@ export function CustomerDealsLiveTable({
                     <SelectContent>
                       {stageOptions.map((s) => (
                         <SelectItem key={s} value={s} className="text-xs">
-                          {s}
+                          {dealStageLabel(s)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 ) : (
                   <Badge variant="outline" className="text-[10px]">
-                    {d.stage}
+                    {dealStageLabel(d.stage)}
                   </Badge>
                 )}
               </TableCell>
@@ -389,7 +394,7 @@ export function CustomerActivityLiveFeed({
       rows.push({
         id: `d-${d.id}`,
         label: `Deal ${d.id}`,
-        sub: `${d.name} — ${normalizeDealStatus(d.dealStatus)} · ${d.stage}`,
+        sub: `${d.name} — ${normalizeDealStatus(d.dealStatus)} · ${dealStageLabel(d.stage)}`,
         at: d.updatedAt || d.lastActivityAt || "",
         kind: "deal",
       });

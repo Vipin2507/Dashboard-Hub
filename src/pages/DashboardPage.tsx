@@ -50,16 +50,40 @@ import {
 } from 'recharts';
 import { format, formatDistanceToNow } from 'date-fns';
 import { currentMonthDateRange } from '@/lib/dateRange';
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  loadSessionFilters,
+  saveSessionFilters,
+} from '@/lib/filterSessionPersistence';
 import { FilterPanel } from '@/components/FilterPanel';
 import type { ProposalStatus } from '@/types';
 import { normalizeDealStatus } from '@/lib/dealStatus';
 import { cn } from '@/lib/utils';
 import { useSmUp } from '@/hooks/useSmUp';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
-import { Datepicker } from '@/components/ui/datepicker';
+import { Datepicker, ymdToDate } from '@/components/ui/datepicker';
 import { toast } from '@/components/ui/use-toast';
 
 const BUILDESK_BLUE = '#0072BC';
+
+type PersistedDashboardFilters = {
+  dateFrom: string;
+  dateTo: string;
+  ownerFilter: string;
+  teamFilter: string;
+  regionFilter: string;
+  proposalStatusFilter: ProposalStatus | 'all';
+};
+
+function loadDashboardFilters(): PersistedDashboardFilters | null {
+  return loadSessionFilters<PersistedDashboardFilters>(FILTER_SESSION_KEYS.dashboard);
+}
+
+function dateRangeFromPersisted(saved: PersistedDashboardFilters | null): [Date | null, Date | null] {
+  if (!saved?.dateFrom || !saved?.dateTo) return currentMonthDateRange();
+  return [ymdToDate(saved.dateFrom), ymdToDate(saved.dateTo)];
+}
 
 type DashboardKpiCardProps = {
   label: string;
@@ -175,19 +199,29 @@ export default function DashboardPage() {
   const revenueBarSize = smUp ? 32 : 20;
   const axisTickX = smUp ? 12 : 10;
   const yAxisWidth = smUp ? 56 : 40;
+  const persistedDashboardFilters = useMemo(() => loadDashboardFilters(), []);
+
   // Applied filters (used by all sections) — default: current calendar month
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>(() => currentMonthDateRange());
-  const [ownerFilter, setOwnerFilter] = useState('all');
-  const [teamFilter, setTeamFilter] = useState('all');
-  const [regionFilter, setRegionFilter] = useState('all');
-  const [proposalStatusFilter, setProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>(() =>
+    dateRangeFromPersisted(persistedDashboardFilters),
+  );
+  const [ownerFilter, setOwnerFilter] = useState(() => persistedDashboardFilters?.ownerFilter ?? 'all');
+  const [teamFilter, setTeamFilter] = useState(() => persistedDashboardFilters?.teamFilter ?? 'all');
+  const [regionFilter, setRegionFilter] = useState(() => persistedDashboardFilters?.regionFilter ?? 'all');
+  const [proposalStatusFilter, setProposalStatusFilter] = useState<ProposalStatus | 'all'>(
+    () => persistedDashboardFilters?.proposalStatusFilter ?? 'all',
+  );
 
   // Draft filters (edit here, then click Apply)
-  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>(() => currentMonthDateRange());
-  const [draftOwnerFilter, setDraftOwnerFilter] = useState('all');
-  const [draftTeamFilter, setDraftTeamFilter] = useState('all');
-  const [draftRegionFilter, setDraftRegionFilter] = useState('all');
-  const [draftProposalStatusFilter, setDraftProposalStatusFilter] = useState<ProposalStatus | 'all'>('all');
+  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>(() =>
+    dateRangeFromPersisted(persistedDashboardFilters),
+  );
+  const [draftOwnerFilter, setDraftOwnerFilter] = useState(() => persistedDashboardFilters?.ownerFilter ?? 'all');
+  const [draftTeamFilter, setDraftTeamFilter] = useState(() => persistedDashboardFilters?.teamFilter ?? 'all');
+  const [draftRegionFilter, setDraftRegionFilter] = useState(() => persistedDashboardFilters?.regionFilter ?? 'all');
+  const [draftProposalStatusFilter, setDraftProposalStatusFilter] = useState<ProposalStatus | 'all'>(
+    () => persistedDashboardFilters?.proposalStatusFilter ?? 'all',
+  );
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState('');
   const [detailRows, setDetailRows] = useState<Array<{ key: string; label: string; value: string }>>([]);
@@ -204,12 +238,29 @@ export default function DashboardPage() {
     draftRegionFilter !== regionFilter ||
     draftProposalStatusFilter !== proposalStatusFilter;
 
+  const monthDefaultRange = currentMonthDateRange();
+  const hasActiveAppliedFilters =
+    ownerFilter !== 'all' ||
+    teamFilter !== 'all' ||
+    regionFilter !== 'all' ||
+    proposalStatusFilter !== 'all' ||
+    dateRange[0]?.getTime() !== monthDefaultRange[0].getTime() ||
+    dateRange[1]?.getTime() !== monthDefaultRange[1].getTime();
+
   const applyFilters = () => {
     setDateRange(draftDateRange);
     setOwnerFilter(draftOwnerFilter);
     setTeamFilter(draftTeamFilter);
     setRegionFilter(draftRegionFilter);
     setProposalStatusFilter(draftProposalStatusFilter);
+    saveSessionFilters(FILTER_SESSION_KEYS.dashboard, {
+      dateFrom: draftDateRange[0] ? format(draftDateRange[0], 'yyyy-MM-dd') : '',
+      dateTo: draftDateRange[1] ? format(draftDateRange[1], 'yyyy-MM-dd') : '',
+      ownerFilter: draftOwnerFilter,
+      teamFilter: draftTeamFilter,
+      regionFilter: draftRegionFilter,
+      proposalStatusFilter: draftProposalStatusFilter,
+    });
   };
 
   const clearFilters = () => {
@@ -225,6 +276,7 @@ export default function DashboardPage() {
     setTeamFilter('all');
     setRegionFilter('all');
     setProposalStatusFilter('all');
+    clearSessionFilters(FILTER_SESSION_KEYS.dashboard);
   };
 
   const ownerMeta = useMemo(() => {
@@ -637,6 +689,7 @@ export default function DashboardPage() {
                 <Button
                   variant="outline"
                   className="h-9"
+                  disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
                   onClick={clearFilters}
                 >
                   Clear Filters

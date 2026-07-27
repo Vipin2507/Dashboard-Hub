@@ -1021,7 +1021,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ownerUserId: proposal.assignedTo,
       teamId: proposal.teamId,
       regionId: proposal.regionId,
-      stage: 'Qualified',
+      stage: 'Won',
       value,
       locked: true,
       proposalId,

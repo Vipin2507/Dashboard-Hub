@@ -16,6 +16,11 @@ import {
   type DealPipelineStatus,
 } from "@/lib/dealStatus";
 import {
+  DEFAULT_SALES_STAGES,
+  dealStageLabel,
+  normalizeDealStage,
+} from "@/lib/dealStage";
+import {
   checkDealFollowUpReminders,
   sendDealInvoiceN8n,
   triggerAutomation,
@@ -78,6 +83,12 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { FilterPanel } from "@/components/FilterPanel";
+import {
+  FILTER_SESSION_KEYS,
+  clearSessionFilters,
+  loadSessionFilters,
+  saveSessionFilters,
+} from "@/lib/filterSessionPersistence";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
 import { generateEstimatePdf, generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
@@ -162,11 +173,34 @@ function formatShortDate(iso: string | null | undefined) {
   }
 }
 
-const DEFAULT_SALES_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"];
+type PersistedDealFilters = {
+  search: string;
+  stageFilter: string;
+  statusFilter: "all" | DealPipelineStatus;
+  ownerFilter: string;
+  teamFilter: string;
+  regionFilter: string;
+  timeRangeFilter: string;
+  customFrom: string | null;
+  customTo: string | null;
+};
 
-const DASHBOARD_STAGES = DEFAULT_SALES_STAGES.slice(0, 3);
+function loadPersistedDealFilters(): PersistedDealFilters | null {
+  return loadSessionFilters<PersistedDealFilters>(FILTER_SESSION_KEYS.deals);
+}
+
+function persistDealFilters(filters: PersistedDealFilters) {
+  saveSessionFilters(FILTER_SESSION_KEYS.deals, filters);
+}
+
+function clearPersistedDealFilters() {
+  clearSessionFilters(FILTER_SESSION_KEYS.deals);
+}
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const;
+
+/** First three pipeline stages shown on the deals mini-dashboard cards. */
+const DASHBOARD_STAGES = DEFAULT_SALES_STAGES.slice(0, 3);
 
 type StageVisual = { key: string; label: string; pillColor: string; dotColor: string };
 
@@ -178,8 +212,8 @@ const DEAL_STAGE_VISUAL: StageVisual[] = [
     dotColor: "bg-slate-400",
   },
   {
-    key: "Qualified",
-    label: "Qualified",
+    key: "Won",
+    label: "Won",
     pillColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
     dotColor: "bg-blue-500",
   },
@@ -211,13 +245,15 @@ function dealStatusLabel(s: string) {
 
 function stagePillClass(stage: string) {
   return (
-    DEAL_STAGE_VISUAL.find((s) => s.key === stage)?.pillColor ??
+    DEAL_STAGE_VISUAL.find((s) => s.key === normalizeDealStage(stage))?.pillColor ??
     "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
   );
 }
 
 function stageDotClass(stage: string) {
-  return DEAL_STAGE_VISUAL.find((s) => s.key === stage)?.dotColor ?? "bg-gray-400";
+  return (
+    DEAL_STAGE_VISUAL.find((s) => s.key === normalizeDealStage(stage))?.dotColor ?? "bg-gray-400"
+  );
 }
 
 function formatDealListDate(iso: string | null | undefined) {
@@ -364,15 +400,16 @@ function isFollowUpOverdue(iso: string | null | undefined) {
 }
 
 function DealStageBadge({ stage }: { stage: string }) {
+  const label = dealStageLabel(stage);
   return (
     <span
       className={cn(
         "inline-flex max-w-[140px] truncate text-xs font-medium px-2 py-0.5 rounded-full",
         stagePillClass(stage),
       )}
-      title={stage}
+      title={label}
     >
-      {stage}
+      {label}
     </span>
   );
 }
@@ -390,9 +427,11 @@ function DealStageSelector({
   pending: boolean;
   onStageChange: (deal: Deal, stage: string) => void;
 }) {
+  const normalizedOptions = Array.from(new Set(options.map((s) => normalizeDealStage(s))));
+  const value = normalizeDealStage(deal.stage);
   return (
     <Select
-      value={deal.stage}
+      value={normalizedOptions.includes(value) ? value : value}
       disabled={disabled || pending}
       onValueChange={(v) => onStageChange(deal, v)}
     >
@@ -400,9 +439,9 @@ function DealStageSelector({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {options.map((s) => (
+        {normalizedOptions.map((s) => (
           <SelectItem key={s} value={s} className="text-xs">
-            {s}
+            {dealStageLabel(s)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -437,23 +476,47 @@ export default function DealsPage() {
   const canUpdateDeal = canEditDeal(me.role);
   const canRemoveDeal = canDeleteDeal(me.role);
 
-  const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | DealPipelineStatus>("all");
-  const [ownerFilter, setOwnerFilter] = useState("all");
-  const [teamFilter, setTeamFilter] = useState("all");
-  const [regionFilter, setRegionFilter] = useState("all");
-  const [timeRangeFilter, setTimeRangeFilter] = useState("this_month");
-  const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const persistedFilters = useMemo(() => loadPersistedDealFilters(), []);
+
+  const [search, setSearch] = useState(() => persistedFilters?.search ?? "");
+  const [stageFilter, setStageFilter] = useState(() =>
+    !persistedFilters?.stageFilter || persistedFilters.stageFilter === "all"
+      ? "all"
+      : normalizeDealStage(persistedFilters.stageFilter),
+  );
+  const [statusFilter, setStatusFilter] = useState<"all" | DealPipelineStatus>(
+    () => persistedFilters?.statusFilter ?? "all",
+  );
+  const [ownerFilter, setOwnerFilter] = useState(() => persistedFilters?.ownerFilter ?? "all");
+  const [teamFilter, setTeamFilter] = useState(() => persistedFilters?.teamFilter ?? "all");
+  const [regionFilter, setRegionFilter] = useState(() => persistedFilters?.regionFilter ?? "all");
+  const [timeRangeFilter, setTimeRangeFilter] = useState(
+    () => persistedFilters?.timeRangeFilter ?? "this_month",
+  );
+  const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>(() => [
+    persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
+    persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
+  ]);
   // Draft filters (edit, then Apply)
-  const [draftSearch, setDraftSearch] = useState("");
-  const [draftStageFilter, setDraftStageFilter] = useState("all");
-  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DealPipelineStatus>("all");
-  const [draftOwnerFilter, setDraftOwnerFilter] = useState("all");
-  const [draftTeamFilter, setDraftTeamFilter] = useState("all");
-  const [draftRegionFilter, setDraftRegionFilter] = useState("all");
-  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState("this_month");
-  const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>([null, null]);
+  const [draftSearch, setDraftSearch] = useState(() => persistedFilters?.search ?? "");
+  const [draftStageFilter, setDraftStageFilter] = useState(() =>
+    !persistedFilters?.stageFilter || persistedFilters.stageFilter === "all"
+      ? "all"
+      : normalizeDealStage(persistedFilters.stageFilter),
+  );
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DealPipelineStatus>(
+    () => persistedFilters?.statusFilter ?? "all",
+  );
+  const [draftOwnerFilter, setDraftOwnerFilter] = useState(() => persistedFilters?.ownerFilter ?? "all");
+  const [draftTeamFilter, setDraftTeamFilter] = useState(() => persistedFilters?.teamFilter ?? "all");
+  const [draftRegionFilter, setDraftRegionFilter] = useState(() => persistedFilters?.regionFilter ?? "all");
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState(
+    () => persistedFilters?.timeRangeFilter ?? "this_month",
+  );
+  const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>(() => [
+    persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
+    persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
+  ]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
@@ -481,7 +544,7 @@ export default function DealsPage() {
   const [name, setName] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [ownerUserId, setOwnerUserId] = useState("");
-  const [stage, setStage] = useState("Qualified");
+  const [stage, setStage] = useState("Won");
   const [value, setValue] = useState("");
   const [locked, setLocked] = useState(false);
   const [proposalId, setProposalId] = useState("");
@@ -811,7 +874,7 @@ export default function DealsPage() {
     const team = searchParams.get("team");
     const region = searchParams.get("region");
     if (q) setSearch(q);
-    if (stage) setStageFilter(stage);
+    if (stage) setStageFilter(stage === "all" ? "all" : normalizeDealStage(stage));
     if (status && (DEAL_STATUSES as readonly string[]).includes(status)) setStatusFilter(status);
     if (owner) setOwnerFilter(owner);
     if (team) setTeamFilter(team);
@@ -841,7 +904,7 @@ export default function DealsPage() {
       setName("");
       setCustomerId(customers[0]?.id ?? "");
       setOwnerUserId(users[0]?.id ?? me.id);
-      setStage("Qualified");
+      setStage("Won");
       setValue("");
       setLocked(false);
       setProposalId("");
@@ -1090,7 +1153,7 @@ export default function DealsPage() {
           return false;
         }
       }
-      if (stageFilter !== "all" && d.stage !== stageFilter) return false;
+      if (stageFilter !== "all" && normalizeDealStage(d.stage) !== normalizeDealStage(stageFilter)) return false;
       if (statusFilter !== "all" && normalizeDealStatus(d.dealStatus) !== statusFilter) return false;
       if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
@@ -1170,12 +1233,12 @@ export default function DealsPage() {
   const totalValue = visible.reduce((s, d) => s + d.value, 0);
 
   const allStages = useMemo(() => {
-    const set = new Set(scopedActiveDeals.map((d) => d.stage));
+    const set = new Set(scopedActiveDeals.map((d) => normalizeDealStage(d.stage)));
     return Array.from(set);
   }, [scopedActiveDeals]);
 
   const stageSelectOptions = useMemo(() => {
-    return Array.from(new Set([...DEFAULT_SALES_STAGES, ...allStages]));
+    return Array.from(new Set([...DEFAULT_SALES_STAGES, ...allStages].map((s) => normalizeDealStage(s))));
   }, [allStages]);
 
   const activeDealsCount = useMemo(
@@ -1206,7 +1269,8 @@ export default function DealsPage() {
   const stageCounts = useMemo(() => {
     const o: Record<string, number> = {};
     visible.forEach((d) => {
-      o[d.stage] = (o[d.stage] ?? 0) + 1;
+      const key = normalizeDealStage(d.stage);
+      o[key] = (o[key] ?? 0) + 1;
     });
     return o;
   }, [visible]);
@@ -1214,17 +1278,30 @@ export default function DealsPage() {
   const stageValues = useMemo(() => {
     const o: Record<string, number> = {};
     visible.forEach((d) => {
-      o[d.stage] = (o[d.stage] ?? 0) + d.value;
+      const key = normalizeDealStage(d.stage);
+      o[key] = (o[key] ?? 0) + d.value;
     });
     return o;
   }, [visible]);
 
   const setStatusFilterAndUrl = (s: "all" | DealPipelineStatus) => {
     setStatusFilter(s);
+    setDraftStatusFilter(s);
     const next = new URLSearchParams(searchParams);
     if (s === "all") next.delete("status");
     else next.set("status", s);
     setSearchParams(next, { replace: true });
+    persistDealFilters({
+      search,
+      stageFilter,
+      statusFilter: s,
+      ownerFilter,
+      teamFilter,
+      regionFilter,
+      timeRangeFilter,
+      customFrom: customDateRange[0] ? dateToYmd(customDateRange[0]) : null,
+      customTo: customDateRange[1] ? dateToYmd(customDateRange[1]) : null,
+    });
   };
 
   useEffect(() => {
@@ -1238,6 +1315,17 @@ export default function DealsPage() {
     setDraftCustomDateRange(customDateRange);
   }, [search, stageFilter, statusFilter, ownerFilter, teamFilter, regionFilter, timeRangeFilter, customDateRange]);
 
+  const hasActiveAppliedFilters =
+    search !== "" ||
+    stageFilter !== "all" ||
+    statusFilter !== "all" ||
+    ownerFilter !== "all" ||
+    teamFilter !== "all" ||
+    regionFilter !== "all" ||
+    timeRangeFilter !== "this_month" ||
+    customDateRange[0] != null ||
+    customDateRange[1] != null;
+
   const hasPendingFilterChanges =
     draftSearch !== search ||
     draftStageFilter !== stageFilter ||
@@ -1250,14 +1338,27 @@ export default function DealsPage() {
     draftCustomDateRange[1] !== customDateRange[1];
 
   const applyFilters = () => {
+    const nextStage =
+      draftStageFilter === "all" ? "all" : normalizeDealStage(draftStageFilter);
     setSearch(draftSearch);
-    setStageFilter(draftStageFilter);
+    setStageFilter(nextStage);
     setStatusFilterAndUrl(draftStatusFilter);
     setOwnerFilter(draftOwnerFilter);
     setTeamFilter(draftTeamFilter);
     setRegionFilter(draftRegionFilter);
     setTimeRangeFilter(draftTimeRangeFilter);
     setCustomDateRange(draftCustomDateRange);
+    persistDealFilters({
+      search: draftSearch,
+      stageFilter: nextStage,
+      statusFilter: draftStatusFilter,
+      ownerFilter: draftOwnerFilter,
+      teamFilter: draftTeamFilter,
+      regionFilter: draftRegionFilter,
+      timeRangeFilter: draftTimeRangeFilter,
+      customFrom: draftCustomDateRange[0] ? dateToYmd(draftCustomDateRange[0]) : null,
+      customTo: draftCustomDateRange[1] ? dateToYmd(draftCustomDateRange[1]) : null,
+    });
   };
 
   const clearFilters = () => {
@@ -1277,6 +1378,7 @@ export default function DealsPage() {
     setRegionFilter("all");
     setTimeRangeFilter("this_month");
     setCustomDateRange([null, null]);
+    clearPersistedDealFilters();
   };
 
   const openPaymentPlanDialog = useCallback(() => {
@@ -1637,9 +1739,9 @@ export default function DealsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All stages</SelectItem>
-                    {allStages.map((s) => (
+                    {stageSelectOptions.map((s) => (
                       <SelectItem key={s} value={s}>
-                        {s}
+                        {dealStageLabel(s)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1776,7 +1878,7 @@ export default function DealsPage() {
                   variant="outline"
                   className="h-9 w-[140px]"
                   onClick={clearFilters}
-                  disabled={!hasPendingFilterChanges}
+                  disabled={!hasPendingFilterChanges && !hasActiveAppliedFilters}
                 >
                   Clear
                 </Button>
@@ -1847,9 +1949,11 @@ export default function DealsPage() {
                   <div className="flex items-center justify-between mb-3 gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", stageDotClass(stage))} />
-                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">{stage}</span>
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">
+                        {dealStageLabel(stage)}
+                      </span>
                       <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full shrink-0 tabular-nums">
-                        {visible.filter((d) => d.stage === stage).length}
+                        {visible.filter((d) => normalizeDealStage(d.stage) === stage).length}
                       </span>
                     </div>
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
@@ -1858,7 +1962,7 @@ export default function DealsPage() {
                   </div>
                   <div className="space-y-3">
                     {visible
-                      .filter((d) => d.stage === stage)
+                      .filter((d) => normalizeDealStage(d.stage) === stage)
                       .map((deal) => {
                         const custObj = customers.find((c) => c.id === deal.customerId);
                         const comp = custObj?.companyName || custObj?.customerName || "—";
@@ -1938,7 +2042,7 @@ export default function DealsPage() {
               style={{ scrollbarGutter: "stable" }}
               onScroll={() => syncListHScroll("bottom")}
             >
-              <table className="w-full min-w-[1320px]">
+              <table className="w-full min-w-[1480px]">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
                     {[
@@ -1946,6 +2050,7 @@ export default function DealsPage() {
                       "Deal Date",
                       "Deal #",
                       "Customer Name",
+                      "Owner",
                       "Total",
                       "Tax Amount",
                       "Amount Without Tax",
@@ -1959,7 +2064,12 @@ export default function DealsPage() {
                         key={h}
                         className={cn(
                           "px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide",
-                          (h === "Customer Name" || h === "Deal #" || h === "Place of Supply" || h === "Service") && "text-left",
+                          (h === "Customer Name" ||
+                            h === "Deal #" ||
+                            h === "Owner" ||
+                            h === "Place of Supply" ||
+                            h === "Service") &&
+                            "text-left",
                           (h === "Total" ||
                             h === "Tax Amount" ||
                             h === "Amount Without Tax" ||
@@ -1969,6 +2079,7 @@ export default function DealsPage() {
                           // Keep columns visible; use horizontal scroll instead of hiding.
                           (h === "Deal Date" ||
                             h === "Deal #" ||
+                            h === "Owner" ||
                             h === "Total" ||
                             h === "Tax Amount" ||
                             h === "Amount Without Tax" ||
@@ -2038,6 +2149,9 @@ export default function DealsPage() {
                               <div className="text-xs text-gray-500 dark:text-gray-400">{cust}</div>
                             </div>
                           )}
+                        </td>
+                        <td className="px-4 py-3.5 text-sm whitespace-nowrap">
+                          {users.find((u) => u.id === deal.ownerUserId)?.name ?? "—"}
                         </td>
                         <td className="px-4 py-3.5 text-right tabular-nums text-sm font-semibold text-gray-900 dark:text-gray-100">
                           {(() => {
@@ -2407,7 +2521,7 @@ export default function DealsPage() {
                   <Input
                     value={stage}
                     onChange={(e) => setStage(e.target.value)}
-                    placeholder="Qualified"
+                    placeholder="Won"
                     disabled={sheetMode === "view"}
                   />
                 </div>
