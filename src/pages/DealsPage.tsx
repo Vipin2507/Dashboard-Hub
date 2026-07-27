@@ -215,8 +215,8 @@ const DEAL_STAGE_VISUAL: StageVisual[] = [
     dotColor: "bg-slate-400",
   },
   {
-    key: "Won",
-    label: "Won",
+    key: "Qualified",
+    label: "Qualified",
     pillColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
     dotColor: "bg-blue-500",
   },
@@ -2622,7 +2622,7 @@ export default function DealsPage() {
                   <Input
                     value={stage}
                     onChange={(e) => setStage(e.target.value)}
-                    placeholder="Won"
+                    placeholder="Qualified"
                     disabled={sheetMode === "view"}
                   />
                 </div>

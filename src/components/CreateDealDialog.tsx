@@ -78,7 +78,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
   const [regionId, setRegionId] = useState(proposal?.regionId ?? "");
   const [stage, setStage] = useState("Prospecting");
 
-  const DEAL_STAGES = ["Won", "Proposal", "Negotiation", "Closing", "Lost"] as const;
+  const DEAL_STAGES = ["Prospecting", "Qualified", "Proposal", "Negotiation", "Closing"] as const;
 
   type EstimateItem = {
     id: string;

@@ -1231,11 +1231,11 @@ app.post("/api/deals/bulk", (req, res) => {
   res.status(201).json({ created: created.length, skipped, deals: created });
 });
 
-/** Normalize pipeline stage labels (legacy Qualified → Won). */
+/** Normalize pipeline stage labels (legacy Won stage → Qualified; avoid clash with Closed/Won status). */
 function normalizeDealStageLabel(stage) {
   const s = String(stage || "").trim();
   if (!s) return "";
-  if (s === "Qualified") return "Won";
+  if (s === "Won") return "Qualified";
   return s;
 }
 

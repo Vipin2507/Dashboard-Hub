@@ -21,6 +21,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { api } from "@/lib/api";
 import { dealStageLabel, normalizeDealStage } from "@/lib/dealStage";
+import { resolveDealPipelineStatus } from "@/lib/dealStatus";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal } from "@/types";
 
@@ -43,6 +44,19 @@ type Props = {
 };
 
 const ANY_STAGE = "__any__";
+
+function countBy<T extends string>(values: T[]): Map<T, number> {
+  const map = new Map<T, number>();
+  for (const v of values) map.set(v, (map.get(v) ?? 0) + 1);
+  return map;
+}
+
+function formatCountMap(map: Map<string, number>, labelFn: (k: string) => string = (k) => k): string {
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([k, n]) => `${labelFn(k)} (${n})`)
+    .join(", ");
+}
 
 function stageCounts(list: Deal[]): Map<string, number> {
   const map = new Map<string, number>();
@@ -87,11 +101,29 @@ export function BulkUpdateDealStageDialog({
   const hasSelection = selectedIds.length > 0;
   const [mode, setMode] = useState<"selected" | "by_stage">("by_stage");
   const [fromStage, setFromStage] = useState<string>(ANY_STAGE);
-  const [toStage, setToStage] = useState<string>(options[0] ?? "Won");
+  const [toStage, setToStage] = useState<string>(options[0] ?? "Qualified");
 
   const counts = useMemo(() => stageCounts(deals), [deals]);
 
-  // Reset defaults whenever the dialog opens so From is visible and points at an active stage.
+  const selectedDeals = useMemo(() => {
+    if (!hasSelection) return [] as Deal[];
+    const idSet = new Set(selectedIds);
+    return deals.filter((d) => idSet.has(d.id));
+  }, [deals, hasSelection, selectedIds]);
+
+  const selectedStatusSummary = useMemo(() => {
+    const map = countBy(
+      selectedDeals.map((d) => resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus)),
+    );
+    return formatCountMap(map);
+  }, [selectedDeals]);
+
+  const selectedStageSummary = useMemo(() => {
+    const map = countBy(selectedDeals.map((d) => normalizeDealStage(d.stage)));
+    return formatCountMap(map, dealStageLabel);
+  }, [selectedDeals]);
+
+  // Reset defaults whenever the dialog opens.
   useEffect(() => {
     if (!open) return;
     const nextMode = hasSelection ? "selected" : "by_stage";
@@ -99,7 +131,7 @@ export function BulkUpdateDealStageDialog({
     const defaultFrom = pickDefaultFromStage(options, counts);
     setFromStage(nextMode === "selected" ? ANY_STAGE : defaultFrom);
     const toCandidate =
-      options.find((s) => s !== defaultFrom) ?? options[0] ?? "Won";
+      options.find((s) => s !== defaultFrom) ?? options[0] ?? "Qualified";
     setToStage(toCandidate);
   }, [open, hasSelection, options, counts]);
 
@@ -149,7 +181,7 @@ export function BulkUpdateDealStageDialog({
       if (fromStage !== ANY_STAGE) {
         body.fromStage = normalizeDealStage(fromStage);
       } else if (mode !== "selected") {
-        throw new Error("Choose a From stage");
+        throw new Error("Choose a From pipeline stage");
       }
       return api.post<BulkStageResult>("/deals/bulk-stage", body);
     },
@@ -183,14 +215,31 @@ export function BulkUpdateDealStageDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ArrowRightLeft className="h-4 w-4" />
-            Bulk update stage
+            Bulk update pipeline stage
           </DialogTitle>
           <DialogDescription>
-            Move multiple deals from one pipeline stage to another. Locked deals are skipped.
+            Changes pipeline stage only (Prospecting, Qualified, Proposal…). Deal status
+            (Active, Closed/Won, …) is separate and is not changed here.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
+          {hasSelection && mode === "selected" && (
+            <div className="space-y-1 rounded-lg border border-blue-200/80 bg-blue-50/70 px-3 py-2.5 text-xs text-blue-950 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-100">
+              <p className="font-medium">{selectedDeals.length} selected deal{selectedDeals.length === 1 ? "" : "s"}</p>
+              {selectedStatusSummary ? (
+                <p>
+                  Status: <span className="font-medium">{selectedStatusSummary}</span>
+                </p>
+              ) : null}
+              {selectedStageSummary ? (
+                <p>
+                  Pipeline stage: <span className="font-medium">{selectedStageSummary}</span>
+                </p>
+              ) : null}
+            </div>
+          )}
+
           {hasSelection && (
             <div className="space-y-1.5">
               <Label className="text-xs">Scope</Label>
@@ -219,10 +268,10 @@ export function BulkUpdateDealStageDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label className="text-xs">From stage</Label>
+            <Label className="text-xs">From pipeline stage</Label>
             <Select value={fromStage} onValueChange={setFromStage}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="From stage" />
+                <SelectValue placeholder="From pipeline stage" />
               </SelectTrigger>
               <SelectContent>
                 {mode === "selected" && (
@@ -242,10 +291,10 @@ export function BulkUpdateDealStageDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">To stage</Label>
+            <Label className="text-xs">To pipeline stage</Label>
             <Select value={toStage} onValueChange={setToStage}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="To stage" />
+                <SelectValue placeholder="To pipeline stage" />
               </SelectTrigger>
               <SelectContent>
                 {options.map((s) => (
@@ -260,22 +309,13 @@ export function BulkUpdateDealStageDialog({
           <div className="space-y-1 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
             <p>
               <span className="font-medium text-foreground">{willUpdate}</span> deal
-              {willUpdate === 1 ? "" : "s"} will move to{" "}
+              {willUpdate === 1 ? "" : "s"} will move to pipeline stage{" "}
               <span className="font-medium text-foreground">{dealStageLabel(toStage)}</span>
             </p>
             {unchangedCount > 0 && <p>{unchangedCount} already in the target stage</p>}
             {lockedInScope > 0 && (
               <p>
                 {lockedInScope} locked deal{lockedInScope === 1 ? "" : "s"} will be skipped
-              </p>
-            )}
-            {fromStage !== ANY_STAGE && (
-              <p>
-                Matching deals currently in{" "}
-                <span className="font-medium text-foreground">{dealStageLabel(fromStage)}</span>
-                {(counts.get(normalizeDealStage(fromStage)) ?? 0) > 0
-                  ? ` (${counts.get(normalizeDealStage(fromStage))})`
-                  : ""}
               </p>
             )}
           </div>

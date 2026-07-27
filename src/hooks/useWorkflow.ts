@@ -218,7 +218,7 @@ export function useCreateDealFromProposal() {
         ownerUserId: proposal.assignedTo,
         teamId: proposal.teamId,
         regionId: proposal.regionId,
-        stage: "Won",
+        stage: "Qualified",
         value,
         locked: true,
         proposalId: proposal.id,
