@@ -1231,6 +1231,130 @@ app.post("/api/deals/bulk", (req, res) => {
   res.status(201).json({ created: created.length, skipped, deals: created });
 });
 
+/** Normalize pipeline stage labels (legacy Qualified → Won). */
+function normalizeDealStageLabel(stage) {
+  const s = String(stage || "").trim();
+  if (!s) return "";
+  if (s === "Qualified") return "Won";
+  return s;
+}
+
+/**
+ * Bulk-move deals from one pipeline stage to another (or update selected IDs).
+ * Body: { toStage, fromStage?, dealIds?, actorRole, actorUserId, actorTeamId, actorRegionId, changedByUserId, changedByName }
+ */
+app.post("/api/deals/bulk-stage", (req, res) => {
+  const body = req.body || {};
+  const {
+    actorRole,
+    actorUserId,
+    actorTeamId,
+    actorRegionId,
+    changedByUserId,
+    changedByName,
+    fromStage,
+    toStage,
+    dealIds,
+  } = body;
+
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+
+  if (
+    !canDealAction(normRole, "edit") &&
+    !canDealAction(normRole, "change_stage")
+  ) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const nextStage = normalizeDealStageLabel(toStage);
+  if (!nextStage) {
+    return res.status(400).json({ error: "toStage is required" });
+  }
+
+  const fromNormalized = fromStage ? normalizeDealStageLabel(fromStage) : null;
+  const idSet =
+    Array.isArray(dealIds) && dealIds.length > 0
+      ? new Set(dealIds.map((id) => String(id)))
+      : null;
+
+  if (!fromNormalized && !idSet) {
+    return res.status(400).json({ error: "Provide fromStage and/or dealIds" });
+  }
+
+  let rows = db
+    .prepare("SELECT * FROM deals WHERE deletedAt IS NULL")
+    .all()
+    .map(toDealResponse)
+    .filter((d) => dealInScopeFor(normRole, actor, d));
+
+  if (idSet) {
+    rows = rows.filter((d) => idSet.has(d.id));
+  }
+  if (fromNormalized) {
+    rows = rows.filter((d) => normalizeDealStageLabel(d.stage) === fromNormalized);
+  }
+
+  // Never overwrite locked deals in bulk.
+  const eligible = rows.filter((d) => !d.locked);
+  const skippedLocked = rows.length - eligible.length;
+
+  if (eligible.length === 0) {
+    return res.json({
+      updated: 0,
+      skippedLocked,
+      skippedUnchanged: 0,
+      deals: [],
+    });
+  }
+
+  const now = new Date().toISOString();
+  const updateStmt = db.prepare(`
+    UPDATE deals
+    SET stage = @stage, lastActivityAt = @now, updatedAt = @now
+    WHERE id = @id AND deletedAt IS NULL
+  `);
+
+  const updated = [];
+  let skippedUnchanged = 0;
+
+  const tx = db.transaction((list) => {
+    for (const d of list) {
+      const prev = normalizeDealStageLabel(d.stage);
+      if (prev === nextStage) {
+        skippedUnchanged += 1;
+        continue;
+      }
+      updateStmt.run({ id: d.id, stage: nextStage, now });
+      logDealAudit(
+        db,
+        d.id,
+        "deal_field_changed",
+        { field: "stage", oldValue: d.stage, newValue: nextStage, bulk: true },
+        changedByUserId,
+        changedByName,
+      );
+      const out = db.prepare("SELECT * FROM deals WHERE id = ?").get(d.id);
+      updated.push(toDealResponse(out));
+    }
+  });
+
+  tx(eligible);
+  if (updated.length > 0) {
+    broadcast({ type: "change", entity: "deals", action: "bulk_stage_updated", count: updated.length });
+  }
+  res.json({
+    updated: updated.length,
+    skippedLocked,
+    skippedUnchanged,
+    deals: updated,
+  });
+});
+
 app.put("/api/deals/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM deals WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
