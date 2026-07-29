@@ -22,6 +22,7 @@ import {
   normalizeDealStage,
 } from "@/lib/dealStage";
 import { getDealDate, getDealDateForFilter } from "@/lib/dealDate";
+import { dealAmountsFromProposal, dealAmountsFromInclusiveTotal, dealNeedsTaxSplitFix } from "@/lib/dealAmountsFromProposal";
 import {
   checkDealFollowUpReminders,
   sendDealInvoiceN8n,
@@ -351,19 +352,50 @@ type EstimateJson = {
 
 function deriveDealFinanceFromEstimateOrProposal(deal: Deal, proposal: Proposal | undefined) {
   const est = safeParseJson<EstimateJson>((deal as any).estimateJson);
+  const dealWithout =
+    deal.amountWithoutTax != null && Number.isFinite(Number(deal.amountWithoutTax))
+      ? Number(deal.amountWithoutTax)
+      : undefined;
+  const dealTax =
+    deal.taxAmount != null && Number.isFinite(Number(deal.taxAmount)) ? Number(deal.taxAmount) : undefined;
+  // Legacy deals from proposals often stored only total with tax/without = 0 — fall back to proposal split.
+  const dealHasSplit =
+    (dealWithout != null && dealWithout > 0) || (dealTax != null && dealTax > 0);
+  const proposalSplit = proposal
+    ? dealAmountsFromProposal(
+        proposal,
+        deal.totalAmount != null && Number(deal.totalAmount) > 0
+          ? Number(deal.totalAmount)
+          : deal.value != null && Number(deal.value) > 0
+            ? Number(deal.value)
+            : undefined,
+      )
+    : null;
+
+  const estSub = est?.tax?.subTotal;
+  const estTax = est?.tax
+    ? Number(est.tax.cgstAmount ?? 0) + Number(est.tax.sgstAmount ?? 0) + Number(est.tax.igstAmount ?? 0)
+    : undefined;
+
   const subTotal =
-    est?.tax?.subTotal ??
-    (deal.amountWithoutTax != null && Number.isFinite(Number(deal.amountWithoutTax)) ? Number(deal.amountWithoutTax) : undefined) ??
-    (proposal?.subtotal ?? undefined);
-  const taxAmount =
-    (est?.tax
-      ? Number(est.tax.cgstAmount ?? 0) + Number(est.tax.sgstAmount ?? 0) + Number(est.tax.igstAmount ?? 0)
+    (estSub != null && Number(estSub) > 0 ? Number(estSub) : undefined) ??
+    (dealHasSplit ? dealWithout : undefined) ??
+    (proposalSplit && (proposalSplit.amountWithoutTax > 0 || proposalSplit.taxAmount > 0)
+      ? proposalSplit.amountWithoutTax
       : undefined) ??
-    (deal.taxAmount != null && Number.isFinite(Number(deal.taxAmount)) ? Number(deal.taxAmount) : undefined) ??
-    (proposal?.totalTax ?? undefined);
+    dealWithout;
+  const taxAmount =
+    (estTax != null && estTax > 0 ? estTax : undefined) ??
+    (dealHasSplit ? dealTax : undefined) ??
+    (proposalSplit && (proposalSplit.amountWithoutTax > 0 || proposalSplit.taxAmount > 0)
+      ? proposalSplit.taxAmount
+      : undefined) ??
+    dealTax;
   const totalAmount =
     est?.tax?.total ??
-    (deal.totalAmount != null && Number.isFinite(Number(deal.totalAmount)) ? Number(deal.totalAmount) : undefined) ??
+    (deal.totalAmount != null && Number.isFinite(Number(deal.totalAmount)) && Number(deal.totalAmount) > 0
+      ? Number(deal.totalAmount)
+      : undefined) ??
     (proposal ? (proposal.finalQuoteValue ?? proposal.grandTotal) : undefined) ??
     (deal.value ?? undefined);
   const placeOfSupply = est?.billTo?.placeOfSupply ?? (deal.placeOfSupply ?? undefined) ?? undefined;
@@ -550,6 +582,9 @@ export default function DealsPage() {
   const [ownerUserId, setOwnerUserId] = useState("");
   const [stage, setStage] = useState("Prospecting");
   const [value, setValue] = useState("");
+  const [amountWithoutTax, setAmountWithoutTax] = useState("");
+  const [taxAmount, setTaxAmount] = useState("");
+  const [fixGstRate, setFixGstRate] = useState("18");
   const [locked, setLocked] = useState(false);
   const [proposalId, setProposalId] = useState("");
   const [dealStatus, setDealStatus] = useState<DealPipelineStatus>("Active");
@@ -893,6 +928,22 @@ export default function DealsPage() {
       setOwnerUserId(sheetDeal.ownerUserId);
       setStage(sheetDeal.stage);
       setValue(String(sheetDeal.value));
+      {
+        const linked = sheetDeal.proposalId
+          ? proposals.find((p) => p.id === sheetDeal.proposalId)
+          : undefined;
+        const finance = deriveDealFinanceFromEstimateOrProposal(sheetDeal, linked);
+        setAmountWithoutTax(
+          finance.subTotal != null && Number.isFinite(finance.subTotal) ? String(finance.subTotal) : "",
+        );
+        setTaxAmount(
+          finance.taxAmount != null && Number.isFinite(finance.taxAmount) ? String(finance.taxAmount) : "",
+        );
+        if (finance.totalAmount != null && Number.isFinite(finance.totalAmount) && finance.totalAmount > 0) {
+          setValue(String(finance.totalAmount));
+        }
+      }
+      setFixGstRate("18");
       setLocked(sheetDeal.locked);
       setProposalId(sheetDeal.proposalId ?? "");
       setDealStatus(normalizeDealStatus(sheetDeal.dealStatus));
@@ -910,6 +961,9 @@ export default function DealsPage() {
       setOwnerUserId(users[0]?.id ?? me.id);
       setStage("Prospecting");
       setValue("");
+      setAmountWithoutTax("");
+      setTaxAmount("");
+      setFixGstRate("18");
       setLocked(false);
       setProposalId("");
       setDealStatus("Active");
@@ -920,7 +974,7 @@ export default function DealsPage() {
       setContactPhone("");
       setRemarks("");
     }
-  }, [sheetOpen, sheetMode, sheetDeal?.id, customers, users, me.id]);
+  }, [sheetOpen, sheetMode, sheetDeal?.id, customers, users, me.id, proposals]);
 
   const createMutation = useMutation({
     mutationFn: async (deal: Deal) => {
@@ -1499,6 +1553,15 @@ export default function DealsPage() {
       regionId: owner?.regionId ?? me.regionId,
       stage,
       value: parsedValue,
+      totalAmount: parsedValue,
+      taxAmount: (() => {
+        const n = Number(taxAmount);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+      })(),
+      amountWithoutTax: (() => {
+        const n = Number(amountWithoutTax);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+      })(),
       locked,
       proposalId: proposalId.trim() ? proposalId.trim() : null,
       dealStatus,
@@ -2628,6 +2691,133 @@ export default function DealsPage() {
                     placeholder="+91…"
                     disabled={sheetMode === "view"}
                   />
+                </div>
+                <div className="col-span-2 space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Tax split</p>
+                      <p className="text-xs text-muted-foreground">
+                        Amount without tax + tax should equal deal value (incl. GST).
+                      </p>
+                    </div>
+                    {sheetMode !== "view" &&
+                      dealNeedsTaxSplitFix({
+                        value: Number(value) || 0,
+                        totalAmount: Number(value) || 0,
+                        taxAmount: Number(taxAmount) || 0,
+                        amountWithoutTax: Number(amountWithoutTax) || 0,
+                      }) && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:text-amber-200">
+                          <AlertTriangle className="h-3 w-3" />
+                          Needs split
+                        </span>
+                      )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Amount without tax (₹)</Label>
+                      <Input
+                        type="number"
+                        value={amountWithoutTax}
+                        onChange={(e) => setAmountWithoutTax(e.target.value)}
+                        placeholder="0"
+                        disabled={sheetMode === "view"}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Tax amount (₹)</Label>
+                      <Input
+                        type="number"
+                        value={taxAmount}
+                        onChange={(e) => setTaxAmount(e.target.value)}
+                        placeholder="0"
+                        disabled={sheetMode === "view"}
+                      />
+                    </div>
+                  </div>
+                  {sheetMode !== "view" && (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                      <div className="space-y-1.5 w-full sm:w-28">
+                        <Label className="text-xs">GST %</Label>
+                        <Input
+                          type="number"
+                          value={fixGstRate}
+                          onChange={(e) => setFixGstRate(e.target.value)}
+                          placeholder="18"
+                          className="h-9"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        onClick={() => {
+                          const total = Number(value);
+                          if (!Number.isFinite(total) || total <= 0) {
+                            toast({
+                              title: "Deal value required",
+                              description: "Enter the total (incl. GST) first.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          const rate = Number(fixGstRate);
+                          const split = dealAmountsFromInclusiveTotal(total, Number.isFinite(rate) ? rate : 18);
+                          setAmountWithoutTax(String(split.amountWithoutTax));
+                          setTaxAmount(String(split.taxAmount));
+                          setValue(String(split.totalAmount));
+                          toast({
+                            title: "Tax split applied",
+                            description: `Split using ${Number.isFinite(rate) ? rate : 18}% GST (inclusive). Save to persist.`,
+                          });
+                        }}
+                      >
+                        Split with GST %
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
+                        disabled={!proposalId.trim()}
+                        onClick={() => {
+                          const pid = proposalId.trim();
+                          const linked = pid ? proposals.find((p) => p.id === pid) : undefined;
+                          if (!linked) {
+                            toast({
+                              title: "Proposal not found",
+                              description: "Link a valid proposal ID first, or use Split with GST %.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          const total = Number(value);
+                          const split = dealAmountsFromProposal(
+                            linked,
+                            Number.isFinite(total) && total > 0 ? total : undefined,
+                          );
+                          if (split.totalAmount <= 0) {
+                            toast({
+                              title: "No amounts on proposal",
+                              description: "Proposal has no tax/total data to copy.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          setAmountWithoutTax(String(split.amountWithoutTax));
+                          setTaxAmount(String(split.taxAmount));
+                          setValue(String(split.totalAmount));
+                          toast({
+                            title: "Tax split applied",
+                            description: "Copied from linked proposal. Save to persist.",
+                          });
+                        }}
+                      >
+                        Fix from proposal
+                      </Button>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2 col-span-2">
                   <Label>Remarks / notes</Label>

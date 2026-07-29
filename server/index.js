@@ -1091,6 +1091,13 @@ app.post("/api/deals", (req, res) => {
     createdAt: now,
     updatedAt: now,
   };
+  if (deal.amountWithoutTax <= 0 && deal.taxAmount <= 0 && deal.totalAmount > 0) {
+    // Legacy clients that only send `value` — keep amount-without-tax filled so columns aren't blank.
+    deal.amountWithoutTax = deal.totalAmount;
+  }
+  if (balanceAmount == null) {
+    deal.balanceAmount = Math.max(0, deal.totalAmount - deal.amountPaid);
+  }
   if (deal.estimateJson && !deal.estimateNumber) {
     deal.estimateNumber = allocateEstimateNumber();
   }
@@ -1700,6 +1707,9 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
     currency,
     planNotes,
     installments,
+    totalAmount,
+    taxAmount,
+    amountWithoutTax,
     // Auth (mirrors POST /api/deals)
     actorRole,
     actorUserId,
@@ -1797,6 +1807,14 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
 
   const dealId = nextDealId();
   const now = new Date().toISOString();
+  const totalAmt = totalAmount != null && Number.isFinite(Number(totalAmount)) ? Number(totalAmount) : dealValNum;
+  const taxAmt = taxAmount != null && Number.isFinite(Number(taxAmount)) ? Number(taxAmount) : 0;
+  let withoutTax =
+    amountWithoutTax != null && Number.isFinite(Number(amountWithoutTax)) ? Number(amountWithoutTax) : 0;
+  // If client only sent total (legacy), keep without-tax = total so UI isn't blank zeros.
+  if (withoutTax <= 0 && taxAmt <= 0 && totalAmt > 0) {
+    withoutTax = totalAmt;
+  }
 
   const createAll = db.transaction(() => {
     // 1. Create deal
@@ -1818,11 +1836,11 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
       estimateNumber: null,
       estimateDate: null,
       estimateJson: null,
-      totalAmount: dealValNum,
-      taxAmount: 0,
-      amountWithoutTax: 0,
+      totalAmount: totalAmt,
+      taxAmount: taxAmt,
+      amountWithoutTax: withoutTax,
       placeOfSupply: null,
-      balanceAmount: dealValNum,
+      balanceAmount: totalAmt,
       amountPaid: 0,
       serviceName: null,
       dealSource: sourceVal,

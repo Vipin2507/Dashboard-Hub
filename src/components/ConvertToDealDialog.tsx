@@ -19,6 +19,7 @@ import {
   validateDealEstimateBilling,
   type DealEstimateBillingState,
 } from "@/lib/dealEstimateBilling";
+import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
 import { DealEstimateBillingSection } from "@/components/DealEstimateBillingSection";
 import { useAppStore } from "@/store/useAppStore";
 import { api } from "@/lib/api";
@@ -387,6 +388,7 @@ export function ConvertToDealDialog({
         );
         return;
       }
+      const finance = dealAmountsFromProposal(proposal, value);
       const body = {
         name: data.title.trim(),
         customerId,
@@ -394,7 +396,10 @@ export function ConvertToDealDialog({
         teamId,
         regionId,
         stage: "Negotiation",
-        value,
+        value: finance.totalAmount,
+        totalAmount: finance.totalAmount,
+        taxAmount: finance.taxAmount,
+        amountWithoutTax: finance.amountWithoutTax,
         locked: true,
         proposalId: proposal.id,
         dealStatus: "Active",
@@ -458,6 +463,7 @@ export function ConvertToDealDialog({
         return;
       }
       const selectedPlan = PLAN_OPTIONS.find((p) => p.slug === formVals.planSlug);
+      const finance = dealAmountsFromProposal(proposal, formVals.dealValue);
 
       const result = await api.post<WithPaymentPlanResponse>("/deals/with-payment-plan", {
         title: dealTitle,
@@ -471,7 +477,10 @@ export function ConvertToDealDialog({
         regionId,
         teamId,
         stage: "Negotiation",
-        dealValue: formVals.dealValue,
+        dealValue: finance.totalAmount,
+        totalAmount: finance.totalAmount,
+        taxAmount: finance.taxAmount,
+        amountWithoutTax: finance.amountWithoutTax,
         expectedCloseDate: formVals.expectedCloseDate,
         source: "proposal",
         notes: formVals.notes,

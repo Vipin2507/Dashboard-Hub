@@ -36,6 +36,7 @@ import {
   seedAutomationTemplates,
 } from '@/lib/seed';
 import { apiUrl } from '@/lib/api';
+import { dealAmountsFromProposal } from '@/lib/dealAmountsFromProposal';
 
 const AUTH_STORAGE_KEY = 'buildesk_auth_user_id';
 const REMEMBER_EMAIL_KEY = 'buildesk_remember_email';
@@ -1013,7 +1014,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const proposal = get().proposals.find(p => p.id === proposalId);
     const me = get().me;
     if (!proposal || proposal.dealId) return;
-    const value = proposal.finalQuoteValue ?? proposal.grandTotal ?? 0;
+    const finance = dealAmountsFromProposal(proposal);
+    const value = finance.totalAmount;
     if (!Number.isFinite(value) || value <= 0) return;
     const body = {
       name: `Deal — ${proposal.title}`,
@@ -1023,6 +1025,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       regionId: proposal.regionId,
       stage: 'Won',
       value,
+      totalAmount: finance.totalAmount,
+      taxAmount: finance.taxAmount,
+      amountWithoutTax: finance.amountWithoutTax,
       locked: true,
       proposalId,
       dealStatus: 'Active',
