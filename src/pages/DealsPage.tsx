@@ -1382,7 +1382,7 @@ export default function DealsPage() {
     ownerFilter !== "all" ||
     teamFilter !== "all" ||
     regionFilter !== "all" ||
-    timeRangeFilter !== "this_month" ||
+    timeRangeFilter !== "all" ||
     customDateRange[0] != null ||
     customDateRange[1] != null;
 
@@ -1428,7 +1428,7 @@ export default function DealsPage() {
     setDraftOwnerFilter("all");
     setDraftTeamFilter("all");
     setDraftRegionFilter("all");
-    setDraftTimeRangeFilter("this_month");
+    setDraftTimeRangeFilter("all");
     setDraftCustomDateRange([null, null]);
     setSearch("");
     setStageFilter("all");
@@ -1436,7 +1436,7 @@ export default function DealsPage() {
     setOwnerFilter("all");
     setTeamFilter("all");
     setRegionFilter("all");
-    setTimeRangeFilter("this_month");
+    setTimeRangeFilter("all");
     setCustomDateRange([null, null]);
     clearPersistedDealFilters();
   };

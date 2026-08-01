@@ -57,4 +57,23 @@ describe("executivePerformanceUrl", () => {
     );
     expect(params.get("tab")).toBeNull();
   });
+
+  it("encodes cleared date range as all-time", () => {
+    const params = executiveFiltersToSearchParams(
+      {
+        from: "",
+        to: "",
+        executiveId: "all",
+        teamId: "all",
+        regionId: "all",
+        weekday: "all",
+        reasonType: "all",
+        reason: "all",
+      },
+      "overview",
+    );
+    expect(params.get("range")).toBe("all");
+    expect(params.get("from")).toBeNull();
+    expect(readExecutiveFiltersFromParams(params)).toMatchObject({ from: "", to: "" });
+  });
 });

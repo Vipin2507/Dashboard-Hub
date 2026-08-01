@@ -75,7 +75,11 @@ function weekdayFromYmd(ymd) {
 }
 
 function inRange(ymd, from, to) {
-  return Boolean(ymd) && ymd >= from && ymd <= to;
+  if (!ymd) return false;
+  if (!from && !to) return true;
+  if (from && ymd < from) return false;
+  if (to && ymd > to) return false;
+  return true;
 }
 
 function matchesWeekday(ymd, weekday) {
@@ -274,10 +278,12 @@ export function registerExecutivePerformanceApi(app, db) {
       const q = req.query || {};
       const from = String(q.from || "");
       const to = String(q.to || "");
-      if (!isValidYmd(from) || !isValidYmd(to)) {
-        return res.status(400).json({ error: "Valid from and to dates (yyyy-MM-dd) are required" });
+      const hasFrom = isValidYmd(from);
+      const hasTo = isValidYmd(to);
+      if ((hasFrom && !hasTo) || (!hasFrom && hasTo)) {
+        return res.status(400).json({ error: "Provide both from and to, or omit both for all time" });
       }
-      if (from > to) {
+      if (hasFrom && hasTo && from > to) {
         return res.status(400).json({ error: "`from` must be on or before `to`" });
       }
 

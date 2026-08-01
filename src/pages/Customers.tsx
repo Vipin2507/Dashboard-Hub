@@ -180,8 +180,6 @@ export default function Customers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restore session once on mount
     [],
   );
-  const defaultFilters = defaultCustomerFilters();
-
   const [search, setSearch] = useState(() => initialCustomerFilters.search);
   const [statusFilter, setStatusFilter] = useState<CustomerStatus | "all">(
     () => initialCustomerFilters.statusFilter,
@@ -246,20 +244,19 @@ export default function Customers() {
     teamQueryFilter !== "all" ||
     industryFilter !== "all" ||
     tagsFilter !== "" ||
-    dateFrom !== defaultFilters.dateFrom ||
-    dateTo !== defaultFilters.dateTo;
+    dateFrom !== "" ||
+    dateTo !== "";
 
   const clearFilters = () => {
-    const next = defaultCustomerFilters();
-    setSearch(next.search);
-    setStatusFilter(next.statusFilter);
-    setRegionFilter(next.regionFilter);
-    setAssignedToFilter(next.assignedToFilter);
-    setTeamQueryFilter(next.teamQueryFilter);
-    setIndustryFilter(next.industryFilter);
-    setTagsFilter(next.tagsFilter);
-    setDateFrom(next.dateFrom);
-    setDateTo(next.dateTo);
+    setSearch("");
+    setStatusFilter("all");
+    setRegionFilter("all");
+    setAssignedToFilter("all");
+    setTeamQueryFilter("all");
+    setIndustryFilter("all");
+    setTagsFilter("");
+    setDateFrom("");
+    setDateTo("");
     setPage(1);
     clearSessionFilters(FILTER_SESSION_KEYS.customers);
   };

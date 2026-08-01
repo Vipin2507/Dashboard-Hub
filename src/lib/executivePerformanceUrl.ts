@@ -13,9 +13,10 @@ export type ExecutiveUrlFilters = {
 
 export function readExecutiveFiltersFromParams(params: URLSearchParams): ExecutiveUrlFilters {
   const month = currentMonthYmd();
+  const allTime = params.get("range") === "all";
   return {
-    from: params.get("from") || month.from,
-    to: params.get("to") || month.to,
+    from: allTime ? "" : params.get("from") || month.from,
+    to: allTime ? "" : params.get("to") || month.to,
     executiveId: params.get("executive") || "all",
     teamId: params.get("team") || "all",
     regionId: params.get("region") || "all",
@@ -30,8 +31,12 @@ export function executiveFiltersToSearchParams(
   tab: string,
 ): URLSearchParams {
   const p = new URLSearchParams();
-  p.set("from", f.from);
-  p.set("to", f.to);
+  if (f.from && f.to) {
+    p.set("from", f.from);
+    p.set("to", f.to);
+  } else {
+    p.set("range", "all");
+  }
   if (f.executiveId !== "all") p.set("executive", f.executiveId);
   if (f.teamId !== "all") p.set("team", f.teamId);
   if (f.regionId !== "all") p.set("region", f.regionId);

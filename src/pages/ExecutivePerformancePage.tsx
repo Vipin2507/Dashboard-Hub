@@ -66,7 +66,6 @@ import {
 } from "@/components/ui/chart";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { currentMonthYmd } from "@/lib/dateRange";
 import { WEEKDAY_LABELS } from "@/lib/executivePerformanceMetrics";
 import { exportExecutivePerformanceXlsx } from "@/lib/executivePerformanceExport";
 import {
@@ -131,6 +130,7 @@ function loadInitialExecutiveFilters(params: URLSearchParams): AppliedFilters {
       "reason",
       "from",
       "to",
+      "range",
       "tab",
     ])
   ) {
@@ -533,8 +533,8 @@ export default function ExecutivePerformancePage() {
 
   const applyFilters = () => {
     const next = { ...draft };
-    if (!next.from || !next.to) {
-      toast({ title: "Select a valid date range", variant: "destructive" });
+    if ((next.from && !next.to) || (!next.from && next.to)) {
+      toast({ title: "Select both from and to dates, or clear both for all time", variant: "destructive" });
       return;
     }
     setApplied(next);
@@ -544,10 +544,9 @@ export default function ExecutivePerformancePage() {
   };
 
   const clearFilters = () => {
-    const month = currentMonthYmd();
     const next: AppliedFilters = {
-      from: month.from,
-      to: month.to,
+      from: "",
+      to: "",
       executiveId: "all",
       teamId: "all",
       regionId: "all",
@@ -562,10 +561,9 @@ export default function ExecutivePerformancePage() {
     setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
   };
 
-  const monthDefault = currentMonthYmd();
   const hasActiveAppliedFilters =
-    applied.from !== monthDefault.from ||
-    applied.to !== monthDefault.to ||
+    applied.from !== "" ||
+    applied.to !== "" ||
     applied.executiveId !== "all" ||
     applied.teamId !== "all" ||
     applied.regionId !== "all" ||

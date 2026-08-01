@@ -313,16 +313,21 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
     saveSessionFilters(FILTER_SESSION_KEYS.paymentsHistory, historyFilters);
   }, [historyFilters]);
 
-  const defaultHistory = defaultHistoryFilters();
   const hasActiveHistoryFilters =
-    historyFilters.from !== defaultHistory.from ||
-    historyFilters.to !== defaultHistory.to ||
+    historyFilters.from !== "" ||
+    historyFilters.to !== "" ||
     historyFilters.mode !== "all" ||
     historyFilters.cycle !== "all" ||
     historyFilters.status !== "all";
 
   const clearHistoryFilters = () => {
-    setHistoryFilters(defaultHistoryFilters());
+    setHistoryFilters({
+      from: "",
+      to: "",
+      mode: "all",
+      cycle: "all",
+      status: "all",
+    });
     clearSessionFilters(FILTER_SESSION_KEYS.paymentsHistory);
   };
 

@@ -431,12 +431,11 @@ export default function Proposals() {
   };
 
   const clearFilters = () => {
-    const month = currentMonthYmd();
     setDraftSearch("");
     setDraftStatusFilter("all");
     setDraftSuspectWonOnly(false);
-    setDraftDateFrom(month.from);
-    setDraftDateTo(month.to);
+    setDraftDateFrom("");
+    setDraftDateTo("");
     setDraftAssignedToFilter("all");
     setDraftSortBy("date");
     setDraftTeamQueryFilter("all");
@@ -444,8 +443,8 @@ export default function Proposals() {
     setSearch("");
     setStatusFilter("all");
     setSuspectWonOnly(false);
-    setDateFrom(month.from);
-    setDateTo(month.to);
+    setDateFrom("");
+    setDateTo("");
     setAssignedToFilter("all");
     setSortBy("date");
     setTeamQueryFilter("all");
@@ -458,8 +457,8 @@ export default function Proposals() {
     search !== "" ||
     statusFilter !== "all" ||
     suspectWonOnly ||
-    dateFrom !== defaultMonth.from ||
-    dateTo !== defaultMonth.to ||
+    dateFrom !== "" ||
+    dateTo !== "" ||
     assignedToFilter !== "all" ||
     sortBy !== "date" ||
     teamQueryFilter !== "all" ||

@@ -239,14 +239,13 @@ export default function DashboardPage() {
     draftRegionFilter !== regionFilter ||
     draftProposalStatusFilter !== proposalStatusFilter;
 
-  const monthDefaultRange = currentMonthDateRange();
   const hasActiveAppliedFilters =
     ownerFilter !== 'all' ||
     teamFilter !== 'all' ||
     regionFilter !== 'all' ||
     proposalStatusFilter !== 'all' ||
-    dateRange[0]?.getTime() !== monthDefaultRange[0].getTime() ||
-    dateRange[1]?.getTime() !== monthDefaultRange[1].getTime();
+    dateRange[0] != null ||
+    dateRange[1] != null;
 
   const applyFilters = () => {
     setDateRange(draftDateRange);
@@ -265,14 +264,13 @@ export default function DashboardPage() {
   };
 
   const clearFilters = () => {
-    const month = currentMonthDateRange();
-    setDraftDateRange(month);
+    setDraftDateRange([null, null]);
     setDraftOwnerFilter('all');
     setDraftTeamFilter('all');
     setDraftRegionFilter('all');
     setDraftProposalStatusFilter('all');
 
-    setDateRange(month);
+    setDateRange([null, null]);
     setOwnerFilter('all');
     setTeamFilter('all');
     setRegionFilter('all');
