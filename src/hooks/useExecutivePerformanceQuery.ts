@@ -8,8 +8,8 @@ import type {
 
 function buildQuery(filters: ExecutivePerformanceFilters): string {
   const params = new URLSearchParams();
-  params.set("from", filters.from);
-  params.set("to", filters.to);
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
   params.set("actorRole", filters.actorRole);
   if (filters.actorUserId) params.set("actorUserId", filters.actorUserId);
   if (filters.actorUserName) params.set("actorUserName", filters.actorUserName);
@@ -27,6 +27,15 @@ function buildQuery(filters: ExecutivePerformanceFilters): string {
   if (filters.detailPage) params.set("detailPage", String(filters.detailPage));
   if (filters.detailPageSize) params.set("detailPageSize", String(filters.detailPageSize));
   return params.toString();
+}
+
+function hasValidDateFilter(filters: ExecutivePerformanceFilters | null): boolean {
+  if (!filters?.actorRole) return false;
+  const from = (filters.from ?? "").trim();
+  const to = (filters.to ?? "").trim();
+  // All-time: both empty. Bounded: both set.
+  if (!from && !to) return true;
+  return Boolean(from && to);
 }
 
 export async function fetchExecutivePerformance(
@@ -56,7 +65,7 @@ export function useExecutivePerformanceQuery(
   return useQuery({
     queryKey: QK.executivePerformance(filters ?? {}),
     queryFn: ({ signal }) => fetchExecutivePerformance(filters!, signal),
-    enabled: Boolean(enabled && filters?.from && filters?.to && filters?.actorRole),
+    enabled: Boolean(enabled && hasValidDateFilter(filters)),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });

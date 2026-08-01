@@ -75,7 +75,6 @@ import {
 } from "@/lib/executivePerformanceUrl";
 import {
   FILTER_SESSION_KEYS,
-  clearSessionFilters,
   hasAnySearchParam,
   loadSessionFilters,
   saveSessionFilters,
@@ -557,7 +556,8 @@ export default function ExecutivePerformancePage() {
     setDraft(next);
     setApplied(next);
     setDetailPage(1);
-    clearSessionFilters(FILTER_SESSION_KEYS.executivePerformance);
+    // Persist all-time so refresh stays cleared (not reset to current month).
+    saveSessionFilters(FILTER_SESSION_KEYS.executivePerformance, next);
     setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
   };
 
@@ -725,14 +725,16 @@ export default function ExecutivePerformancePage() {
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
             <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
               <div className="min-w-[220px] flex-1 space-y-1">
-                <p className="text-xs text-muted-foreground">Date range</p>
+                <p className="text-xs text-muted-foreground">
+                  Date range{!draft.from && !draft.to ? " · All time" : ""}
+                </p>
                 <Datepicker
                   controls={["calendar"]}
                   select="range"
                   touchUi={true}
                   inputComponent="input"
                   inputProps={{
-                    placeholder: "Select range…",
+                    placeholder: "All time",
                     className: "h-9 w-full",
                   }}
                   value={[ymdToDate(draft.from), ymdToDate(draft.to)]}
@@ -740,8 +742,8 @@ export default function ExecutivePerformancePage() {
                     const [f, t] = ev.value as [Date | null, Date | null];
                     setDraft((prev) => ({
                       ...prev,
-                      from: f ? dateToYmd(f) : prev.from,
-                      to: t ? dateToYmd(t) : prev.to,
+                      from: f ? dateToYmd(f) : "",
+                      to: t ? dateToYmd(t) : "",
                     }));
                   }}
                 />
