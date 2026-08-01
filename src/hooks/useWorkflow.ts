@@ -222,7 +222,7 @@ export function useCreateDealFromProposal() {
         value,
         locked: true,
         proposalId: proposal.id,
-        dealStatus: "Active",
+        dealStatus: "Closed/Won",
         dealSource: "Direct",
         expectedCloseDate: null,
         priority: "Medium",

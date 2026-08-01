@@ -1030,7 +1030,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       amountWithoutTax: finance.amountWithoutTax,
       locked: true,
       proposalId,
-      dealStatus: 'Active',
+      dealStatus: 'Closed/Won',
       dealSource: 'Direct',
       expectedCloseDate: null,
       priority: 'Medium',

@@ -76,7 +76,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
   const [ownerUserId, setOwnerUserId] = useState(proposal?.assignedTo ?? "");
   const [teamId, setTeamId] = useState(proposal?.teamId ?? "");
   const [regionId, setRegionId] = useState(proposal?.regionId ?? "");
-  const [stage, setStage] = useState("Prospecting");
+  const [stage, setStage] = useState("Won");
 
   const DEAL_STAGES = ["Won", "Proposal", "Negotiation", "Closing", "Lost"] as const;
 
@@ -126,6 +126,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
     setOwnerUserId(String(proposal.assignedTo ?? ""));
     setTeamId(String(proposal.teamId ?? ""));
     setRegionId(String(proposal.regionId ?? ""));
+    setStage("Won");
     setDidAutoFetchCustomerProducts(false);
     setInitialisedForId(proposal.id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -349,7 +350,7 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
         value: numValue,
         locked: true,
         proposalId: proposal.id,
-        dealStatus: "Active",
+        dealStatus: "Closed/Won",
         changedByUserId: me.id,
         changedByName: me.name,
         createdByUserId: me.id,

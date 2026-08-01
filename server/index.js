@@ -1427,6 +1427,76 @@ app.put("/api/deals/:id", (req, res) => {
   res.json(toDealResponse(out));
 });
 
+/** Mark Active deals as Closed/Won (optionally limited to given ids). */
+app.post("/api/deals/bulk-mark-won", (req, res) => {
+  let body = req.body;
+  if (!body || typeof body !== "object") body = {};
+  const {
+    ids,
+    actorRole,
+    actorUserId,
+    actorTeamId,
+    actorRegionId,
+    changedByUserId,
+    changedByName,
+  } = body;
+  const normRole = normalizeRole(actorRole);
+  const actor = {
+    userId: actorUserId ? String(actorUserId) : null,
+    teamId: actorTeamId ? String(actorTeamId) : null,
+    regionId: actorRegionId ? String(actorRegionId) : null,
+  };
+  if (!canDealAction(normRole, "update")) {
+    return res.status(403).json({ error: "Your role cannot update deals" });
+  }
+
+  const idList = Array.isArray(ids) ? ids.map((x) => String(x)).filter(Boolean) : null;
+  let rows = db
+    .prepare("SELECT * FROM deals WHERE deletedAt IS NULL")
+    .all()
+    .map((r) => toDealResponse(r));
+
+  if (idList && idList.length) {
+    const want = new Set(idList);
+    rows = rows.filter((d) => want.has(d.id));
+  }
+
+  rows = rows.filter((d) => dealInScopeFor(normRole, actor, d));
+  // Only rows still stored as Active (legacy won-via-invoice may already resolve as Won).
+  const toUpdate = rows.filter((d) => String(d.dealStatus || "Active") === "Active");
+  const now = new Date().toISOString();
+  const updatedIds = [];
+
+  const tx = db.transaction((list) => {
+    const upd = db.prepare(
+      `UPDATE deals SET dealStatus = 'Closed/Won', stage = 'Won', lossReason = NULL, updatedAt = ?, lastActivityAt = ? WHERE id = ? AND deletedAt IS NULL`,
+    );
+    for (const d of list) {
+      upd.run(now, now, d.id);
+      logDealAudit(
+        db,
+        d.id,
+        "deal_status_changed",
+        { from: d.dealStatus || "Active", to: "Closed/Won", via: "bulk_mark_won" },
+        changedByUserId || actor.userId,
+        changedByName || null,
+      );
+      updatedIds.push(d.id);
+    }
+  });
+
+  try {
+    tx(toUpdate);
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+
+  if (updatedIds.length) {
+    broadcast({ type: "change", entity: "deals", action: "bulk_updated", count: updatedIds.length });
+  }
+  res.json({ updated: updatedIds.length, ids: updatedIds });
+});
+
 app.get("/api/deals/:id/audit", (req, res) => {
   const rows = db
     .prepare("SELECT * FROM deal_audit WHERE dealId = ? ORDER BY at DESC LIMIT 200")

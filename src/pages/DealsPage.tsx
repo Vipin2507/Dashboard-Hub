@@ -41,6 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Trophy,
   Lock,
   Plus,
   Pencil,
@@ -562,6 +563,7 @@ export default function DealsPage() {
   const [lossReasonDraft, setLossReasonDraft] = useState("");
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [bulkMarkWonOpen, setBulkMarkWonOpen] = useState(false);
   const [sendEstimateOpen, setSendEstimateOpen] = useState<null | { deal: Deal; channel: "email" | "whatsapp" }>(null);
   /** `${dealId}:deal` or `${dealId}:${installmentId}` while sending invoice webhook */
   const [invoiceSendBusyKey, setInvoiceSendBusyKey] = useState<string | null>(null);
@@ -1156,6 +1158,44 @@ export default function DealsPage() {
       }
     },
     onSuccess: () => dealsQuery.refetch(),
+  });
+
+  const activeStatusDeals = useMemo(
+    () => scopedActiveDeals.filter((d) => String(d.dealStatus || "Active") === "Active"),
+    [scopedActiveDeals],
+  );
+
+  const bulkMarkWonMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch(apiUrl("/api/deals/bulk-mark-won"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids,
+          actorRole: me.role,
+          actorUserId: me.id,
+          actorTeamId: me.teamId,
+          actorRegionId: me.regionId,
+          changedByUserId: me.id,
+          changedByName: me.name,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Failed to mark deals as won");
+      }
+      return (await res.json()) as { updated: number; ids: string[] };
+    },
+    onSuccess: (result) => {
+      void dealsQuery.refetch();
+      toast({
+        title: "Deals marked as won",
+        description: `${result.updated} active deal(s) updated to Closed/Won.`,
+      });
+      setBulkMarkWonOpen(false);
+    },
+    onError: (e: Error) =>
+      toast({ title: "Bulk update failed", description: e.message, variant: "destructive" }),
   });
 
   const statusCounts = useMemo(() => {
@@ -1760,6 +1800,19 @@ export default function DealsPage() {
                 List
               </Button>
             </div>
+            {canUpdateDeal && (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-9"
+                disabled={activeStatusDeals.length === 0 || bulkMarkWonMutation.isPending}
+                onClick={() => setBulkMarkWonOpen(true)}
+              >
+                <Trophy className="h-4 w-4 mr-1.5" />
+                Mark Active as Won
+                {activeStatusDeals.length > 0 ? ` (${activeStatusDeals.length})` : ""}
+              </Button>
+            )}
             {canCreate && (
               <>
                 <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
@@ -3590,6 +3643,31 @@ export default function DealsPage() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={handleHardDeleteDeal}>
               Delete permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkMarkWonOpen} onOpenChange={setBulkMarkWonOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark all Active deals as Won?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will set deal status to <strong>Closed/Won</strong> and stage to <strong>Won</strong> for{" "}
+              <strong>{activeStatusDeals.length}</strong> active deal(s) in your scope. This cannot be undone in
+              bulk — you can still edit individual deals afterward.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkMarkWonMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={bulkMarkWonMutation.isPending || activeStatusDeals.length === 0}
+              onClick={(e) => {
+                e.preventDefault();
+                bulkMarkWonMutation.mutate(activeStatusDeals.map((d) => d.id));
+              }}
+            >
+              {bulkMarkWonMutation.isPending ? "Updating…" : `Mark ${activeStatusDeals.length} as Won`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
