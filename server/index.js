@@ -1446,7 +1446,7 @@ app.post("/api/deals/bulk-mark-won", (req, res) => {
     teamId: actorTeamId ? String(actorTeamId) : null,
     regionId: actorRegionId ? String(actorRegionId) : null,
   };
-  if (!canDealAction(normRole, "update")) {
+  if (!canDealAction(normRole, "edit") && !canDealAction(normRole, "change_stage")) {
     return res.status(403).json({ error: "Your role cannot update deals" });
   }
 
