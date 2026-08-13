@@ -117,7 +117,7 @@ const App = () => (
     <AutomationBootstrapper />
     <TooltipProvider>
       <Toaster />
-      <Sonner />
+      <Sonner position="top-right" richColors />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

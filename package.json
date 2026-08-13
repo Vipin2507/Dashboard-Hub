@@ -54,6 +54,7 @@
     "embla-carousel-react": "^8.6.0",
     "express": "^5.2.1",
     "form-data": "^4.0.5",
+    "framer-motion": "^13.1.0",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.462.0",

@@ -3,9 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { useAppStore } from "@/store/useAppStore";
-import { getScope, visibleWithScope, can } from "@/lib/rbac";
-import { Badge } from "@/components/ui/badge";
+import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -27,6 +27,10 @@ import {
   saveSessionFilters,
 } from "@/lib/filterSessionPersistence";
 import { FilterPanel } from "@/components/FilterPanel";
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
+import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
+import { motion } from "framer-motion";
 import {
   FileText,
   Plus,
@@ -39,18 +43,13 @@ import {
   FileDown,
   FileQuestion,
   Loader2,
-  Filter,
   Upload,
   Handshake,
   Trophy,
   Snowflake,
   Clock,
   IndianRupee,
-  TrendingUp,
-  TrendingDown,
   Download,
-  MoreHorizontal,
-  RefreshCw,
   Copy,
   Link2,
   MessageSquarePlus,
@@ -61,6 +60,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSmUp } from "@/hooks/useSmUp";
 import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import type { Proposal, ProposalStatus } from "@/types";
@@ -119,18 +119,13 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "deal_created", label: "Deal Created" },
 ];
 
-const STATUS_BADGE: Record<ProposalStatus, string> = {
-  draft: "bg-muted text-muted-foreground",
-  sent: "bg-blue-500/15 text-blue-700 dark:text-blue-300",
-  shared: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
-  approval_pending: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  approved: "bg-green-500/15 text-green-700 dark:text-green-300",
-  negotiation: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300",
-  won: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  cold: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
-  rejected: "bg-red-500/15 text-red-700 dark:text-red-300",
-  deal_created: "bg-purple-500/15 text-purple-700 dark:text-purple-300",
-};
+function proposalStatusTone(status: ProposalStatus): StatusTone {
+  if (status === "won" || status === "approved" || status === "deal_created") return "success";
+  if (status === "sent" || status === "shared" || status === "negotiation") return "info";
+  if (status === "approval_pending") return "warning";
+  if (status === "rejected") return "danger";
+  return "muted";
+}
 
 type SortKey = "date" | "value" | "customer";
 
@@ -181,99 +176,122 @@ type ProposalKPIData = {
   trendWon: number;
 };
 
-function ProposalKPICards({ data }: { data: ProposalKPIData }) {
+function trendSub(trend: number): string {
+  if (trend === 0) return "Flat vs last month";
+  return `${trend > 0 ? "+" : ""}${trend}% vs last month`;
+}
+
+function ProposalKPICards({
+  data,
+  active,
+  onSelect,
+}: {
+  data: ProposalKPIData;
+  active: "all" | "pending" | "won" | null;
+  onSelect: (key: "all" | "pending" | "won") => void;
+}) {
   const cards: {
+    key: "all" | "pending" | "won" | null;
     label: string;
-    value: string | number;
+    value: string;
+    sub: string;
     icon: LucideIcon;
     iconBg: string;
     iconColor: string;
-    trend?: number;
-    badge?: string | null;
-    badgeColor?: string;
+    badge?: boolean;
   }[] = [
     {
-      label: "Total Proposals",
-      value: data.total,
+      key: "all",
+      label: "Total",
+      value: String(data.total),
+      sub: trendSub(data.trendTotal),
       icon: FileText,
-      iconBg: "bg-blue-50 dark:bg-blue-950",
-      iconColor: "text-blue-600 dark:text-blue-400",
-      trend: data.trendTotal,
+      iconBg: "bg-primary/10",
+      iconColor: "text-primary",
     },
     {
-      label: "Pending Approval",
-      value: data.pending,
+      key: "pending",
+      label: "Pending approval",
+      value: String(data.pending),
+      sub: data.pending > 0 ? "Needs attention" : "None waiting",
       icon: Clock,
-      iconBg: "bg-amber-50 dark:bg-amber-950",
-      iconColor: "text-amber-600 dark:text-amber-400",
-      badge: data.pending > 0 ? "Needs attention" : null,
-      badgeColor: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+      iconBg: "bg-warning/15",
+      iconColor: "text-warning-foreground",
+      badge: data.pending > 0,
     },
     {
-      label: "Won This Month",
-      value: data.wonMonth,
+      key: "won",
+      label: "Won this month",
+      value: String(data.wonMonth),
+      sub: trendSub(data.trendWon),
       icon: Trophy,
-      iconBg: "bg-emerald-50 dark:bg-emerald-950",
-      iconColor: "text-emerald-600 dark:text-emerald-400",
-      trend: data.trendWon,
+      iconBg: "bg-success/15",
+      iconColor: "text-success",
     },
     {
-      label: "Total Value",
-      value: `₹${data.totalValue.toLocaleString("en-IN")}`,
+      key: null,
+      label: "Pipeline value",
+      value: formatINR(data.totalValue),
+      sub: "In current filters",
       icon: IndianRupee,
-      iconBg: "bg-purple-50 dark:bg-purple-950",
-      iconColor: "text-purple-600 dark:text-purple-400",
+      iconBg: "bg-primary/10",
+      iconColor: "text-primary",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon;
-        return (
-          <div
-            key={card.label}
-            className="rounded-xl border border-gray-200 bg-white p-4 transition-shadow duration-200 hover:shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:p-5"
-          >
-            <div className="mb-4 flex items-start justify-between">
-              <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", card.iconBg)}>
-                <Icon className={cn("h-5 w-5", card.iconColor)} />
-              </div>
-              {card.badge && (
-                <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", card.badgeColor)}>{card.badge}</span>
-              )}
+        const isPlainInt = /^\d+$/.test(card.value.trim());
+        const inner = (
+          <>
+            <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", card.iconBg)}>
+              <Icon className={cn("h-3.5 w-3.5", card.iconColor)} />
             </div>
-            <p className="mb-1.5 text-2xl font-bold leading-none tracking-tight text-gray-900 dark:text-gray-100">{card.value}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">{card.label}</p>
-            {card.trend !== undefined && (
-              <div className="mt-2.5 flex items-center gap-1">
-                {card.trend > 0 ? (
-                  <TrendingUp className="h-3 w-3 text-emerald-500" />
-                ) : card.trend < 0 ? (
-                  <TrendingDown className="h-3 w-3 text-red-500" />
-                ) : null}
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    card.trend > 0 ? "text-emerald-600" : card.trend < 0 ? "text-red-600" : "text-gray-500",
-                  )}
-                >
-                  {Math.abs(card.trend)}% vs last month
-                </span>
-              </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{card.label}</p>
+              <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+                {isPlainInt ? <CountUp value={Number(card.value)} /> : card.value}
+              </p>
+              <p className="truncate text-[10px] text-muted-foreground">{card.sub}</p>
+            </div>
+            {card.badge ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" /> : null}
+          </>
+        );
+        if (!card.key) {
+          return (
+            <motion.div key={card.label} variants={staggerItem} className="card-kpi min-h-[3.25rem] w-full sm:min-h-0">
+              {inner}
+            </motion.div>
+          );
+        }
+        return (
+          <motion.button
+            key={card.label}
+            type="button"
+            variants={staggerItem}
+            whileHover={hoverLift}
+            whileTap={tapPress}
+            onClick={() => onSelect(card.key!)}
+            className={cn(
+              "card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0",
+              active === card.key && "border-primary/40 bg-primary/5",
             )}
-          </div>
+          >
+            {inner}
+          </motion.button>
         );
       })}
-    </div>
+    </motion.div>
   );
 }
 
 function ProposalStatusBadge({ status }: { status: ProposalStatus }) {
   return (
-    <Badge variant="secondary" className={cn(STATUS_BADGE[status], "whitespace-nowrap")}>
+    <StatusPill tone={proposalStatusTone(status)} className="capitalize">
       {status.replace(/_/g, " ")}
-    </Badge>
+    </StatusPill>
   );
 }
 
@@ -292,18 +310,21 @@ type PersistedProposalsFilters = {
 export default function Proposals() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const smUp = useSmUp();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
+  const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
+  const customers = useAppStore((s) => s.customers);
   const updateProposal = useAppStore((s) => s.updateProposal);
   const submitForApprovalAction = useAppStore((s) => s.submitForApproval);
 
   const scope = getScope(me.role, "proposals");
 
   const persistedProposalsFilters = useMemo(() => {
-    if (hasAnySearchParam(searchParams, ["status", "owner", "team", "region", "from", "to"])) {
+    if (hasAnySearchParam(searchParams, ["status", "owner", "team", "region", "from", "to", "range"])) {
       return null;
     }
     return loadSessionFilters<PersistedProposalsFilters>(FILTER_SESSION_KEYS.proposals);
@@ -312,14 +333,24 @@ export default function Proposals() {
   const defaultMonth = currentMonthYmd();
 
   const [search, setSearch] = useState(() => persistedProposalsFilters?.search ?? "");
-  const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">(
-    () => persistedProposalsFilters?.statusFilter ?? "all",
-  );
+  const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">(() => {
+    const status = searchParams.get("status");
+    if (status && PROPOSAL_STATUS_VALUES.includes(status as ProposalStatus | "all")) {
+      return status as ProposalStatus | "all";
+    }
+    return persistedProposalsFilters?.statusFilter ?? "all";
+  });
   const [suspectWonOnly, setSuspectWonOnly] = useState(() => persistedProposalsFilters?.suspectWonOnly ?? false);
-  const [dateFrom, setDateFrom] = useState(() => persistedProposalsFilters?.dateFrom ?? defaultMonth.from);
-  const [dateTo, setDateTo] = useState(() => persistedProposalsFilters?.dateTo ?? defaultMonth.to);
+  const [dateFrom, setDateFrom] = useState(() => {
+    if (searchParams.get("range") === "all") return "";
+    return searchParams.get("from") || persistedProposalsFilters?.dateFrom || defaultMonth.from;
+  });
+  const [dateTo, setDateTo] = useState(() => {
+    if (searchParams.get("range") === "all") return "";
+    return searchParams.get("to") || persistedProposalsFilters?.dateTo || defaultMonth.to;
+  });
   const [assignedToFilter, setAssignedToFilter] = useState<string>(
-    () => persistedProposalsFilters?.assignedToFilter ?? "all",
+    () => searchParams.get("owner") || persistedProposalsFilters?.assignedToFilter || "all",
   );
   const [sortBy, setSortBy] = useState<SortKey>(() => persistedProposalsFilters?.sortBy ?? "date");
   const [page, setPage] = useState(1);
@@ -334,16 +365,26 @@ export default function Proposals() {
   });
   // Draft filters (edit, then Apply)
   const [draftSearch, setDraftSearch] = useState(() => persistedProposalsFilters?.search ?? "");
-  const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">(
-    () => persistedProposalsFilters?.statusFilter ?? "all",
-  );
+  const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">(() => {
+    const status = searchParams.get("status");
+    if (status && PROPOSAL_STATUS_VALUES.includes(status as ProposalStatus | "all")) {
+      return status as ProposalStatus | "all";
+    }
+    return persistedProposalsFilters?.statusFilter ?? "all";
+  });
   const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(
     () => persistedProposalsFilters?.suspectWonOnly ?? false,
   );
-  const [draftDateFrom, setDraftDateFrom] = useState(() => persistedProposalsFilters?.dateFrom ?? defaultMonth.from);
-  const [draftDateTo, setDraftDateTo] = useState(() => persistedProposalsFilters?.dateTo ?? defaultMonth.to);
+  const [draftDateFrom, setDraftDateFrom] = useState(() => {
+    if (searchParams.get("range") === "all") return "";
+    return searchParams.get("from") || persistedProposalsFilters?.dateFrom || defaultMonth.from;
+  });
+  const [draftDateTo, setDraftDateTo] = useState(() => {
+    if (searchParams.get("range") === "all") return "";
+    return searchParams.get("to") || persistedProposalsFilters?.dateTo || defaultMonth.to;
+  });
   const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>(
-    () => persistedProposalsFilters?.assignedToFilter ?? "all",
+    () => searchParams.get("owner") || persistedProposalsFilters?.assignedToFilter || "all",
   );
   const [draftSortBy, setDraftSortBy] = useState<SortKey>(() => persistedProposalsFilters?.sortBy ?? "date");
   const statusFromUrl = searchParams.get("status");
@@ -352,6 +393,7 @@ export default function Proposals() {
   const regionFromUrl = searchParams.get("region");
   const fromFromUrl = searchParams.get("from");
   const toFromUrl = searchParams.get("to");
+  const rangeFromUrl = searchParams.get("range");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -366,16 +408,16 @@ export default function Proposals() {
   const [deliveryAssignId, setDeliveryAssignId] = useState<string | null>(null);
   const [deliveryAssigneeId, setDeliveryAssigneeId] = useState<string>("");
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>(
-    () => persistedProposalsFilters?.teamQueryFilter ?? "all",
+    () => searchParams.get("team") || persistedProposalsFilters?.teamQueryFilter || "all",
   );
   const [regionQueryFilter, setRegionQueryFilter] = useState<string>(
-    () => persistedProposalsFilters?.regionQueryFilter ?? "all",
+    () => searchParams.get("region") || persistedProposalsFilters?.regionQueryFilter || "all",
   );
   const [draftTeamQueryFilter, setDraftTeamQueryFilter] = useState<string>(
-    () => persistedProposalsFilters?.teamQueryFilter ?? "all",
+    () => searchParams.get("team") || persistedProposalsFilters?.teamQueryFilter || "all",
   );
   const [draftRegionQueryFilter, setDraftRegionQueryFilter] = useState<string>(
-    () => persistedProposalsFilters?.regionQueryFilter ?? "all",
+    () => searchParams.get("region") || persistedProposalsFilters?.regionQueryFilter || "all",
   );
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [sharePdfId, setSharePdfId] = useState<string | null>(null);
@@ -609,15 +651,22 @@ export default function Proposals() {
     if (ownerFromUrl) setAssignedToFilter(ownerFromUrl);
     if (teamFromUrl) setTeamQueryFilter(teamFromUrl);
     if (regionFromUrl) setRegionQueryFilter(regionFromUrl);
-    if (fromFromUrl) {
-      setDateFrom(fromFromUrl);
-      setDraftDateFrom(fromFromUrl);
+    if (rangeFromUrl === "all") {
+      setDateFrom("");
+      setDateTo("");
+      setDraftDateFrom("");
+      setDraftDateTo("");
+    } else {
+      if (fromFromUrl) {
+        setDateFrom(fromFromUrl);
+        setDraftDateFrom(fromFromUrl);
+      }
+      if (toFromUrl) {
+        setDateTo(toFromUrl);
+        setDraftDateTo(toFromUrl);
+      }
     }
-    if (toFromUrl) {
-      setDateTo(toFromUrl);
-      setDraftDateTo(toFromUrl);
-    }
-  }, [ownerFromUrl, teamFromUrl, regionFromUrl, fromFromUrl, toFromUrl]);
+  }, [ownerFromUrl, teamFromUrl, regionFromUrl, fromFromUrl, toFromUrl, rangeFromUrl]);
 
   const filtered = useMemo(() => {
     let list = visible;
@@ -803,119 +852,406 @@ export default function Proposals() {
     toast({ title: "Create deal", description: "Complete the deal form to finalize this win." });
   };
 
+  const applyKpiFilter = (key: "all" | "pending" | "won") => {
+    const month = currentMonthYmd();
+    const nextStatus: ProposalStatus | "all" =
+      key === "pending" ? "approval_pending" : key === "won" ? "won" : "all";
+    const nextFrom = key === "won" ? month.from : dateFrom;
+    const nextTo = key === "won" ? month.to : dateTo;
+    setDraftStatusFilter(nextStatus);
+    setStatusFilter(nextStatus);
+    if (key === "won") {
+      setDraftDateFrom(nextFrom);
+      setDraftDateTo(nextTo);
+      setDateFrom(nextFrom);
+      setDateTo(nextTo);
+    }
+    setPage(1);
+    saveSessionFilters(FILTER_SESSION_KEYS.proposals, {
+      search,
+      statusFilter: nextStatus,
+      suspectWonOnly,
+      dateFrom: nextFrom,
+      dateTo: nextTo,
+      assignedToFilter,
+      sortBy,
+      teamQueryFilter,
+      regionQueryFilter,
+    });
+  };
+
+  const kpiActive: "all" | "pending" | "won" | null =
+    statusFilter === "approval_pending"
+      ? "pending"
+      : statusFilter === "won"
+        ? "won"
+        : statusFilter === "all"
+          ? "all"
+          : null;
+
+  const dateChip = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : null;
+
+  const proposalActions = (p: Proposal) => (
+    <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+            Actions
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6} className="max-h-[min(70vh,28rem)] min-w-[240px] overflow-y-auto">
+          {p.status === "draft" && canEditProposal(p) && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={async () => {
+                try {
+                  await submitForApprovalAction(p.id);
+                  await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                  await queryClient.refetchQueries({ queryKey: QK.proposals() });
+                  toast({ title: "Submitted for approval", description: p.proposalNumber });
+                } catch (e) {
+                  toast({
+                    title: "Submit failed",
+                    description: e instanceof Error ? e.message : "Try again",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              <Send className="mr-2 h-4 w-4" />
+              Submit for approval
+            </DropdownMenuItem>
+          )}
+          {p.status === "approval_pending" && canApprove && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setApproveId(p.id)}>
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Approve
+            </DropdownMenuItem>
+          )}
+          {p.status === "approval_pending" && canReject && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setRejectId(p.id)}>
+              <X className="mr-2 h-4 w-4" />
+              Reject
+            </DropdownMenuItem>
+          )}
+          {p.status === "approved" && canSend && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+              <Send className="mr-2 h-4 w-4" />
+              Send
+            </DropdownMenuItem>
+          )}
+          {p.status === "sent" && canActOnOutcome(p) && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => markWon(p.id)}>
+              <Trophy className="mr-2 h-4 w-4" />
+              Mark as won
+            </DropdownMenuItem>
+          )}
+          {p.status === "won" && !p.dealId && (canApprove || me.role === "super_admin") && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setCreateDealId(p.id)}>
+              <Handshake className="mr-2 h-4 w-4" />
+              Create deal
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem className="cursor-pointer" onClick={() => setDetailId(p.id)}>
+            <Eye className="mr-2 h-4 w-4" />
+            View Proposal
+          </DropdownMenuItem>
+          {canMenu.edit && canEditProposal(p) && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => {
+                setEditingId(p.id);
+                setFormOpen(true);
+              }}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit Proposal
+            </DropdownMenuItem>
+          )}
+          {canMenu.duplicate && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => void duplicateProposal(p)}>
+              <Copy className="mr-2 h-4 w-4" />
+              Duplicate
+            </DropdownMenuItem>
+          )}
+
+          {canMenu.status && nextStatuses(p.status).length > 0 && (
+            <>
+              <DropdownMenuSeparator />
+              {nextStatuses(p.status).map((st) => (
+                <DropdownMenuItem
+                  key={st}
+                  className="cursor-pointer"
+                  onClick={() => {
+                    if (st === "won") {
+                      markWon(p.id);
+                      return;
+                    }
+                    updateProposal(p.id, { status: st });
+                    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                    toast({
+                      title: "Status updated",
+                      description: `${p.proposalNumber} → ${st.replace(/_/g, " ")}`,
+                    });
+                  }}
+                >
+                  {st === "sent" ? <Send className="mr-2 h-4 w-4" /> : null}
+                  {st === "approved" ? <FileText className="mr-2 h-4 w-4" /> : null}
+                  {st === "won" ? <Trophy className="mr-2 h-4 w-4" /> : null}
+                  {st === "cold" ? <Snowflake className="mr-2 h-4 w-4" /> : null}
+                  {st === "rejected" ? <X className="mr-2 h-4 w-4" /> : null}
+                  {st === "negotiation" ? <Handshake className="mr-2 h-4 w-4" /> : null}
+                  Mark as {st.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase())}
+                </DropdownMenuItem>
+              ))}
+            </>
+          )}
+
+          <DropdownMenuSeparator />
+          {canMenu.sendEmail && (
+            <>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+                <Send className="mr-2 h-4 w-4" />
+                Send via Email
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => {
+                  setSharePdfId(p.id);
+                  const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
+                  setSharePdfPhone(cust?.primaryPhone || "");
+                  setSharePdfMessage(`Here is the proposal: ${p.proposalNumber}`);
+                }}
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                Share via WhatsApp
+              </DropdownMenuItem>
+            </>
+          )}
+          {canMenu.copyLink && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={async () => {
+                const url = `${window.location.origin}/proposals?detailId=${encodeURIComponent(p.id)}`;
+                await navigator.clipboard.writeText(url);
+                toast({ title: "Link copied", description: url });
+              }}
+            >
+              <Link2 className="mr-2 h-4 w-4" />
+              Copy Proposal Link
+            </DropdownMenuItem>
+          )}
+          {canMenu.download && (
+            <DropdownMenuItem className="cursor-pointer" onClick={() => handleDownloadPdf(p)}>
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </DropdownMenuItem>
+          )}
+          {canMenu.addNote && (
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => {
+                setNoteForId(p.id);
+                setNoteDraft("");
+              }}
+            >
+              <MessageSquarePlus className="mr-2 h-4 w-4" />
+              Add Note
+            </DropdownMenuItem>
+          )}
+
+          {canReassign && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Change executive</DropdownMenuLabel>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="cursor-pointer">
+                  <Users className="mr-2 h-4 w-4" />
+                  Assign to…
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-[320px] min-w-[260px] overflow-y-auto">
+                  {users.map((u) => (
+                    <DropdownMenuItem key={u.id} className="cursor-pointer" onClick={() => void changeAssignedTo(p, u.id)}>
+                      {u.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </>
+          )}
+
+          {canMenu.assignDelivery && p.status === "won" && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => {
+                  setDeliveryAssignId(p.id);
+                  setDeliveryAssigneeId("");
+                }}
+              >
+                <Truck className="mr-2 h-4 w-4" />
+                Assign Delivery Agent
+              </DropdownMenuItem>
+            </>
+          )}
+
+          {canMenu.delete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="cursor-pointer text-destructive focus:text-destructive"
+                onClick={() => setDeleteProposal(p)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Proposal
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+
   return (
     <>
       <Topbar
         title="Proposals"
-        subtitle={`${filtered.length} proposals`}
+        subtitle={`${filtered.length} in scope`}
         actions={
-          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
             {canExport && (
-              <Button variant="outline" size="sm" className="h-9 shrink-0 px-4 text-sm font-medium" onClick={handleExportCsv}>
-                <FileDown className="mr-1.5 h-4 w-4 shrink-0" />
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleExportCsv}>
+                <FileDown className="mr-1 h-3.5 w-3.5 shrink-0" />
                 <span className="hidden sm:inline">Export</span>
               </Button>
             )}
             {canCreate && (
               <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 shrink-0 px-4 text-sm font-medium"
-                  onClick={() => setBulkImportOpen(true)}
-                >
-                  <Upload className="mr-1.5 h-4 w-4 shrink-0" />
-                  <span className="hidden sm:inline">Bulk import</span>
+                <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setBulkImportOpen(true)}>
+                  <Upload className="mr-1 h-3.5 w-3.5 shrink-0" />
+                  <span className="hidden sm:inline">Import</span>
                 </Button>
                 <Button
-                  className="h-9 shrink-0 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                  size="sm"
+                  className="h-8 px-2.5 text-xs"
                   onClick={() => {
                     setEditingId(null);
                     setFormOpen(true);
                   }}
                 >
-                  <Plus className="mr-1.5 h-4 w-4 shrink-0" />
-                  New Proposal
+                  <Plus className="mr-1 h-3.5 w-3.5 shrink-0" />
+                  New
                 </Button>
               </>
             )}
           </div>
         }
       />
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-950 -mx-4 sm:-mx-5 lg:-mx-6 px-4 sm:px-5 lg:px-6 py-6 space-y-5 max-w-[1440px] mx-auto">
+      <div className="space-y-2.5">
         {proposalsQuery.isLoading && (
-          <div className="text-sm text-muted-foreground">Loading proposals...</div>
+          <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Syncing proposals
+          </p>
         )}
 
-        {/* KPI CARDS */}
-        <ProposalKPICards data={kpiMetrics} />
+        <ProposalKPICards data={kpiMetrics} active={kpiActive} onSelect={applyKpiFilter} />
 
-        {/* Search + filters */}
-        <FilterPanel title="Filters" storageKey="ui:proposals:filtersOpen">
-          <div className="flex flex-col gap-3">
-            {/* Search */}
-            <div className="relative w-full">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                placeholder="Search proposal, customer..."
-                className="h-10 w-full pl-9 text-sm"
-                value={draftSearch}
-                onChange={(e) => {
-                  setDraftSearch(e.target.value);
-                }}
-              />
-            </div>
-
-            {/* Status */}
-            <div className="scrollbar-none flex items-center gap-1.5 overflow-x-auto pb-0.5">
-              {STATUS_OPTIONS.map((o) => (
+        <FilterPanel
+          title="Filters"
+          storageKey="ui:proposals:filtersOpen"
+          defaultOpen={smUp}
+          headerActions={
+            hasActiveAppliedFilters ? (
+              <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
+                {dateChip ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {dateChip}
+                  </span>
+                ) : null}
+                {statusFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] capitalize text-muted-foreground">
+                    {statusFilter.replace(/_/g, " ")}
+                  </span>
+                ) : null}
+                {suspectWonOnly ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    Suspect won
+                  </span>
+                ) : null}
+                {assignedToFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {users.find((u) => u.id === assignedToFilter)?.name ?? "Owner"}
+                  </span>
+                ) : null}
+                {teamQueryFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {teams.find((t) => t.id === teamQueryFilter)?.name ?? "Team"}
+                  </span>
+                ) : null}
+                {regionQueryFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {regions.find((r) => r.id === regionQueryFilter)?.name ?? "Region"}
+                  </span>
+                ) : null}
+              </div>
+            ) : null
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search proposal, customer…"
+                  className="h-9 pl-8 text-sm"
+                  value={draftSearch}
+                  onChange={(e) => setDraftSearch(e.target.value)}
+                />
+              </div>
+              <div className="scrollbar-none -mx-1 flex items-center gap-1 overflow-x-auto px-1">
+                {STATUS_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setDraftStatusFilter(o.value)}
+                    className={cn(
+                      "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
+                      draftStatusFilter === o.value
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                ))}
                 <button
-                  key={o.value}
                   type="button"
-                  onClick={() => {
-                    setDraftStatusFilter(o.value);
-                  }}
+                  onClick={() => setDraftSuspectWonOnly((v) => !v)}
                   className={cn(
-                    "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
-                    draftStatusFilter === o.value
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
+                    "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
+                    draftSuspectWonOnly
+                      ? "bg-warning text-warning-foreground"
+                      : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
+                  title="Flags proposals marked Won within 1 minute of creation"
                 >
-                  {o.label}
+                  Suspect won
                 </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setDraftSuspectWonOnly((v) => !v);
-                }}
-                className={cn(
-                  "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
-                  draftSuspectWonOnly
-                    ? "bg-orange-600 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
-                )}
-                title="Flags proposals marked Won within 1 minute of creation"
-              >
-                Possibly incorrect Won
-              </button>
+              </div>
             </div>
 
-            {/* Other filters */}
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 lg:items-center">
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
               {(me.role === "super_admin" || me.role === "sales_manager") && (
-                <Select
-                  value={draftAssignedToFilter}
-                  onValueChange={(v) => {
-                    setDraftAssignedToFilter(v);
-                  }}
-                >
-                  <SelectTrigger className="h-9 w-full text-sm">
-                    <SelectValue placeholder="All users" />
+                <Select value={draftAssignedToFilter} onValueChange={setDraftAssignedToFilter}>
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="All owners" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All users</SelectItem>
+                    <SelectItem value="all">All owners</SelectItem>
                     {users.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.name}
@@ -924,29 +1260,50 @@ export default function Proposals() {
                   </SelectContent>
                 </Select>
               )}
-
-              <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-2">
-                
-                <Datepicker
-                  controls={["calendar"]}
-                  select="range"
-                  touchUi={true}
-                  inputComponent="input"
-                  inputProps={{
-                    placeholder: "Any date…",
-                    className: "h-9 w-full text-sm",
-                  }}
-                  value={[ymdToDate(draftDateFrom), ymdToDate(draftDateTo)]}
-                  onChange={(ev) => {
-                    const [f, t] = ev.value;
-                    setDraftDateFrom(f ? dateToYmd(f) : "");
-                    setDraftDateTo(t ? dateToYmd(t) : "");
-                  }}
-                />
-              </div>
-
+              <Select value={draftTeamQueryFilter} onValueChange={setDraftTeamQueryFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All teams" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={draftRegionQueryFilter} onValueChange={setDraftRegionQueryFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All regions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All regions</SelectItem>
+                  {regions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Datepicker
+                controls={["calendar"]}
+                select="range"
+                touchUi={true}
+                inputComponent="input"
+                inputProps={{
+                  placeholder: "Created date…",
+                  className: "h-9 w-full text-sm",
+                }}
+                value={[ymdToDate(draftDateFrom), ymdToDate(draftDateTo)]}
+                onChange={(ev) => {
+                  const [f, t] = ev.value;
+                  setDraftDateFrom(f ? dateToYmd(f) : "");
+                  setDraftDateTo(t ? dateToYmd(t) : "");
+                }}
+              />
               <Select value={draftSortBy} onValueChange={(v) => setDraftSortBy(v as SortKey)}>
-                <SelectTrigger className="h-9 w-full text-sm">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>
                 <SelectContent>
@@ -955,383 +1312,135 @@ export default function Proposals() {
                   <SelectItem value="customer">Company</SelectItem>
                 </SelectContent>
               </Select>
-
-              <div className="col-span-2 flex flex-wrap items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 w-[140px]"
-                  disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
-                  onClick={clearFilters}
-                >
-                  Clear
-                </Button>
-                <Button
-                  type="button"
-                  className="h-9 w-[140px] bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={!hasPendingFilterChanges}
-                  onClick={applyFilters}
-                >
-                  Apply
-                </Button>
-              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
+                onClick={clearFilters}
+              >
+                Clear
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                disabled={!hasPendingFilterChanges}
+                onClick={applyFilters}
+              >
+                Apply
+              </Button>
             </div>
           </div>
         </FilterPanel>
 
-        {/* Table */}
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+        <motion.div variants={staggerItem} initial="initial" animate="animate" className="card-soft overflow-hidden">
           {filtered.length === 0 ? (
-            <div className="flex flex-col items-center justify-center px-4 py-16 text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                <FileQuestion className="h-8 w-8 text-muted-foreground" />
+            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                <FileQuestion className="h-5 w-5 text-muted-foreground" />
               </div>
-              <p className="text-sm font-medium text-foreground">No proposals found</p>
-              <p className="mt-1 text-xs text-muted-foreground">Create your first proposal to get started.</p>
+              <p className="text-sm font-medium">No proposals found</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Adjust filters or create a proposal.</p>
               {canCreate && (
-                <Button size="sm" className="mt-4" onClick={() => setFormOpen(true)}>
-                  + New Proposal
+                <Button size="sm" className="mt-3 h-8 px-2.5 text-xs" onClick={() => setFormOpen(true)}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> New
                 </Button>
               )}
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/95">
-                      <th className="pl-5 px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Proposal
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Company
-                      </th>
-                      <th className="hidden px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 sm:table-cell dark:text-gray-400">
-                        Value
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Status
-                      </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                        Actions
-                      </th>
-                      <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 lg:table-cell dark:text-gray-400">
-                        Created
-                      </th>
-                      <th className="hidden px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell dark:text-gray-400">
-                        Valid Until
-                      </th>
-                      <th className="pr-5 px-4 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {pageItems.map((p) => (
-                      <tr
-                        key={p.id}
-                        className="transition-colors duration-100 hover:bg-gray-50/60 dark:hover:bg-gray-800/40"
-                      >
-                        <td className="px-4 py-4 pl-5">
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => setDetailId(p.id)}
-                              className="font-mono text-sm font-semibold leading-none text-blue-600 hover:text-blue-700"
-                            >
-                              {p.proposalNumber}
-                            </button>
-                            <p className="mt-1 max-w-[200px] truncate text-xs text-gray-500 dark:text-gray-400">{p.title}</p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div>
-                            <button
-                              type="button"
-                              className="text-left text-sm font-medium text-gray-800 hover:underline dark:text-gray-200"
-                              onClick={() => navigate(`/customers/${p.customerId}`)}
-                            >
-                              {(() => {
-                                const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
-                                return cust?.companyName || cust?.customerName || p.customerName || "Company";
-                              })()}
-                            </button>
-                            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                              {(() => {
-                                const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
-                                return cust?.customerName || p.customerName || cust?.companyName || "Customer";
-                              })()}
-                            </p>
-                            <p className="mt-0.5 text-[11px] text-gray-400">({p.assignedToName})</p>
-                          </div>
-                        </td>
-                        <td className="hidden px-4 py-4 text-right sm:table-cell">
-                          <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                            ₹{(p.finalQuoteValue ?? p.grandTotal).toLocaleString("en-IN")}
-                          </span>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              {!smUp ? (
+                <div className="divide-y divide-border">
+                  {pageItems.map((p) => {
+                    const cust = customers.find((c) => c.id === p.customerId);
+                    return (
+                      <div key={p.id} className="flex items-start gap-2 px-2.5 py-2.5">
+                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailId(p.id)}>
+                          <p className="truncate font-mono text-xs font-medium text-primary">{p.proposalNumber}</p>
+                          <p className="truncate text-sm font-medium">{cust?.companyName || cust?.customerName || p.customerName || "—"}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{p.title}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             <ProposalStatusBadge status={p.status} />
+                            <span className="text-xs font-semibold tabular-nums">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm" className="h-8 px-3 text-xs">
-                                  Actions
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="center" sideOffset={6} className="min-w-[240px]">
-                                {/* Group 0 — Primary actions (contextual) */}
-                                {p.status === "draft" && canEditProposal(p) && (
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={async () => {
-                                      try {
-                                        await submitForApprovalAction(p.id);
-                                        await queryClient.invalidateQueries({ queryKey: QK.proposals() });
-                                        await queryClient.refetchQueries({ queryKey: QK.proposals() });
-                                        toast({ title: "Submitted for approval", description: p.proposalNumber });
-                                      } catch (e) {
-                                        toast({
-                                          title: "Submit failed",
-                                          description: e instanceof Error ? e.message : "Try again",
-                                          variant: "destructive",
-                                        });
-                                      }
-                                    }}
-                                  >
-                                    <Send className="mr-2 h-4 w-4" />
-                                    Submit for approval
-                                  </DropdownMenuItem>
-                                )}
-                                {p.status === "approval_pending" && canApprove && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setApproveId(p.id)}>
-                                    <CheckCircle className="mr-2 h-4 w-4" />
-                                    Approve
-                                  </DropdownMenuItem>
-                                )}
-                                {p.status === "approval_pending" && canReject && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setRejectId(p.id)}>
-                                    <X className="mr-2 h-4 w-4" />
-                                    Reject
-                                  </DropdownMenuItem>
-                                )}
-                                {p.status === "approved" && canSend && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
-                                    <Send className="mr-2 h-4 w-4" />
-                                    Send
-                                  </DropdownMenuItem>
-                                )}
-                                {p.status === "sent" && canActOnOutcome(p) && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => markWon(p.id)}>
-                                    <Trophy className="mr-2 h-4 w-4" />
-                                    Mark as won
-                                  </DropdownMenuItem>
-                                )}
-                                {p.status === "won" && !p.dealId && (canApprove || me.role === "super_admin") && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => setCreateDealId(p.id)}>
-                                    <Handshake className="mr-2 h-4 w-4" />
-                                    Create deal
-                                  </DropdownMenuItem>
-                                )}
-
-                                <DropdownMenuSeparator />
-
-                                {/* Group 1 — View & Edit */}
-                                <DropdownMenuItem className="cursor-pointer" onClick={() => setDetailId(p.id)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Proposal
-                                </DropdownMenuItem>
-                                {canMenu.edit && canEditProposal(p) && (
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={() => {
-                                      setEditingId(p.id);
-                                      setFormOpen(true);
-                                    }}
-                                  >
-                                    <Pencil className="mr-2 h-4 w-4" />
-                                    Edit Proposal
-                                  </DropdownMenuItem>
-                                )}
-                                {canMenu.duplicate && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => void duplicateProposal(p)}>
-                                    <Copy className="mr-2 h-4 w-4" />
-                                    Duplicate
-                                  </DropdownMenuItem>
-                                )}
-
-                                {/* Group 2 — Status Change */}
-                                {canMenu.status && nextStatuses(p.status).length > 0 && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    {nextStatuses(p.status).map((st) => (
-                                      <DropdownMenuItem
-                                        key={st}
-                                        className="cursor-pointer"
-                                        onClick={() => {
-                                          if (st === "won") {
-                                            markWon(p.id);
-                                            return;
-                                          }
-                                          updateProposal(p.id, { status: st });
-                                          void queryClient.invalidateQueries({ queryKey: QK.proposals() });
-                                          toast({
-                                            title: "Status updated",
-                                            description: `${p.proposalNumber} → ${st.replace(/_/g, " ")}`,
-                                          });
-                                        }}
-                                      >
-                                        {st === "sent" ? <Send className="mr-2 h-4 w-4" /> : null}
-                                        {st === "approved" ? <FileText className="mr-2 h-4 w-4" /> : null}
-                                        {st === "won" ? <Trophy className="mr-2 h-4 w-4" /> : null}
-                                        {st === "cold" ? <Snowflake className="mr-2 h-4 w-4" /> : null}
-                                        {st === "rejected" ? <X className="mr-2 h-4 w-4" /> : null}
-                                        {st === "negotiation" ? <Handshake className="mr-2 h-4 w-4" /> : null}
-                                        Mark as {st.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase())}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </>
-                                )}
-
-                                {/* Group 3 — Actions */}
-                                <DropdownMenuSeparator />
-                                {canMenu.sendEmail && (
-                                  <>
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
-                                      <Send className="mr-2 h-4 w-4" />
-                                      Send via Email
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => {
-                                      setSharePdfId(p.id);
-                                      const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
-                                      setSharePdfPhone(cust?.primaryPhone || "");
-                                      setSharePdfMessage(`Here is the proposal: ${p.proposalNumber}`);
-                                    }}>
-                                      <MessageCircle className="mr-2 h-4 w-4" />
-                                      Share via WhatsApp
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                                {canMenu.copyLink && (
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={async () => {
-                                      const url = `${window.location.origin}/proposals?detailId=${encodeURIComponent(p.id)}`;
-                                      await navigator.clipboard.writeText(url);
-                                      toast({ title: "Link copied", description: url });
-                                    }}
-                                  >
-                                    <Link2 className="mr-2 h-4 w-4" />
-                                    Copy Proposal Link
-                                  </DropdownMenuItem>
-                                )}
-                                {canMenu.download && (
-                                  <DropdownMenuItem className="cursor-pointer" onClick={() => handleDownloadPdf(p)}>
-                                    <Download className="mr-2 h-4 w-4" />
-                                    Download PDF
-                                  </DropdownMenuItem>
-                                )}
-                                {canMenu.addNote && (
-                                  <DropdownMenuItem
-                                    className="cursor-pointer"
-                                    onClick={() => {
-                                      setNoteForId(p.id);
-                                      setNoteDraft("");
-                                    }}
-                                  >
-                                    <MessageSquarePlus className="mr-2 h-4 w-4" />
-                                    Add Note
-                                  </DropdownMenuItem>
-                                )}
-
-                                {/* Group 3.5 — Change executive */}
-                                {canReassign && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuLabel className="text-xs text-muted-foreground font-medium">
-                                      Change executive
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuSub>
-                                      <DropdownMenuSubTrigger className="cursor-pointer">
-                                        <Users className="mr-2 h-4 w-4" />
-                                        Assign to…
-                                      </DropdownMenuSubTrigger>
-                                      <DropdownMenuSubContent className="max-h-[320px] overflow-y-auto min-w-[260px]">
-                                        {users.map((u) => (
-                                          <DropdownMenuItem
-                                            key={u.id}
-                                            className="cursor-pointer"
-                                            onClick={() => void changeAssignedTo(p, u.id)}
-                                          >
-                                            {u.name}
-                                          </DropdownMenuItem>
-                                        ))}
-                                      </DropdownMenuSubContent>
-                                    </DropdownMenuSub>
-                                  </>
-                                )}
-
-                                {/* Group 4 — Delivery */}
-                                {canMenu.assignDelivery && p.status === "won" && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="cursor-pointer"
-                                      onClick={() => {
-                                        setDeliveryAssignId(p.id);
-                                        setDeliveryAssigneeId("");
-                                      }}
-                                    >
-                                      <Truck className="mr-2 h-4 w-4" />
-                                      Assign Delivery Agent
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-
-                                {/* Group 5 — Danger zone */}
-                                {canMenu.delete && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="cursor-pointer text-red-600 focus:text-red-600"
-                                      onClick={() => setDeleteProposal(p)}
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      Delete Proposal
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </td>
-                        <td className="hidden px-4 py-4 text-center lg:table-cell">
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
-                          </span>
-                        </td>
-                        <td className="hidden px-4 py-4 text-center md:table-cell">
-                          <span
-                            className={cn(
-                              "text-xs",
-                              validUntilExpired(p.validUntil, p.status) ? "font-medium text-red-500" : "text-gray-500 dark:text-gray-400",
-                            )}
-                          >
-                            {formatProposalDate(p.validUntil)}
-                          </span>
-                        </td>
-                        <td className="pr-5 px-4 py-4" />
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {totalPages > 1 && (
-                <div className="border-t border-gray-100 dark:border-gray-800">
-                  <div className="flex items-center justify-end gap-2 px-5 py-3">
-                    <span className="text-xs text-muted-foreground">Rows</span>
+                        </button>
+                        {proposalActions(p)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="scrollbar-soft overflow-x-auto">
+                  <Table responsiveShell={false}>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Proposal</TableHead>
+                        <TableHead>Company</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="hidden lg:table-cell">Created</TableHead>
+                        <TableHead className="hidden md:table-cell">Valid until</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pageItems.map((p) => {
+                        const cust = customers.find((c) => c.id === p.customerId);
+                        return (
+                          <TableRow key={p.id}>
+                            <TableCell>
+                              <button
+                                type="button"
+                                onClick={() => setDetailId(p.id)}
+                                className="font-mono text-xs font-medium text-primary hover:underline"
+                              >
+                                {p.proposalNumber}
+                              </button>
+                              <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-muted-foreground">{p.title}</p>
+                            </TableCell>
+                            <TableCell className="max-w-[14rem]">
+                              <button
+                                type="button"
+                                className="truncate text-left font-medium hover:underline"
+                                onClick={() => navigate(`/customers/${p.customerId}`)}
+                              >
+                                {cust?.companyName || cust?.customerName || p.customerName || "—"}
+                              </button>
+                              <p className="truncate text-[11px] text-muted-foreground">{p.assignedToName}</p>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
+                              {formatINR(p.finalQuoteValue ?? p.grandTotal)}
+                            </TableCell>
+                            <TableCell>
+                              <ProposalStatusBadge status={p.status} />
+                            </TableCell>
+                            <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
+                              {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
+                            </TableCell>
+                            <TableCell
+                              className={cn(
+                                "hidden whitespace-nowrap md:table-cell",
+                                validUntilExpired(p.validUntil, p.status) ? "font-medium text-destructive" : "text-muted-foreground",
+                              )}
+                            >
+                              {formatProposalDate(p.validUntil)}
+                            </TableCell>
+                            <TableCell className="text-right">{proposalActions(p)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {filtered.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-2.5 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-muted-foreground">Rows</span>
                     <Select
                       value={String(pageSize)}
                       onValueChange={(v) => {
@@ -1340,7 +1449,7 @@ export default function Proposals() {
                         setPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 w-[96px]">
+                      <SelectTrigger className="h-7 w-[72px] text-[11px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1352,19 +1461,21 @@ export default function Proposals() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <DataTablePagination
-                    className="border-t-0 px-5 py-0 dark:border-gray-800"
-                    page={currentPage}
-                    totalPages={totalPages}
-                    total={filtered.length}
-                    perPage={pageSize}
-                    onPageChange={setPage}
-                  />
+                  {totalPages > 1 && (
+                    <DataTablePagination
+                      className="border-0 px-0 py-0"
+                      page={currentPage}
+                      totalPages={totalPages}
+                      total={filtered.length}
+                      perPage={pageSize}
+                      onPageChange={setPage}
+                    />
+                  )}
                 </div>
               )}
             </>
           )}
-        </div>
+        </motion.div>
       </div>
 
       <ProposalDetailSheet
@@ -1532,17 +1643,17 @@ export default function Proposals() {
                 if (!sharePdfId) return;
                 const p = proposals.find((x) => x.id === sharePdfId);
                 if (!p) return;
-                
+
                 try {
                   setSharePdfLoading(true);
                   toast({ title: "Generating PDF..." });
-                  
+
                   // Wait slightly for UI to update
                   await new Promise((r) => setTimeout(r, 100));
-                  
+
                   const blob = await generateProposalPdfBlob(p);
                   const file = new File([blob], `Proposal-${p.proposalNumber}.pdf`, { type: "application/pdf" });
-                  
+
                   const formData = new FormData();
                   formData.append("to", sharePdfPhone);
                   formData.append("message", sharePdfMessage);
@@ -1551,22 +1662,22 @@ export default function Proposals() {
                   formData.append("userId", me.id);
                   formData.append("userName", me.name);
                   formData.append("file", file);
-                  
+
                   const res = await fetch(apiUrl("/api/send-media"), {
                     method: "POST",
                     body: formData,
                   });
-                  
+
                   if (!res.ok) {
                     const err = await res.json().catch(() => ({}));
                     throw new Error(err.message || err.error || "Failed to send PDF");
                   }
-                  
+
                   toast({ title: "Sent successfully", description: "PDF shared via WhatsApp." });
                   setSharePdfId(null);
                   setSharePdfPhone("");
                   setSharePdfMessage("");
-                  
+
                   // Optionally mark as shared if draft
                   if (p.status === "draft") {
                     updateProposal(p.id, { status: "shared" });

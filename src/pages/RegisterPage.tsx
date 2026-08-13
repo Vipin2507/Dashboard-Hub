@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Eye, EyeOff } from "lucide-react";
+import { AuthSplitLayout } from "@/components/AuthSplitLayout";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name is required"),
@@ -67,15 +68,15 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card className="w-full max-w-md border border-border bg-card">
-        <CardHeader>
-          <CardTitle className="text-xl">Create your Buildesk account</CardTitle>
+    <AuthSplitLayout>
+      <Card>
+        <CardHeader className="space-y-0.5 px-5 py-3">
+          <CardTitle className="text-lg font-semibold sm:text-xl">Create account</CardTitle>
           <CardDescription>Sign up and start managing your sales hub.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3 px-5 pb-5 pt-3">
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-2.5">
               <FormField
                 control={form.control}
                 name="name"
@@ -195,7 +196,7 @@ export default function RegisterPage() {
           </p>
         </CardContent>
       </Card>
-    </div>
+    </AuthSplitLayout>
   );
 }
 

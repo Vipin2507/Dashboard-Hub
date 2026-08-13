@@ -3,11 +3,6 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 export interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
-  /**
-   * Outer rounded border + inner horizontal scroll + `min-w-[600px]` on `<table>`.
-   * Edge bleed (`-mx-4`) on small screens in padded layouts.
-   * Set `false` inside dialogs and compact nested tables.
-   */
   responsiveShell?: boolean;
 }
 
@@ -16,19 +11,16 @@ const Table = React.forwardRef<HTMLTableElement, TableProps>(
     <div
       className={cn(
         "relative w-full",
-        responsiveShell &&
-          "overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800 -mx-4 border-x-0 sm:mx-0 sm:border-x",
+        responsiveShell && "overflow-hidden rounded-lg border border-border -mx-3 sm:mx-0",
       )}
     >
-      <table
-        ref={ref}
-        className={cn(
-          "w-full caption-bottom border-collapse text-sm",
-          responsiveShell && "min-w-[600px]",
-          className,
-        )}
-        {...props}
-      />
+      <div className={cn(responsiveShell && "overflow-x-auto")}>
+        <table
+          ref={ref}
+          className={cn("w-full caption-bottom border-collapse text-xs", responsiveShell && "min-w-[600px]", className)}
+          {...props}
+        />
+      </div>
     </div>
   ),
 );
@@ -58,7 +50,7 @@ const TableRow = React.forwardRef<HTMLTableRowElement, React.HTMLAttributes<HTML
     <tr
       ref={ref}
       className={cn(
-        "border-b border-gray-100 transition-colors duration-100 hover:bg-gray-50/70 data-[state=selected]:bg-muted dark:border-gray-800 dark:hover:bg-gray-800/50",
+        "border-b border-border transition-colors hover:bg-muted/30 data-[state=selected]:bg-muted",
         className,
       )}
       {...props}
@@ -72,7 +64,7 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        "bg-gray-50 px-4 py-3 text-left align-middle text-xs font-medium uppercase tracking-wide text-gray-500 whitespace-nowrap dark:bg-gray-900 dark:text-gray-400 [&:has([role=checkbox])]:pr-0",
+        "bg-muted/60 px-2 py-1.5 text-left align-middle text-[10px] font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap [&:has([role=checkbox])]:pr-0",
         className,
       )}
       {...props}
@@ -85,10 +77,7 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
   ({ className, ...props }, ref) => (
     <td
       ref={ref}
-      className={cn(
-        "px-4 py-3.5 align-middle text-sm text-gray-800 dark:text-gray-200 [&:has([role=checkbox])]:pr-0",
-        className,
-      )}
+      className={cn("px-2 py-1.5 align-middle text-xs text-foreground [&:has([role=checkbox])]:pr-0", className)}
       {...props}
     />
   ),
@@ -97,7 +86,7 @@ TableCell.displayName = "TableCell";
 
 const TableCaption = React.forwardRef<HTMLTableCaptionElement, React.HTMLAttributes<HTMLTableCaptionElement>>(
   ({ className, ...props }, ref) => (
-    <caption ref={ref} className={cn("mt-4 text-sm text-muted-foreground", className)} {...props} />
+    <caption ref={ref} className={cn("mt-3 text-xs text-muted-foreground", className)} {...props} />
   ),
 );
 TableCaption.displayName = "TableCaption";

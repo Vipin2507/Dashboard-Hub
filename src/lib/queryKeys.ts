@@ -58,6 +58,7 @@ export const QK = {
   teams: () => ["teams"] as const,
   regions: () => ["regions"] as const,
   notifications: () => ["notifications"] as const,
+  notificationReads: (userId: string) => ["notifications", "reads", userId] as const,
 
   /** Sidebar badge counts (invalidate via `['proposals']` / `['deals']` / `['payments']` prefixes) */
   proposalPendingBadge: () => ["proposals", "badge", "pending"] as const,

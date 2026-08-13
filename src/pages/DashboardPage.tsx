@@ -6,11 +6,9 @@ import { useAppStore } from '@/store/useAppStore';
 import { formatINR } from '@/lib/rbac';
 import { runAutomationRules } from '@/lib/automationService';
 import { useDashboardData } from '@/hooks/useDashboardData';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
@@ -27,12 +25,12 @@ import {
   TrendingUp,
   Clock,
   CheckCircle,
-  FileText,
   AlertCircle,
   CalendarClock,
   Ticket,
   RefreshCw,
   Loader2,
+  ChevronRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -46,15 +44,15 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from 'recharts';
 import { format, formatDistanceToNow } from 'date-fns';
 import { currentMonthDateRange } from '@/lib/dateRange';
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
+  loadLocalFilters,
   loadSessionFilters,
-  saveSessionFilters,
+  saveLocalFilters,
 } from '@/lib/filterSessionPersistence';
 import { FilterPanel } from '@/components/FilterPanel';
 import type { ProposalStatus } from '@/types';
@@ -65,8 +63,17 @@ import { useSmUp } from '@/hooks/useSmUp';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 import { Datepicker, ymdToDate } from '@/components/ui/datepicker';
 import { toast } from '@/components/ui/use-toast';
+import { CountUp } from '@/components/CountUp';
+import { chartTooltipStyle, hoverLift, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
+import { motion } from 'framer-motion';
+import { dialogSmMax2xl } from '@/lib/dialogLayout';
+import { useMdUp } from '@/hooks/useSmUp';
 
-const BUILDESK_BLUE = '#0072BC';
+const CHART_PRIMARY = 'var(--color-primary)';
+const CHART_DEEP = 'var(--color-primary-deep)';
+const CHART_SUCCESS = 'var(--color-success)';
+const CHART_WARNING = 'var(--color-warning)';
+const CHART_DANGER = 'var(--color-danger)';
 
 type PersistedDashboardFilters = {
   dateFrom: string;
@@ -77,13 +84,36 @@ type PersistedDashboardFilters = {
   proposalStatusFilter: ProposalStatus | 'all';
 };
 
+const EMPTY_DASHBOARD_FILTERS: PersistedDashboardFilters = {
+  dateFrom: '',
+  dateTo: '',
+  ownerFilter: 'all',
+  teamFilter: 'all',
+  regionFilter: 'all',
+  proposalStatusFilter: 'all',
+};
+
+const DASHBOARD_FILTER_KEY = FILTER_SESSION_KEYS.dashboard;
+
+function persistDashboardFilters(value: PersistedDashboardFilters) {
+  saveLocalFilters(DASHBOARD_FILTER_KEY, value);
+}
+
 function loadDashboardFilters(): PersistedDashboardFilters | null {
-  return loadSessionFilters<PersistedDashboardFilters>(FILTER_SESSION_KEYS.dashboard);
+  const local = loadLocalFilters<PersistedDashboardFilters>(DASHBOARD_FILTER_KEY);
+  if (local) return local;
+  const session = loadSessionFilters<PersistedDashboardFilters>(DASHBOARD_FILTER_KEY);
+  if (session) {
+    persistDashboardFilters(session);
+    return session;
+  }
+  return null;
 }
 
 function dateRangeFromPersisted(saved: PersistedDashboardFilters | null): [Date | null, Date | null] {
-  if (!saved?.dateFrom || !saved?.dateTo) return currentMonthDateRange();
-  return [ymdToDate(saved.dateFrom), ymdToDate(saved.dateTo)];
+  if (!saved) return currentMonthDateRange();
+  if (!saved.dateFrom && !saved.dateTo) return [null, null];
+  return [saved.dateFrom ? ymdToDate(saved.dateFrom) : null, saved.dateTo ? ymdToDate(saved.dateTo) : null];
 }
 
 type DashboardKpiCardProps = {
@@ -107,62 +137,53 @@ function DashboardKpiCard({
   badge,
   onClick,
 }: DashboardKpiCardProps) {
+  const isPlainInt = /^\d+$/.test(String(value).trim());
+
   const inner = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <div
+      <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md', iconBg)}>
+        <Icon className={cn('h-3.5 w-3.5', iconColor)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isPlainInt ? <CountUp value={Number(value)} /> : value}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{sub}</p>
+      </div>
+      {onClick && <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block" />}
+      {badge && (
+        <span
           className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10',
-            iconBg,
+            'h-1.5 w-1.5 shrink-0 rounded-full',
+            badge === 'amber' && 'bg-warning',
+            badge === 'red' && 'bg-destructive',
+            badge === 'orange' && 'bg-warning',
           )}
-        >
-          <Icon className={cn('h-4 w-4 sm:h-5 sm:w-5', iconColor)} />
-        </div>
-        {badge && (
-          <Badge
-            variant="outline"
-            className={cn(
-              'shrink-0 text-[10px]',
-              badge === 'amber' && 'border-amber-500/50 text-amber-700',
-              badge === 'red' && 'border-red-500/50 text-red-700',
-              badge === 'orange' && 'border-orange-500/50 text-orange-700',
-            )}
-          >
-            {value}
-          </Badge>
-        )}
-      </div>
-      <div className="mt-3 sm:mt-4">
-        <p className="truncate text-xl font-bold leading-none tracking-tight text-foreground sm:text-2xl">{value}</p>
-        <p className="mt-1 text-xs leading-snug text-muted-foreground sm:text-sm">{label}</p>
-        <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{sub}</p>
-      </div>
+        />
+      )}
     </>
   );
 
   if (onClick) {
     return (
-      <Card
-        className="cursor-pointer border border-border bg-card transition-colors hover:bg-muted/30"
+      <motion.button
+        type="button"
         onClick={onClick}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onClick();
-          }
-        }}
+        variants={staggerItem}
+        whileHover={hoverLift}
+        whileTap={tapPress}
+        className="card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0"
       >
-        <CardContent className="p-4 sm:p-5">{inner}</CardContent>
-      </Card>
+        {inner}
+      </motion.button>
     );
   }
 
   return (
-    <Card className="border border-border bg-card shadow-none">
-      <CardContent className="p-4 sm:p-5">{inner}</CardContent>
-    </Card>
+    <motion.div variants={staggerItem} className="card-kpi w-full">
+      {inner}
+    </motion.div>
   );
 }
 
@@ -187,6 +208,7 @@ export default function DashboardPage() {
     scopedCustomers,
     kpis,
     paymentHistory,
+    paymentsRemaining,
     subscriptionTrackerQuery,
     notificationsQuery,
     isLoading: dashboardLoading,
@@ -197,9 +219,8 @@ export default function DashboardPage() {
   } = useDashboardData();
   const navigate = useNavigate();
   const smUp = useSmUp();
-  const revenueBarSize = smUp ? 32 : 20;
-  const axisTickX = smUp ? 12 : 10;
-  const yAxisWidth = smUp ? 56 : 40;
+  const mdUp = useMdUp();
+  const revenueBarSize = smUp ? 22 : 16;
   const persistedDashboardFilters = useMemo(() => loadDashboardFilters(), []);
 
   // Applied filters (used by all sections) — default: current calendar month
@@ -225,7 +246,9 @@ export default function DashboardPage() {
   );
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailTitle, setDetailTitle] = useState('');
-  const [detailRows, setDetailRows] = useState<Array<{ key: string; label: string; value: string }>>([]);
+  const [detailCols, setDetailCols] = useState<Array<{ id: string; header: string; align?: 'right' }>>([]);
+  const [detailRows, setDetailRows] = useState<Array<{ key: string; cells: Record<string, string> }>>([]);
+  const [detailTotal, setDetailTotal] = useState(0);
   const [detailLink, setDetailLink] = useState('');
 
   const dateFrom = dateRange[0] ? format(dateRange[0], 'yyyy-MM-dd') : '';
@@ -247,36 +270,60 @@ export default function DashboardPage() {
     dateRange[0] != null ||
     dateRange[1] != null;
 
+  const hydrateFromPersisted = (saved: PersistedDashboardFilters | null) => {
+    const range = dateRangeFromPersisted(saved);
+    const owner = saved?.ownerFilter ?? 'all';
+    const team = saved?.teamFilter ?? 'all';
+    const region = saved?.regionFilter ?? 'all';
+    const status = saved?.proposalStatusFilter ?? 'all';
+    setDateRange(range);
+    setDraftDateRange(range);
+    setOwnerFilter(owner);
+    setDraftOwnerFilter(owner);
+    setTeamFilter(team);
+    setDraftTeamFilter(team);
+    setRegionFilter(region);
+    setDraftRegionFilter(region);
+    setProposalStatusFilter(status);
+    setDraftProposalStatusFilter(status);
+  };
+
   const applyFilters = () => {
-    setDateRange(draftDateRange);
-    setOwnerFilter(draftOwnerFilter);
-    setTeamFilter(draftTeamFilter);
-    setRegionFilter(draftRegionFilter);
-    setProposalStatusFilter(draftProposalStatusFilter);
-    saveSessionFilters(FILTER_SESSION_KEYS.dashboard, {
+    const next: PersistedDashboardFilters = {
       dateFrom: draftDateRange[0] ? format(draftDateRange[0], 'yyyy-MM-dd') : '',
       dateTo: draftDateRange[1] ? format(draftDateRange[1], 'yyyy-MM-dd') : '',
       ownerFilter: draftOwnerFilter,
       teamFilter: draftTeamFilter,
       regionFilter: draftRegionFilter,
       proposalStatusFilter: draftProposalStatusFilter,
-    });
+    };
+    setDateRange(draftDateRange);
+    setOwnerFilter(draftOwnerFilter);
+    setTeamFilter(draftTeamFilter);
+    setRegionFilter(draftRegionFilter);
+    setProposalStatusFilter(draftProposalStatusFilter);
+    persistDashboardFilters(next);
   };
 
   const clearFilters = () => {
-    setDraftDateRange([null, null]);
-    setDraftOwnerFilter('all');
-    setDraftTeamFilter('all');
-    setDraftRegionFilter('all');
-    setDraftProposalStatusFilter('all');
-
-    setDateRange([null, null]);
-    setOwnerFilter('all');
-    setTeamFilter('all');
-    setRegionFilter('all');
-    setProposalStatusFilter('all');
-    clearSessionFilters(FILTER_SESSION_KEYS.dashboard);
+    hydrateFromPersisted(EMPTY_DASHBOARD_FILTERS);
+    persistDashboardFilters(EMPTY_DASHBOARD_FILTERS);
   };
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== DASHBOARD_FILTER_KEY) return;
+      try {
+        hydrateFromPersisted(
+          e.newValue ? (JSON.parse(e.newValue) as PersistedDashboardFilters) : EMPTY_DASHBOARD_FILTERS,
+        );
+      } catch {
+        hydrateFromPersisted(EMPTY_DASHBOARD_FILTERS);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   const ownerMeta = useMemo(() => {
     const map = new Map<string, { teamId: string; regionId: string }>();
@@ -396,18 +443,17 @@ export default function DashboardPage() {
 
   // KPI Row 1 — Top 4 cards (large)
   const kpiRow1 = [
-    { label: 'Total Revenue', value: formatINR(totalRevenue), sub: dateFrom ? 'In selected period' : 'From paid payments', icon: DollarSign, color: 'text-green-600' },
-    { label: 'Active Proposals', value: String(activeProposalsCount), sub: dateFrom ? 'Created in period' : 'Sent / Pending / Approved / Negotiation / Won', icon: TrendingUp, color: 'text-primary' },
-    { label: 'Deals Closed', value: String(dealsClosedCount), sub: dateFrom ? 'Won in period' : 'All time won', icon: CheckCircle, color: 'text-success' },
-    { label: 'New Customers', value: String(newCustomersCount), sub: dateFrom ? 'Added in period' : 'All time added', icon: Users, color: 'text-primary' },
+    { label: 'Revenue', value: formatINR(totalRevenue), sub: dateFrom ? 'In period' : 'Confirmed payments', icon: DollarSign, color: 'text-success', iconBg: 'bg-success/15', path: '/payments' as const, extra: {} },
+    { label: 'Active proposals', value: String(activeProposalsCount), sub: dateFrom ? 'Created in period' : 'Open pipeline', icon: TrendingUp, color: 'text-primary', iconBg: 'bg-primary/10', path: '/proposals' as const, extra: {} },
+    { label: 'Deals closed', value: String(dealsClosedCount), sub: dateFrom ? 'Won in period' : 'All time', icon: CheckCircle, color: 'text-success', iconBg: 'bg-success/15', path: '/deals' as const, extra: {} },
+    { label: 'New customers', value: String(newCustomersCount), sub: dateFrom ? 'Added in period' : 'All time', icon: Users, color: 'text-info', iconBg: 'bg-info/15', path: '/customers' as const, extra: {} },
   ];
 
-  // KPI Row 2 — Secondary 4 cards
   const kpiRow2 = [
-    { label: 'Pending Approvals', value: String(pendingApprovals), sub: 'Proposals', icon: Clock, color: 'text-amber-600', badge: 'amber' as const },
-    { label: 'Overdue Invoices', value: String(overdueInvoices), sub: 'Unpaid', icon: AlertCircle, color: 'text-red-600', badge: 'red' as const },
-    { label: 'Expiring Subscriptions (30 days)', value: String(expiringSubscriptions), sub: 'Product lines', icon: CalendarClock, color: 'text-orange-600', badge: 'orange' as const },
-    { label: 'Open Support Tickets', value: String(openSupportTickets), sub: 'Open + In progress', icon: Ticket, color: 'text-muted-foreground' },
+    { label: 'Pending approvals', value: String(pendingApprovals), sub: 'Proposals', icon: Clock, color: 'text-warning-foreground', iconBg: 'bg-warning/15', badge: 'amber' as const, path: '/proposals' as const, extra: { status: 'approval_pending' } },
+    { label: 'Overdue invoices', value: String(overdueInvoices), sub: 'Unpaid', icon: AlertCircle, color: 'text-destructive', iconBg: 'bg-destructive/15', badge: 'red' as const, path: '/payments' as const, extra: {} },
+    { label: 'Expiring in 30d', value: String(expiringSubscriptions), sub: 'Subscriptions', icon: CalendarClock, color: 'text-warning-foreground', iconBg: 'bg-warning/15', badge: 'orange' as const, path: '/customers' as const, extra: {} },
+    { label: 'Open tickets', value: String(openSupportTickets), sub: 'Support', icon: Ticket, color: 'text-muted-foreground', iconBg: 'bg-muted', path: '/customers' as const, extra: {} },
   ];
 
   // Monthly Revenue — last 6 months from API payment history (confirmed), Y in lakhs
@@ -431,7 +477,13 @@ export default function DashboardPage() {
       const m = months.find((x) => x.year === paid.getFullYear() && x.monthNum === paid.getMonth());
       if (m) m.revenue += Number(r.amountPaid ?? 0);
     }
-    return months.map((m) => ({ month: m.month, full: m.full, revenueLakhs: Math.round((m.revenue / 100_000) * 100) / 100 }));
+    return months.map((m) => ({
+      month: m.month,
+      full: m.full,
+      year: m.year,
+      monthNum: m.monthNum,
+      revenueLakhs: Math.round((m.revenue / 100_000) * 100) / 100,
+    }));
   }, [filteredCustomers, paymentHistory, now]);
 
   // Proposals by status — count per status, horizontal bar
@@ -458,14 +510,14 @@ export default function DashboardPage() {
 
   const pipelineColors: Record<string, string> = {
     draft: 'hsl(var(--muted-foreground))',
-    sent: '#0072BC',
-    'approval_pending': '#f59e0b',
-    approved: '#22c55e',
-    negotiation: '#6366f1',
-    won: '#10b981',
-    cold: '#64748b',
-    rejected: '#ef4444',
-    deal_created: '#a855f7',
+    sent: CHART_PRIMARY,
+    approval_pending: CHART_WARNING,
+    approved: CHART_SUCCESS,
+    negotiation: CHART_DEEP,
+    won: CHART_SUCCESS,
+    cold: 'hsl(var(--muted-foreground))',
+    rejected: CHART_DANGER,
+    deal_created: CHART_PRIMARY,
   };
 
   // Customer Status Donut
@@ -477,7 +529,9 @@ export default function DashboardPage() {
     }));
   }, [filteredCustomers, dateFrom, dateTo]);
 
-  const donutColors = ['#22c55e', '#0072BC', '#94a3b8', '#f97316', '#ef4444'];
+  const donutColors = [CHART_SUCCESS, CHART_PRIMARY, 'hsl(var(--muted-foreground))', CHART_WARNING, CHART_DANGER];
+  const customerStatusSlices = customerStatusData.filter((d) => d.value > 0);
+  const pipelineChartData = pipelineData.filter((d) => d.count > 0);
 
   // Recent Activity — from notifications API (live, cross-module)
   const recentActivity = useMemo(() => {
@@ -545,189 +599,501 @@ export default function DashboardPage() {
     return sorted[0] ?? null;
   }, [teamPerformance]);
 
-  const applyQuery = (path: string, extra: Record<string, string>) => {
+  const applyQuery = (path: string, extra: Record<string, string> = {}) => {
     const qs = new URLSearchParams();
-    if (dateFrom) qs.set('from', dateFrom);
-    if (dateTo) qs.set('to', dateTo);
-    if (ownerFilter !== 'all') qs.set('owner', ownerFilter);
-    if (teamFilter !== 'all') qs.set('team', teamFilter);
-    if (regionFilter !== 'all') qs.set('region', regionFilter);
+    if (dateFrom && dateTo) {
+      qs.set('from', dateFrom);
+      qs.set('to', dateTo);
+    } else {
+      qs.set('range', 'all');
+    }
+    qs.set('owner', ownerFilter);
+    qs.set('team', teamFilter);
+    qs.set('region', regionFilter);
     Object.entries(extra).forEach(([key, value]) => {
-      if (value && value !== 'all') qs.set(key, value);
+      if (value) qs.set(key, value);
     });
     return `${path}?${qs.toString()}`;
   };
 
-  const openDetail = (title: string, rows: Array<{ key: string; label: string; value: string }>, link: string) => {
+  const openRecords = (
+    title: string,
+    cols: Array<{ id: string; header: string; align?: 'right' }>,
+    records: Array<{ key: string; cells: Record<string, string> }>,
+    link: string,
+  ) => {
     setDetailTitle(title);
-    setDetailRows(rows);
+    setDetailCols(cols);
+    setDetailTotal(records.length);
+    setDetailRows(records.slice(0, 40));
     setDetailLink(link);
     setDetailOpen(true);
   };
 
-  const handlePipelineBarClick = (statusKey: string, count: number) => {
-    openDetail(
+  const customerNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    filteredCustomers.forEach((c) => m.set(c.id, c.companyName || c.customerNumber || c.id));
+    scopedCustomers.forEach((c) => {
+      if (!m.has(c.id)) m.set(c.id, c.companyName || c.customerNumber || c.id);
+    });
+    return m;
+  }, [filteredCustomers, scopedCustomers]);
+
+  const previewProposalCols = [
+    { id: 'name', header: 'Proposal' },
+    { id: 'customer', header: 'Customer' },
+    { id: 'status', header: 'Status' },
+    { id: 'value', header: 'Value', align: 'right' as const },
+  ];
+  const proposalPreviewRows = (list: typeof filteredProposals) =>
+    list.map((p) => ({
+      key: p.id,
+      cells: {
+        name: p.proposalNumber || p.title || p.id,
+        customer: p.customerName || '—',
+        status: p.status.replace(/_/g, ' '),
+        value: formatINR(p.finalQuoteValue ?? p.grandTotal ?? 0),
+      },
+    }));
+
+  const handlePipelineBarClick = (statusKey: string) => {
+    const list = filteredProposals.filter((p) => inDateRange(p.createdAt) && p.status === statusKey);
+    openRecords(
       `Proposals — ${statusKey.replace(/_/g, ' ')}`,
-      [{ key: statusKey, label: 'Count', value: String(count) }],
+      previewProposalCols,
+      proposalPreviewRows(list),
       applyQuery('/proposals', { status: statusKey }),
     );
+  };
+
+  const openCustomerStatusPreview = (statusName: string) => {
+    const status = statusName.toLowerCase();
+    const list = filteredCustomers.filter((c) => c.status === status && inDateRange(c.createdAt));
+    openRecords(
+      `Customers — ${statusName}`,
+      [
+        { id: 'name', header: 'Customer' },
+        { id: 'status', header: 'Status' },
+        { id: 'value', header: 'Added' },
+      ],
+      list.map((c) => ({
+        key: c.id,
+        cells: {
+          name: c.companyName || c.customerNumber || c.id,
+          status: c.status,
+          value: String(c.createdAt ?? '').slice(0, 10),
+        },
+      })),
+      applyQuery('/customers', { status }),
+    );
+  };
+
+  const openRevenueMonth = (data: { full?: string; year?: number; monthNum?: number }) => {
+    if (data.year == null || data.monthNum == null) return;
+    const from = `${data.year}-${String(data.monthNum + 1).padStart(2, '0')}-01`;
+    const last = new Date(data.year, data.monthNum + 1, 0).getDate();
+    const to = `${data.year}-${String(data.monthNum + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+    const ids = new Set(filteredCustomers.map((c) => c.id));
+    const rows = paymentHistory
+      .filter((r) => ids.has(r.customerId) && (!r.paymentStatus || r.paymentStatus === 'confirmed'))
+      .filter((r) => {
+        const d = String(r.paymentDate ?? '').slice(0, 10);
+        return d >= from && d <= to;
+      })
+      .map((r, i) => ({
+        key: `${r.customerId}-${r.paymentDate}-${i}`,
+        cells: {
+          name: customerNameById.get(r.customerId) ?? r.customerId,
+          status: String(r.paymentDate ?? '').slice(0, 10),
+          value: formatINR(Number(r.amountPaid ?? 0)),
+        },
+      }));
+    openRecords(
+      `Revenue — ${data.full ?? `${from}–${to}`}`,
+      [
+        { id: 'name', header: 'Customer' },
+        { id: 'status', header: 'Paid' },
+        { id: 'value', header: 'Amount', align: 'right' },
+      ],
+      rows,
+      applyQuery('/payments', { tab: 'history', from, to }),
+    );
+  };
+
+  const openKpiPreview = (kind: string) => {
+    switch (kind) {
+      case 'Revenue': {
+        const ids = new Set(filteredCustomers.map((c) => c.id));
+        const rows = paymentHistory
+          .filter((r) => ids.has(r.customerId) && (!r.paymentStatus || r.paymentStatus === 'confirmed'))
+          .filter((r) => inDateRange(r.paymentDate))
+          .map((r, i) => ({
+            key: `${r.customerId}-${r.paymentDate}-${i}`,
+            cells: {
+              name: customerNameById.get(r.customerId) ?? r.customerId,
+              status: String(r.paymentDate ?? '').slice(0, 10),
+              value: formatINR(Number(r.amountPaid ?? 0)),
+            },
+          }));
+        openRecords(
+          'Revenue',
+          [
+            { id: 'name', header: 'Customer' },
+            { id: 'status', header: 'Paid' },
+            { id: 'value', header: 'Amount', align: 'right' },
+          ],
+          rows,
+          applyQuery('/payments', { tab: 'history' }),
+        );
+        return;
+      }
+      case 'Active proposals': {
+        const list = filteredProposals.filter(
+          (p) =>
+            inDateRange(p.createdAt) &&
+            ['sent', 'approval_pending', 'approved', 'negotiation', 'won'].includes(p.status),
+        );
+        openRecords('Active proposals', previewProposalCols, proposalPreviewRows(list), applyQuery('/proposals', {}));
+        return;
+      }
+      case 'Deals closed': {
+        const list = filteredDeals.filter((d) => {
+          if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== 'Closed/Won') return false;
+          return inDateRange(getDealDateForFilter(d) ?? '');
+        });
+        openRecords(
+          'Deals closed',
+          [
+            { id: 'name', header: 'Deal' },
+            { id: 'customer', header: 'Customer' },
+            { id: 'value', header: 'Value', align: 'right' },
+          ],
+          list.map((d) => ({
+            key: d.id,
+            cells: {
+              name: d.name || d.id,
+              customer: customerNameById.get(d.customerId) ?? d.customerId,
+              value: formatINR(Number(d.value ?? 0)),
+            },
+          })),
+          applyQuery('/deals', { status: 'Closed/Won' }),
+        );
+        return;
+      }
+      case 'New customers': {
+        const list = filteredCustomers.filter((c) => inDateRange(c.createdAt));
+        openRecords(
+          'New customers',
+          [
+            { id: 'name', header: 'Customer' },
+            { id: 'status', header: 'Status' },
+            { id: 'value', header: 'Added' },
+          ],
+          list.map((c) => ({
+            key: c.id,
+            cells: {
+              name: c.companyName || c.customerNumber || c.id,
+              status: c.status,
+              value: String(c.createdAt ?? '').slice(0, 10),
+            },
+          })),
+          applyQuery('/customers', {}),
+        );
+        return;
+      }
+      case 'Pending approvals': {
+        const list = filteredProposals.filter((p) => inDateRange(p.createdAt) && p.status === 'approval_pending');
+        openRecords(
+          'Pending approvals',
+          previewProposalCols,
+          proposalPreviewRows(list),
+          applyQuery('/proposals', { status: 'approval_pending' }),
+        );
+        return;
+      }
+      case 'Overdue invoices': {
+        const rows = (paymentsRemaining ?? [])
+          .filter((p) => p.category === 'overdue')
+          .map((p, i) => ({
+            key: `${p.customerId}-${i}`,
+            cells: {
+              name: customerNameById.get(p.customerId) ?? p.customerId,
+              status: 'Overdue',
+              value: formatINR(Number(p.totalRemaining ?? 0)),
+            },
+          }));
+        openRecords(
+          'Overdue invoices',
+          [
+            { id: 'name', header: 'Customer' },
+            { id: 'status', header: 'Status' },
+            { id: 'value', header: 'Remaining', align: 'right' },
+          ],
+          rows,
+          applyQuery('/payments', { tab: 'overdue' }),
+        );
+        return;
+      }
+      case 'Expiring in 30d': {
+        const tracker = subscriptionTrackerQuery.data;
+        const rows = (tracker?.rows ?? [])
+          .filter((r) => (regionFilter === 'all' || r.customerRegionId === regionFilter) && r.bucket === 'expiring_30')
+          .filter((r) => {
+            const d = String(r.expiryDate ?? '').slice(0, 10);
+            if (dateFrom && d < dateFrom) return false;
+            if (dateTo && d > dateTo) return false;
+            return true;
+          })
+          .map((r, i) => ({
+            key: `${r.customerId ?? i}`,
+            cells: {
+              name: r.customerName || '—',
+              status: r.planName || '—',
+              value: String(r.expiryDate ?? '').slice(0, 10),
+            },
+          }));
+        openRecords(
+          'Expiring in 30 days',
+          [
+            { id: 'name', header: 'Customer' },
+            { id: 'status', header: 'Plan' },
+            { id: 'value', header: 'Expiry' },
+          ],
+          rows,
+          applyQuery('/customers', { tab: 'renewals' }),
+        );
+        return;
+      }
+      case 'Open tickets': {
+        const rows = filteredCustomers.flatMap((c) =>
+          (c.supportTickets ?? [])
+            .filter((t) => t.status === 'open' || t.status === 'in_progress')
+            .map((t) => ({
+              key: t.id,
+              cells: {
+                name: c.companyName || c.customerNumber || c.id,
+                status: t.status.replace(/_/g, ' '),
+                value: t.subject || t.id,
+              },
+            })),
+        );
+        openRecords(
+          'Open tickets',
+          [
+            { id: 'name', header: 'Customer' },
+            { id: 'status', header: 'Status' },
+            { id: 'value', header: 'Ticket' },
+          ],
+          rows,
+          applyQuery('/customers', {}),
+        );
+        return;
+      }
+      default:
+        return;
+    }
   };
 
   return (
     <>
       <Topbar
-        title="Buildesk License Management"
-        subtitle="Welcome back! Here's what's happening with your license management workflows."
+        title="Dashboard"
+        subtitle={smUp ? "Pipeline, licenses, and revenue." : undefined}
         actions={
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2 mr-2">
-              <span className={cn("h-2 w-2 rounded-full", live.connected ? "bg-emerald-500" : "bg-gray-300")} />
-              <span className="text-xs text-muted-foreground">{live.connected ? "Live" : "Offline"}</span>
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className={cn("h-1.5 w-1.5 rounded-full", live.connected ? "bg-success" : "bg-muted-foreground/40")} />
+              <span className="text-[11px] text-muted-foreground">{live.connected ? "Live" : "Off"}</span>
               {live.lastUpdatedAt && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">
-                  Last updated: {formatDistanceToNow(new Date(live.lastUpdatedAt), { addSuffix: true })}
+                <span className="hidden text-[11px] text-muted-foreground md:inline">
+                  {formatDistanceToNow(new Date(live.lastUpdatedAt), { addSuffix: true })}
                 </span>
               )}
             </div>
-            <span className="text-xs text-muted-foreground">Guidance</span>
-            <Switch
-              checked={guidanceMode}
-              onCheckedChange={(v) => {
-                setGuidanceMode(v);
-                try {
-                  localStorage.setItem(guidanceKey, v ? '1' : '0');
-                } catch {
-                  /* ignore */
-                }
-              }}
-            />
+            <label className="flex items-center gap-1.5">
+              <span className="hidden text-[11px] text-muted-foreground sm:inline">Guidance</span>
+              <Switch
+                checked={guidanceMode}
+                onCheckedChange={(v) => {
+                  setGuidanceMode(v);
+                  try {
+                    localStorage.setItem(guidanceKey, v ? '1' : '0');
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                aria-label="Guidance mode"
+              />
+            </label>
           </div>
         }
       />
-      <div className="space-y-4 sm:space-y-6">
-        <FilterPanel title="Filters" storageKey="ui:dashboard:filtersOpen">
-            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
-              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-                <div className="space-y-1 min-w-[220px] flex-1">
-                  <p className="text-xs text-muted-foreground">Date range</p>
-                  <Datepicker
-                    controls={['calendar']}
-                    select="range"
-                    touchUi={true}
-                    inputComponent="input"
-                    inputProps={{
-                      placeholder: 'Please Select...',
-                      className: 'h-9 w-full',
-                    }}
-                    value={draftDateRange}
-                    onChange={(ev) => setDraftDateRange(ev.value)}
-                  />
-                </div>
-
-                <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
-                  <SelectTrigger className="h-9 w-full sm:w-[170px] shrink-0">
-                    <SelectValue placeholder="All owners" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All owners</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
-                  <SelectTrigger className="h-9 w-full sm:w-[160px] shrink-0">
-                    <SelectValue placeholder="All teams" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All teams</SelectItem>
-                    {teams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
-                  <SelectTrigger className="h-9 w-full sm:w-[160px] shrink-0">
-                    <SelectValue placeholder="All regions" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All regions</SelectItem>
-                    {regions.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={draftProposalStatusFilter}
-                  onValueChange={(v) => setDraftProposalStatusFilter(v as ProposalStatus | 'all')}
-                >
-                  <SelectTrigger className="h-9 w-full sm:w-[190px] shrink-0">
-                    <SelectValue placeholder="All proposal statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All proposal statuses</SelectItem>
-                    {pipelineStatuses.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {s.replace(/_/g, ' ')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+      <div className="space-y-2.5">
+        <FilterPanel
+          title="Filters"
+          storageKey="ui:dashboard:filtersOpen"
+          defaultOpen={smUp}
+          headerActions={
+            hasActiveAppliedFilters ? (
+              <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
+                {dateFrom && dateTo ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {dateFrom} – {dateTo}
+                  </span>
+                ) : null}
+                {ownerFilter !== 'all' ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {users.find((u) => u.id === ownerFilter)?.name ?? 'Owner'}
+                  </span>
+                ) : null}
+                {teamFilter !== 'all' ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {teams.find((t) => t.id === teamFilter)?.name ?? 'Team'}
+                  </span>
+                ) : null}
+                {regionFilter !== 'all' ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {regions.find((r) => r.id === regionFilter)?.name ?? 'Region'}
+                  </span>
+                ) : null}
+                {proposalStatusFilter !== 'all' ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {proposalStatusFilter.replace(/_/g, ' ')}
+                  </span>
+                ) : null}
               </div>
-
-              <div className="flex flex-wrap items-center justify-start gap-2 lg:ml-auto lg:justify-end">
-                <Button
-                  variant="outline"
-                  className="h-9"
-                  disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
-                  onClick={clearFilters}
-                >
-                  Clear Filters
-                </Button>
-                <Button
-                  className="h-9"
-                  type="button"
-                  disabled={!hasPendingFilterChanges}
-                  onClick={applyFilters}
-                >
-                  Apply
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="h-9 w-9 p-0"
-                  type="button"
-                  disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
-                  onClick={() => {
-                    refetchAll();
-                    toast({ title: "Data refreshed" });
+            ) : null
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
+              <div className="min-w-0 space-y-1 sm:col-span-2 xl:col-span-1">
+                <p className="text-xs text-muted-foreground">Date range</p>
+                <Datepicker
+                  controls={['calendar']}
+                  select="range"
+                  touchUi={true}
+                  inputComponent="input"
+                  inputProps={{
+                    placeholder: 'Select dates…',
+                    className: 'h-9 w-full text-sm',
                   }}
-                  title="Refresh data"
-                >
-                  {dashboardLoading || proposalsQuery.isFetching ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                </Button>
+                  value={draftDateRange}
+                  onChange={(ev) => setDraftDateRange(ev.value)}
+                />
               </div>
+
+              <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All owners" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All owners</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All teams" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All regions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All regions</SelectItem>
+                  {regions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={draftProposalStatusFilter}
+                onValueChange={(v) => setDraftProposalStatusFilter(v as ProposalStatus | 'all')}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All proposal statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  {pipelineStatuses.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s.replace(/_/g, ' ')}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                disabled={!hasActiveAppliedFilters && !hasPendingFilterChanges}
+                onClick={clearFilters}
+              >
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                type="button"
+                disabled={!hasPendingFilterChanges}
+                onClick={applyFilters}
+              >
+                Apply
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-8 w-8 shrink-0 p-0"
+                type="button"
+                disabled={dashboardLoading || proposalsQuery.isFetching || dealsQuery.isFetching || customersQuery.isFetching}
+                onClick={() => {
+                  refetchAll();
+                  toast({ title: "Data refreshed" });
+                }}
+                title="Refresh data"
+              >
+                {dashboardLoading || proposalsQuery.isFetching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
         </FilterPanel>
         {dashboardLoading && (
-          <p className="text-xs text-muted-foreground flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin" /> Loading live metrics from API…
+          <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Syncing metrics
           </p>
         )}
-        {/* KPI Row 1 — 2 col mobile → 4 col desktop */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4"
+        >
           {kpiRow1.map((s) => (
             <DashboardKpiCard
               key={s.label}
@@ -736,20 +1102,17 @@ export default function DashboardPage() {
               sub={s.sub}
               icon={s.icon}
               iconColor={s.color}
-              iconBg="bg-muted"
-              onClick={() =>
-                openDetail(
-                  s.label,
-                  [{ key: s.label, label: 'Value', value: s.value }],
-                  applyQuery('/deals', {}),
-                )
-              }
+              iconBg={s.iconBg}
+              onClick={() => openKpiPreview(s.label)}
             />
           ))}
-        </div>
-
-        {/* KPI Row 2 — same */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+        </motion.div>
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4"
+        >
           {kpiRow2.map((s) => (
             <DashboardKpiCard
               key={s.label}
@@ -758,365 +1121,370 @@ export default function DashboardPage() {
               sub={s.sub}
               icon={s.icon}
               iconColor={s.color}
-              iconBg="bg-muted"
+              iconBg={s.iconBg}
               badge={s.badge}
+              onClick={() => openKpiPreview(s.label)}
             />
           ))}
-        </div>
+        </motion.div>
 
-        {/* Charts row — stack → side by side (2/3 + 1/3 at xl) */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
-          <div className="xl:col-span-2 space-y-4 lg:space-y-6">
-            <Card className="border border-border bg-card shadow-none">
-              <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
-                <CardTitle className="text-sm font-semibold sm:text-base">Revenue Overview</CardTitle>
-              </CardHeader>
-              <CardContent className="px-2 pb-4 sm:px-4">
-                <div className="h-48 sm:h-64 lg:h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlyRevenueData} margin={{ top: 4, right: 4, bottom: 0, left: -8 }}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis
-                        dataKey="month"
-                        tick={{ fontSize: axisTickX }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis
-                        tick={{ fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={yAxisWidth}
-                        tickFormatter={(v) => `₹${v}L`}
-                      />
-                      <RechartsTooltip
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
-                        labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}
-                      />
-                      <Bar
-                        dataKey="revenueLakhs"
-                        fill={BUILDESK_BLUE}
-                        name="Revenue"
-                        barSize={revenueBarSize}
-                        radius={[4, 4, 0, 0]}
-                        cursor="pointer"
-                        onClick={(data: { full: string; revenueLakhs: number }) =>
-                          openDetail(
-                            `Revenue - ${data?.full ?? ''}`,
-                            [{ key: data?.full ?? 'month', label: 'Revenue', value: formatINR(Math.round((data?.revenueLakhs ?? 0) * 100_000)) }],
-                            applyQuery('/deals', {}),
-                          )
-                        }
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border border-border bg-card shadow-none">
-              <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
-                <CardTitle className="text-sm font-semibold sm:text-base">Proposals by status</CardTitle>
-              </CardHeader>
-              <CardContent className="px-2 pb-4 sm:px-4">
-                <div className="h-48 sm:h-64 lg:h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      layout="vertical"
-                      data={pipelineData}
-                      margin={{ top: 4, right: 8, left: smUp ? 56 : 48, bottom: 4 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                      <XAxis type="number" tick={{ fontSize: smUp ? 11 : 10 }} axisLine={false} tickLine={false} />
-                      <YAxis
-                        type="category"
-                        dataKey="status"
-                        width={smUp ? 54 : 46}
-                        tick={{ fontSize: smUp ? 11 : 10 }}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <RechartsTooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                      <Bar
-                        dataKey="count"
-                        name="Count"
-                        barSize={smUp ? 28 : 20}
-                        radius={[0, 4, 4, 0]}
-                        onClick={(data: { statusKey: string; count: number }) => data && handlePipelineBarClick(data.statusKey, data.count)}
-                        cursor="pointer"
-                      >
-                        {pipelineData.map((entry) => (
-                          <Cell
-                            key={entry.statusKey}
-                            fill={pipelineColors[entry.statusKey] ?? BUILDESK_BLUE}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="xl:col-span-1 flex h-full min-h-[280px] flex-col border border-border bg-card">
-            <CardContent className="p-0 flex flex-col h-full">
-              <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-                <h3 className="font-semibold text-foreground">Recent Activity</h3>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate('/customers')}>
-                  View All
-                </Button>
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4"
+        >
+          <motion.div variants={staggerItem} className="card-soft flex min-w-0 flex-col p-2.5">
+            <p className="typo-section-title">Customer mix</p>
+            <div className="relative mx-auto mt-1 h-[8.5rem] w-[8.5rem] sm:h-[7.25rem] sm:w-[7.25rem]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={customerStatusSlices.length ? customerStatusSlices : customerStatusData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={smUp ? 34 : 40}
+                    outerRadius={smUp ? 50 : 58}
+                    paddingAngle={2}
+                    dataKey="value"
+                    nameKey="name"
+                    stroke="hsl(var(--card))"
+                    strokeWidth={2}
+                    cursor="pointer"
+                    onClick={(slice) => {
+                      if (!slice?.name) return;
+                      openCustomerStatusPreview(String(slice.name));
+                    }}
+                  >
+                    {(customerStatusSlices.length ? customerStatusSlices : customerStatusData).map((entry) => {
+                      const idx = customerStatusData.findIndex((d) => d.name === entry.name);
+                      return <Cell key={entry.name} fill={donutColors[idx % donutColors.length]} />;
+                    })}
+                  </Pie>
+                  <RechartsTooltip
+                    contentStyle={chartTooltipStyle}
+                    formatter={(value: number, name: string) => [value, name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-base font-semibold tabular-nums leading-none">
+                  <CountUp value={filteredCustomers.length} />
+                </span>
+                <span className="mt-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">Total</span>
               </div>
-              <div className="p-4 space-y-3 overflow-y-auto flex-1">
-                {recentActivity.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent activity</p>
-                ) : (
-                  recentActivity.map((a) => (
-                    <div key={a.id} className="flex gap-2 items-start text-sm">
-                      <span
-                        className="mt-1.5 w-2 h-2 rounded-full shrink-0 bg-primary"
-                        aria-hidden
-                      />
-                      <div className="min-w-0">
-                        <p className="text-foreground truncate">{a.text}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true })}
-                        </p>
-                      </div>
+            </div>
+            <div className="mt-1.5 flex flex-wrap justify-center gap-1">
+              {customerStatusData.map((d, i) => (
+                <button
+                  key={d.name}
+                  type="button"
+                  onClick={() => openCustomerStatusPreview(d.name)}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: donutColors[i] }} />
+                  {d.name}
+                  <span className="tabular-nums text-foreground">{d.value}</span>
+                </button>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div variants={staggerItem} className="card-soft flex min-w-0 flex-col p-2.5">
+            <p className="typo-section-title">Revenue</p>
+            <div className="mt-1 h-40 min-w-0 flex-1 sm:h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthlyRevenueData} margin={{ top: 4, right: 2, bottom: 0, left: -12 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} width={36} tickFormatter={(v) => `₹${v}L`} />
+                  <RechartsTooltip
+                    cursor={{ fill: 'hsl(var(--muted) / 0.45)' }}
+                    contentStyle={chartTooltipStyle}
+                    formatter={(value: number) => [formatINR((value as number) * 100_000), 'Revenue']}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.full ?? ''}
+                  />
+                  <Bar
+                    dataKey="revenueLakhs"
+                    fill={CHART_PRIMARY}
+                    name="Revenue"
+                    barSize={revenueBarSize}
+                    radius={[3, 3, 0, 0]}
+                    cursor="pointer"
+                    onClick={(data: { full: string; year: number; monthNum: number }) => data && openRevenueMonth(data)}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          <motion.div variants={staggerItem} className="card-soft flex min-w-0 flex-col p-2.5">
+            <p className="typo-section-title">Pipeline</p>
+            <div className="mt-1 h-40 min-w-0 flex-1 sm:h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  layout="vertical"
+                  data={pipelineChartData.length ? pipelineChartData : pipelineData}
+                  margin={{ top: 0, right: 8, left: 4, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="status"
+                    width={smUp ? 72 : 58}
+                    tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <RechartsTooltip cursor={{ fill: 'hsl(var(--muted) / 0.45)' }} contentStyle={chartTooltipStyle} />
+                  <Bar
+                    dataKey="count"
+                    name="Count"
+                    barSize={10}
+                    radius={[0, 3, 3, 0]}
+                    cursor="pointer"
+                    onClick={(data: { statusKey: string }) => data?.statusKey && handlePipelineBarClick(data.statusKey)}
+                  >
+                    {(pipelineChartData.length ? pipelineChartData : pipelineData).map((entry) => (
+                      <Cell key={entry.statusKey} fill={pipelineColors[entry.statusKey] ?? CHART_PRIMARY} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          <motion.div variants={staggerItem} className="card-soft flex min-h-[12rem] min-w-0 flex-col p-0 sm:min-h-[13.5rem]">
+            <div className="flex items-center justify-between border-b border-border px-2.5 py-2">
+              <p className="typo-section-title">Activity</p>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => navigate('/customers')}>
+                All
+              </Button>
+            </div>
+            <div className="max-h-56 flex-1 space-y-1.5 overflow-y-auto p-2 sm:max-h-none">
+              {recentActivity.length === 0 ? (
+                <p className="px-1 py-6 text-center text-[11px] text-muted-foreground">No activity in range</p>
+              ) : (
+                recentActivity.slice(0, 6).map((a) => (
+                  <div key={a.id} className="flex items-start gap-1.5">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs text-foreground">{a.text}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(a.timestamp), { addSuffix: true })}
+                      </p>
                     </div>
-                  ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
 
-        {/* Bottom row — Customer status + Recent proposals */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-6">
-          <Card className="border border-border bg-card shadow-none xl:col-span-1">
-            <CardHeader className="px-4 pb-2 pt-4 sm:px-6 sm:pb-3 sm:pt-5">
-              <CardTitle className="text-sm font-semibold sm:text-base">Customer Status</CardTitle>
-            </CardHeader>
-            <CardContent className="px-2 pb-4 sm:px-4">
-              <div className="relative h-44 sm:h-52 lg:h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={customerStatusData}
-                      cx="50%"
-                      cy="45%"
-                      innerRadius="45%"
-                      outerRadius="65%"
-                      paddingAngle={3}
-                      dataKey="value"
-                      nameKey="name"
-                      label={({ name, value }) => (value > 0 ? `${name}: ${value}` : '')}
-                      onClick={(slice) => {
-                        if (!slice?.name) return;
-                        const status = String(slice.name).toLowerCase();
-                        openDetail(
-                          `Customer Status - ${slice.name}`,
-                          [{ key: status, label: 'Count', value: String(slice.value ?? 0) }],
-                          applyQuery('/customers', { status }),
-                        );
-                      }}
-                    >
-                      {customerStatusData.map((_, index) => (
-                        <Cell key={index} fill={donutColors[index % donutColors.length]} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="pointer-events-none absolute left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2">
-                  <span className="text-xl font-bold text-foreground">{filteredCustomers.length}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="xl:col-span-2">
-          <Card className="border border-border bg-card">
-            <CardContent className="p-0">
-              <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
-                <h3 className="font-semibold text-foreground">Recent Proposals</h3>
-                {guidanceMode ? (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
-                        View All
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Go here to create proposals, update status, and send follow-ups.
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate('/proposals')}>
-                    View All
+        <motion.div variants={staggerItem} initial="initial" animate="animate" className="card-soft overflow-hidden">
+          <div className="flex items-center justify-between gap-2 border-b border-border px-2.5 py-2">
+            <p className="typo-section-title">Recent proposals</p>
+            {guidanceMode ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => navigate('/proposals')}>
+                    View all
                   </Button>
-                )}
-              </div>
-              {recentProposals.length > 0 ? (
-                <Table>
+                </TooltipTrigger>
+                <TooltipContent>Create proposals, update status, and send follow-ups.</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => navigate('/proposals')}>
+                View all
+              </Button>
+            )}
+          </div>
+          {recentProposals.length > 0 ? (
+            mdUp ? (
+              <div className="scrollbar-soft overflow-x-auto">
+                <Table responsiveShell={false}>
                   <TableHeader>
-                    <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Proposal #
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Customer
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Value
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Status
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3 md:table-cell">
-                        Date
-                      </TableHead>
+                    <TableRow>
+                      <TableHead>Proposal</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="divide-y divide-border">
+                  <TableBody>
                     {recentProposals.map((p) => (
-                      <TableRow key={p.id} className="transition-colors hover:bg-muted/50">
-                        <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
+                      <TableRow key={p.id}>
+                        <TableCell>
                           <button
                             type="button"
-                            className="text-primary hover:underline"
+                            className="font-medium text-primary hover:underline"
                             onClick={() => navigate('/proposals', { state: { detailId: p.id } })}
                           >
                             {p.proposalNumber}
                           </button>
                         </TableCell>
-                        <TableCell className="px-3 py-3 text-sm text-muted-foreground sm:px-4 sm:py-3.5">{p.customerName}</TableCell>
-                        <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">
-                          {formatINR(p.finalQuoteValue ?? p.grandTotal)}
-                        </TableCell>
-                        <TableCell className="px-3 py-3 sm:px-4 sm:py-3.5">
+                        <TableCell className="max-w-[12rem] truncate text-muted-foreground">{p.customerName}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
+                        <TableCell>
                           <Badge variant="outline" className="text-[10px]">
                             {p.status.replace(/_/g, ' ')}
                           </Badge>
                         </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-xs text-muted-foreground sm:px-4 sm:py-3.5 md:table-cell">
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
                           {new Date(p.updatedAt).toLocaleDateString('en-IN')}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              ) : (
-                <div className="p-8 text-center text-sm text-muted-foreground">No proposals in scope</div>
-              )}
-            </CardContent>
-          </Card>
-          </div>
-        </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {recentProposals.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="flex w-full items-start justify-between gap-3 px-2.5 py-2.5 text-left hover:bg-muted/30"
+                    onClick={() => navigate('/proposals', { state: { detailId: p.id } })}
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-primary">{p.proposalNumber}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{p.customerName}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-semibold tabular-nums">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</p>
+                      <Badge variant="outline" className="mt-0.5 text-[10px]">
+                        {p.status.replace(/_/g, ' ')}
+                      </Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          ) : (
+            <p className="px-2.5 py-6 text-center text-xs text-muted-foreground">No proposals in scope</p>
+          )}
+        </motion.div>
 
         {isAdminView && (
-          <Card className="border border-border bg-card">
-            <CardContent className="p-0">
-              <div className="flex flex-col gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-4">
-                <div>
-                  <h3 className="font-semibold text-foreground">Team performance</h3>
-                  <p className="text-xs text-muted-foreground">
-                    Least performing:{" "}
-                    <span className="font-medium text-foreground">
-                      {leastPerforming ? `${leastPerforming.name} (₹${Math.round(leastPerforming.dealsWonValue).toLocaleString("en-IN")})` : "—"}
-                    </span>
-                  </p>
-                </div>
-                <Button variant="ghost" size="sm" className="text-xs text-primary" onClick={() => navigate("/deals")}>
-                  View deals
-                </Button>
+          <motion.div variants={staggerItem} initial="initial" animate="animate" className="card-soft overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-2.5 py-2">
+              <div>
+                <p className="typo-section-title">Team performance</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Least:{" "}
+                  <span className="font-medium text-foreground">
+                    {leastPerforming
+                      ? `${leastPerforming.name} (${formatINR(leastPerforming.dealsWonValue)})`
+                      : "—"}
+                  </span>
+                </p>
               </div>
-              {teamPerformance.length ? (
-                <Table>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={() => navigate("/deals")}>
+                Deals
+              </Button>
+            </div>
+            {teamPerformance.length ? (
+              <div className="scrollbar-soft overflow-x-auto">
+                <Table responsiveShell={false}>
                   <TableHeader>
-                    <TableRow className="border-b bg-muted/40 hover:bg-muted/40">
-                      <TableHead className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Executive
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
-                        Proposals
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
-                        Pending
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground md:table-cell sm:px-4 sm:py-3">
-                        Approved
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell sm:px-4 sm:py-3">
-                        Negotiation
-                      </TableHead>
-                      <TableHead className="hidden px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground lg:table-cell sm:px-4 sm:py-3">
-                        Cold
-                      </TableHead>
-                      <TableHead className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4 sm:py-3">
-                        Won (₹)
-                      </TableHead>
+                    <TableRow>
+                      <TableHead>Executive</TableHead>
+                      <TableHead className="hidden text-right sm:table-cell">Proposals</TableHead>
+                      <TableHead className="hidden text-right md:table-cell">Pending</TableHead>
+                      <TableHead className="hidden text-right md:table-cell">Approved</TableHead>
+                      <TableHead className="hidden text-right lg:table-cell">Negotiation</TableHead>
+                      <TableHead className="hidden text-right lg:table-cell">Cold</TableHead>
+                      <TableHead className="text-right">Won</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody className="divide-y divide-border">
+                  <TableBody>
                     {teamPerformance.map((r) => (
-                      <TableRow key={r.userId} className="transition-colors hover:bg-muted/50">
-                        <TableCell className="px-3 py-3 text-sm font-medium sm:px-4 sm:py-3.5">
-                          {r.name}
-                          <div className="text-xs text-muted-foreground md:hidden">
+                      <TableRow key={r.userId}>
+                        <TableCell className="max-w-[10rem] sm:max-w-none">
+                          <span className="block truncate">{r.name}</span>
+                          <div className="text-[10px] text-muted-foreground sm:hidden">
                             {r.proposalCount} proposals · {r.dealsWonCount} won
                           </div>
                         </TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.proposalCount}</TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.approvalPending}</TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm md:table-cell sm:px-4 sm:py-3.5">{r.approved}</TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm lg:table-cell sm:px-4 sm:py-3.5">{r.negotiation}</TableCell>
-                        <TableCell className="hidden px-3 py-3 text-right font-mono text-sm lg:table-cell sm:px-4 sm:py-3.5">{r.cold}</TableCell>
-                        <TableCell className="px-3 py-3 text-right font-mono text-sm sm:px-4 sm:py-3.5">{formatINR(r.dealsWonValue)}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums sm:table-cell">{r.proposalCount}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums md:table-cell">{r.approvalPending}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums md:table-cell">{r.approved}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums lg:table-cell">{r.negotiation}</TableCell>
+                        <TableCell className="hidden text-right tabular-nums lg:table-cell">{r.cold}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatINR(r.dealsWonValue)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              ) : (
-                <div className="p-8 text-center text-sm text-muted-foreground">No sales reps in scope</div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+            ) : (
+              <p className="px-2.5 py-6 text-center text-xs text-muted-foreground">No sales reps in scope</p>
+            )}
+          </motion.div>
         )}
       </div>
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent>
+        <DialogContent className={dialogSmMax2xl}>
           <DialogHeader>
             <DialogTitle>{detailTitle}</DialogTitle>
-            <DialogDescription>Filtered analytics preview based on current dashboard filters.</DialogDescription>
+            <DialogDescription>
+              {detailTotal === 0
+                ? 'No records match the current dashboard filters.'
+                : `${detailTotal} record${detailTotal === 1 ? '' : 's'} matching current filters${detailTotal > detailRows.length ? ` · showing first ${detailRows.length}` : ''}.`}
+            </DialogDescription>
           </DialogHeader>
           <DialogBody>
-          {detailRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No records found for this selection.</p>
-          ) : (
-            <Table responsiveShell={false}>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Label</TableHead>
-                  <TableHead className="text-right">Value</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {detailRows.map((r) => (
-                  <TableRow key={r.key}>
-                    <TableCell>{r.label}</TableCell>
-                    <TableCell className="text-right">{r.value}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+            {detailRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No records found for this selection.</p>
+            ) : (
+              <div className="scrollbar-soft -mx-4 overflow-x-auto sm:mx-0">
+                <Table responsiveShell={false}>
+                  <TableHeader>
+                    <TableRow>
+                      {detailCols.map((col) => (
+                        <TableHead key={col.id} className={col.align === 'right' ? 'text-right' : undefined}>
+                          {col.header}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detailRows.map((r) => (
+                      <TableRow key={r.key}>
+                        {detailCols.map((col) => (
+                          <TableCell
+                            key={col.id}
+                            className={cn(
+                              col.align === 'right' ? 'text-right tabular-nums' : 'max-w-[14rem] truncate',
+                            )}
+                          >
+                            {r.cells[col.id] ?? '—'}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDetailOpen(false)}>Close</Button>
-            <Button onClick={() => { setDetailOpen(false); if (detailLink) navigate(detailLink); }}>Open Full Page</Button>
+            <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setDetailOpen(false)}>
+              Close
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 px-2.5 text-xs"
+              onClick={() => {
+                setDetailOpen(false);
+                if (detailLink) navigate(detailLink);
+              }}
+            >
+              Open full page
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

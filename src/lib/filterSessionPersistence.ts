@@ -43,3 +43,32 @@ export function clearSessionFilters(key: FilterSessionKey): void {
 export function hasAnySearchParam(params: URLSearchParams, keys: string[]): boolean {
   return keys.some((k) => params.has(k));
 }
+
+/** Cross-tab applied filters (survive remount + other browser tabs in this origin). */
+export function loadLocalFilters<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as T;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLocalFilters<T>(key: string, value: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function clearLocalFilters(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}

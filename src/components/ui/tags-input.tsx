@@ -127,18 +127,14 @@ export function TagsInput({
               <span
                 key={t.toLowerCase()}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
-                  "bg-blue-50 text-blue-700 border border-blue-100",
-                  "dark:bg-blue-950 dark:text-blue-200 dark:border-blue-900",
+                  "inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/15 px-2 py-0.5 text-xs text-primary",
                 )}
               >
                 <span className="max-w-[12rem] truncate">{t}</span>
                 <button
                   type="button"
                   className={cn(
-                    "inline-flex h-4 w-4 items-center justify-center rounded-full",
-                    "text-blue-700/80 hover:text-blue-900 hover:bg-blue-100",
-                    "dark:text-blue-200/80 dark:hover:text-blue-100 dark:hover:bg-blue-900/40",
+                    "inline-flex h-4 w-4 items-center justify-center rounded-full text-primary/80 hover:bg-primary/10 hover:text-primary",
                   )}
                   onClick={(e) => {
                     e.stopPropagation();

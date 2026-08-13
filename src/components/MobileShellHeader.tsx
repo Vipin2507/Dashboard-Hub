@@ -1,35 +1,37 @@
-import { NotificationBell } from '@/components/NotificationBell';
-import { UserMenu } from '@/components/UserMenu';
-import { useSidebarNav } from '@/contexts/SidebarNavContext';
-import { Menu } from 'lucide-react';
+import { BrandMark } from "@/components/BrandMark";
+import { GlobalSearch } from "@/components/GlobalSearch";
+import { NotificationBell } from "@/components/NotificationBell";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { UserMenu } from "@/components/UserMenu";
+import { useSidebarNav } from "@/contexts/SidebarNavContext";
+import { Menu } from "lucide-react";
 
-/**
- * Sticky header for viewports below `lg`: menu, brand, notifications, account.
- * Ensures navigation is available on pages that do not render {@link Topbar}.
- */
 export function MobileShellHeader() {
   const { sidebarOpen, openSidebar } = useSidebarNav();
 
   return (
     <header
-      className="sticky top-0 z-[35] flex h-14 shrink-0 items-center gap-2 border-b border-gray-200 bg-white px-2 dark:border-gray-800 dark:bg-gray-900 sm:px-3 lg:hidden"
+      className="sticky top-0 z-[35] flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/80 px-2 backdrop-blur sm:px-3 lg:h-16 lg:px-4"
       role="banner"
     >
       <button
         type="button"
         onClick={openSidebar}
-        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 sm:h-9 sm:w-9"
+        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md hover:bg-muted lg:hidden"
         aria-label="Open menu"
         aria-expanded={sidebarOpen}
         aria-controls="app-sidebar"
       >
-        <Menu className="h-5 w-5" />
+        <Menu className="h-4 w-4" />
       </button>
-      <span className="flex-shrink-0 text-base font-bold text-blue-600">Buildesk</span>
-      <div className="min-w-0 flex-1" aria-hidden />
-      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+      <BrandMark className="h-7 w-7 text-xs lg:hidden" />
+      <span className="flex-shrink-0 text-sm font-semibold tracking-tight lg:hidden">Buildesk</span>
+      <GlobalSearch className="hidden min-w-0 flex-1 lg:block lg:max-w-md" />
+      <div className="min-w-0 flex-1 lg:hidden" aria-hidden />
+      <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <ThemeToggle />
         <NotificationBell />
-        <UserMenu />
+        <UserMenu compact />
       </div>
     </header>
   );

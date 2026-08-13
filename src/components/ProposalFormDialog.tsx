@@ -7,11 +7,12 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { dialogSmMax4xl, dialogSmMax6xl, dialogSmMaxMd } from "@/lib/dialogLayout";
+import { dialogSmMax4xl, dialogSmMaxEditor, dialogSmMaxMd } from "@/lib/dialogLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
@@ -35,7 +36,7 @@ import { makeProposalNumber } from "@/lib/proposalNumber";
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2 } from "lucide-react";
+import { FileText, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { DEFAULT_TERMS, defaultCoverHeadingTextForScope, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
 import { previewProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 
@@ -50,6 +51,12 @@ function computeLineTotal(qty: number, unitPrice: number, discount: number) {
 function computeTaxAmount(lineTotal: number, taxRate: number) {
   return (lineTotal * taxRate) / 100;
 }
+
+const PDF_SCOPE_OPTIONS: { id: ProposalPdfScope; title: string; hint: string }[] = [
+  { id: "sales", title: "Sales", hint: "Annual sales management" },
+  { id: "post", title: "Post", hint: "Post-sales management" },
+  { id: "end_to_end", title: "End to end", hint: "Full sales management" },
+];
 
 interface ProposalFormDialogProps {
   open: boolean;
@@ -515,15 +522,15 @@ export function ProposalFormDialog({
             <DialogTitle>{editingProposal ? "Edit proposal" : "New proposal"}</DialogTitle>
           </DialogHeader>
 
-          <DialogBody className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <DialogBody className="space-y-3">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label>Lead Name / Proposal Title *</Label>
                   {!editingProposal && !isTitleAuto ? (
                     <button
                       type="button"
-                      className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline"
+                      className="text-[11px] text-primary hover:underline"
                       onClick={() => {
                         setIsTitleAuto(true);
                         setTitle(autoTitle);
@@ -542,68 +549,40 @@ export function ProposalFormDialog({
                   placeholder="Lead name or proposal title"
                 />
               </div>
-              <div className="space-y-3 sm:col-span-2 lg:col-span-3">
-                <Label>Proposal PDF cover heading</Label>
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+                <Label className="text-xs">PDF cover scope</Label>
                 <RadioGroup
                   value={pdfScope}
                   onValueChange={(v) => setPdfScope(v as ProposalPdfScope)}
-                  className="grid gap-3 sm:grid-cols-3"
+                  className="grid gap-1.5 sm:grid-cols-3"
                 >
-                  <label
-                    htmlFor="pdf-scope-sales"
-                    className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
-                      pdfScope === "sales" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
-                    )}
-                  >
-                    <RadioGroupItem value="sales" id="pdf-scope-sales" className="mt-0.5" />
-                    <span className="text-sm leading-snug">
-                      <span className="font-medium">Sales</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        Buildesk Annual sales management proposal
+                  {PDF_SCOPE_OPTIONS.map((opt) => (
+                    <label
+                      key={opt.id}
+                      htmlFor={`pdf-scope-${opt.id}`}
+                      className={cn(
+                        "flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-2 transition-colors",
+                        pdfScope === opt.id ? "border-primary/40 bg-primary/5" : "border-border hover:bg-muted/30",
+                      )}
+                    >
+                      <RadioGroupItem value={opt.id} id={`pdf-scope-${opt.id}`} className="mt-0.5" />
+                      <span className="text-xs leading-snug">
+                        <span className="font-medium">{opt.title}</span>
+                        <span className="mt-0.5 block text-[11px] text-muted-foreground">{opt.hint}</span>
                       </span>
-                    </span>
-                  </label>
-                  <label
-                    htmlFor="pdf-scope-post"
-                    className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
-                      pdfScope === "post" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
-                    )}
-                  >
-                    <RadioGroupItem value="post" id="pdf-scope-post" className="mt-0.5" />
-                    <span className="text-sm leading-snug">
-                      <span className="font-medium">Post</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        Buildesk Annual Post sales management proposal
-                      </span>
-                    </span>
-                  </label>
-                  <label
-                    htmlFor="pdf-scope-e2e"
-                    className={cn(
-                      "flex cursor-pointer items-start gap-2 rounded-md border p-3 transition-colors",
-                      pdfScope === "end_to_end" ? "border-primary bg-muted/40" : "border-border hover:bg-muted/20",
-                    )}
-                  >
-                    <RadioGroupItem value="end_to_end" id="pdf-scope-e2e" className="mt-0.5" />
-                    <span className="text-sm leading-snug">
-                      <span className="font-medium">End to end</span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        Buildesk annual end to end sales management proposal
-                      </span>
-                    </span>
-                  </label>
+                    </label>
+                  ))}
                 </RadioGroup>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2 sm:col-span-2">
                 <Label>Company Name *</Label>
                 <SearchableSelect
                   value={customerId}
                   onValueChange={setCustomerId}
                   options={customerOptions}
                   placeholder="Select company"
-                  triggerClassName="h-10 text-sm"
+                  searchPlaceholder="Search company…"
+                  triggerClassName="h-9 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -624,7 +603,7 @@ export function ProposalFormDialog({
                     { value: "deal_created", label: "Deal Created" },
                   ]}
                   placeholder="Shared"
-                  triggerClassName="h-10 text-sm"
+                  triggerClassName="h-9 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -634,7 +613,7 @@ export function ProposalFormDialog({
                   onValueChange={setAssignedTo}
                   options={userOptions}
                   placeholder="Select deal owner"
-                  triggerClassName="h-10 text-sm"
+                  triggerClassName="h-9 text-sm"
                 />
               </div>
               <div className="space-y-2">
@@ -643,7 +622,7 @@ export function ProposalFormDialog({
                   select="single"
                   touchUi={false}
                   inputComponent="input"
-                  inputProps={{ placeholder: "Select…", className: "h-10 text-sm" }}
+                  inputProps={{ placeholder: "Select…", className: "h-9 text-sm" }}
                   value={ymdToDate(validUntil)}
                   onChange={(ev) => setValidUntil(ev.value ? dateToYmd(ev.value) : "")}
                 />
@@ -661,11 +640,11 @@ export function ProposalFormDialog({
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Label>Line Items</Label>
-                <Button type="button" variant="outline" size="sm" onClick={() => setInventoryPickerOpen(true)}>
-                  <Plus className="w-4 h-4 mr-1" /> Add from inventory
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setInventoryPickerOpen(true)}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Inventory
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={addCustomItem}>
-                  <Plus className="w-4 h-4 mr-1" /> Add custom item
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={addCustomItem}>
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Custom
                 </Button>
               </div>
               {lineItems.length > 0 && (
@@ -751,7 +730,7 @@ export function ProposalFormDialog({
                       ))}
                     </TableBody>
                   </Table>
-                  <div className="px-4 py-2 border-t bg-muted/30 text-xs space-y-1">
+                  <div className="space-y-0.5 border-t border-border bg-muted/30 px-2.5 py-2 text-[11px] tabular-nums">
                     <div className="flex justify-between"><span>Deal Value (Excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
                     <div className="flex justify-between"><span>Total Discount</span><span className="font-mono">-{formatINR(totals.totalDiscount)}</span></div>
                     <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
@@ -790,16 +769,20 @@ export function ProposalFormDialog({
                 </div>
               )}
               {canOverride && overrideFinal && (
-                <p className="text-xs text-amber-600">This overrides the computed deal value (including GST).</p>
+                <p className="text-[11px] text-warning-foreground">This overrides the computed deal value (including GST).</p>
               )}
             </div>
           </DialogBody>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button
               type="button"
               variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
               disabled={!canOpenPdfEditor}
               onClick={async () => {
                 setPdfEditorOpen(true);
@@ -808,175 +791,238 @@ export function ProposalFormDialog({
               }}
               title={!canOpenPdfEditor ? "Fill Title, Customer, Valid Until and add at least 1 line item" : "Preview and edit PDF fields"}
             >
+              <FileText className="mr-1 h-3.5 w-3.5" />
               Edit PDF
             </Button>
-            <Button variant="outline" onClick={handleSaveDraft}>Save as draft</Button>
-            {canRequestApproval && <Button variant="outline" onClick={handleSubmitForApproval}>Save & submit for approval</Button>}
-            {canSaveAndSend && <Button onClick={handleSaveAndSend}>Save & send</Button>}
+            <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSaveDraft}>
+              Save draft
+            </Button>
+            {canRequestApproval && (
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSubmitForApproval}>
+                Submit for approval
+              </Button>
+            )}
+            {canSaveAndSend && (
+              <Button size="sm" className="h-8 px-2.5 text-xs" onClick={handleSaveAndSend}>
+                Save & send
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* PDF editor / live preview */}
       <Dialog open={pdfEditorOpen} onOpenChange={(o) => { setPdfEditorOpen(o); }}>
-        <DialogContent className={cn(dialogSmMax6xl, "h-[92vh] overflow-hidden")}>
-          <DialogHeader>
-            <DialogTitle>Edit PDF</DialogTitle>
+        <DialogContent className={cn(dialogSmMaxEditor, "h-[92vh] overflow-hidden")}>
+          <DialogHeader className="px-4 py-2.5 sm:px-5 sm:py-3">
+            <DialogTitle className="text-base">Edit PDF</DialogTitle>
+            <DialogDescription className="text-[11px]">
+              Cover, terms, and line copy. Refresh to update the preview.
+            </DialogDescription>
           </DialogHeader>
-          <DialogBody className="grid h-full grid-cols-1 gap-6 overflow-hidden lg:grid-cols-[520px_1fr]">
-            <div className="flex h-full flex-col overflow-hidden rounded-md border bg-background">
-              <div className="flex-1 space-y-6 overflow-y-auto p-4 sm:p-5">
-                <div className="space-y-2">
-                <Label>Cover heading (current)</Label>
-                <Textarea
-                  value={pdfCoverHeading}
-                  onChange={(e) => setPdfCoverHeading(e.target.value)}
-                  rows={2}
-                  placeholder={"Example:\nBUILDESK ANNUAL SALES\nMANAGEMENT PROPOSAL"}
-                />
-                <p className="text-xs text-muted-foreground">Edit 1–2 lines. This is what the PDF will show on the cover.</p>
-              </div>
-                <div className="space-y-2">
-                  <Label>Terms &amp; Conditions (current)</Label>
+          <DialogBody className="grid h-full min-h-0 grid-cols-1 gap-2.5 overflow-hidden p-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <div className="card-soft flex h-full min-h-0 flex-col overflow-hidden">
+              <div className="scrollbar-soft flex-1 space-y-3 overflow-y-auto p-3">
+                <section className="space-y-1.5">
+                  <p className="typo-section-title">Cover</p>
+                  <RadioGroup
+                    value={pdfScope}
+                    onValueChange={(v) => {
+                      const next = v as ProposalPdfScope;
+                      const prevDefault = defaultCoverHeadingTextForScope(pdfScope);
+                      setPdfScope(next);
+                      if (!pdfCoverHeading.trim() || pdfCoverHeading.trim() === prevDefault) {
+                        setPdfCoverHeading(defaultCoverHeadingTextForScope(next));
+                      }
+                    }}
+                    className="grid gap-1.5 sm:grid-cols-3"
+                  >
+                    {PDF_SCOPE_OPTIONS.map((opt) => (
+                      <label
+                        key={opt.id}
+                        htmlFor={`pdf-edit-scope-${opt.id}`}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs transition-colors",
+                          pdfScope === opt.id ? "border-primary/40 bg-primary/5 font-medium" : "border-border text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        <RadioGroupItem value={opt.id} id={`pdf-edit-scope-${opt.id}`} className="h-3.5 w-3.5" />
+                        {opt.title}
+                      </label>
+                    ))}
+                  </RadioGroup>
+                  <Textarea
+                    value={pdfCoverHeading}
+                    onChange={(e) => setPdfCoverHeading(e.target.value)}
+                    rows={3}
+                    className="min-h-[4.5rem] text-sm"
+                    placeholder={"BUILDESK ANNUAL SALES\nMANAGEMENT PROPOSAL"}
+                  />
+                </section>
+
+                <section className="space-y-1.5">
+                  <p className="typo-section-title">Terms &amp; conditions</p>
                   <Textarea
                     value={termsAndConditionsText}
                     onChange={(e) => setTermsAndConditionsText(e.target.value)}
-                    rows={10}
-                    placeholder={"One point per line.\nYou can start lines with - or • (we’ll clean it)."}
+                    rows={8}
+                    className="min-h-[10rem] text-sm leading-relaxed"
+                    placeholder={"One point per line.\nStart lines with - or •"}
                   />
-                </div>
-              <div className="space-y-2">
-                <Label>Products table (edit description)</Label>
-                <div className="space-y-3">
-                  {lineItems.map((li) => (
-                    <div key={li.id} className="rounded-md border p-4 space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Item name</Label>
-                          <Input value={li.name} onChange={(e) => updateLineItem(li.id, { name: e.target.value })} />
+                </section>
+
+                <section className="space-y-1.5">
+                  <p className="typo-section-title">Line items</p>
+                  <div className="space-y-2">
+                    {lineItems.map((li) => (
+                      <div key={li.id} className="space-y-2 rounded-md border border-border p-2.5">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Item</Label>
+                            <Input className="h-9 text-sm" value={li.name} onChange={(e) => updateLineItem(li.id, { name: e.target.value })} />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Code</Label>
+                            <Input className="h-9 font-mono text-xs" value={li.sku} readOnly />
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Item code</Label>
-                          <Input value={li.sku} readOnly className="font-mono" />
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Description (shows in PDF)</Label>
-                        <Textarea
-                          value={li.description ?? ""}
-                          onChange={(e) => updateLineItem(li.id, { description: e.target.value })}
-                          rows={3}
-                          placeholder="Add description…"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Qty prefix (optional)</Label>
-                          <Input
-                            value={li.qtyPrefix ?? ""}
-                            onChange={(e) => updateLineItem(li.id, { qtyPrefix: e.target.value })}
-                            placeholder="Up to"
+                        <div className="space-y-0.5">
+                          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Description</Label>
+                          <Textarea
+                            className="min-h-[4.5rem] text-sm leading-relaxed"
+                            value={li.description ?? ""}
+                            onChange={(e) => updateLineItem(li.id, { description: e.target.value })}
+                            rows={3}
+                            placeholder="Shows in the PDF product table"
                           />
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Qty label</Label>
-                          <Input
-                            value={li.qtyLabel ?? "license"}
-                            onChange={(e) => updateLineItem(li.id, { qtyLabel: e.target.value })}
-                            placeholder="Units"
-                          />
+                        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Qty prefix</Label>
+                            <Input
+                              className="h-9 text-sm"
+                              value={li.qtyPrefix ?? ""}
+                              onChange={(e) => updateLineItem(li.id, { qtyPrefix: e.target.value })}
+                              placeholder="Up to"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Qty label</Label>
+                            <Input
+                              className="h-9 text-sm"
+                              value={li.qtyLabel ?? "license"}
+                              onChange={(e) => updateLineItem(li.id, { qtyLabel: e.target.value })}
+                              placeholder="Units"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Service</Label>
+                            <Input
+                              className="h-9 text-sm"
+                              value={li.serviceLabel ?? "12 Months"}
+                              onChange={(e) => updateLineItem(li.id, { serviceLabel: e.target.value })}
+                              placeholder="12 Months"
+                            />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Bracket</Label>
+                            <Input
+                              className="h-9 font-mono text-xs"
+                              value={previewProposalQtyBracket(li.qty, li.qtyPrefix, li.qtyLabel)}
+                              readOnly
+                            />
+                          </div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Service (PDF column)</Label>
-                          <Input
-                            value={li.serviceLabel ?? "12 Months"}
-                            onChange={(e) => updateLineItem(li.id, { serviceLabel: e.target.value })}
-                            placeholder="12 Months"
-                          />
-                          <p className="text-[11px] text-muted-foreground">
-                            Shown in the PDF Service column (e.g. 12 Months, 6 Months, One-time).
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Bracket preview</Label>
-                          <Input
-                            value={previewProposalQtyBracket(li.qty, li.qtyPrefix, li.qtyLabel)}
-                            readOnly
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {lineItems.length === 0 && (
-                    <p className="text-xs text-muted-foreground">Add at least 1 line item to edit product descriptions.</p>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Values used in PDF</Label>
-                <div className="rounded-md border p-4 space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Setup &amp; Deployment Charges</Label>
-                      <NumericInput
-                        className="h-10"
-                        min={0}
-                        emptyOnBlur={0}
-                        value={setupDeploymentCharges}
-                        onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
-                      />
-                    </div>
-                    {canOverride && (
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">Final Quote Override</Label>
-                        <div className="flex items-center gap-2">
-                          <Switch checked={overrideFinal} onCheckedChange={setOverrideFinal} />
-                          <Input
-                            type="number"
-                            className="h-10"
-                            value={finalQuoteValue}
-                            onChange={(e) => setFinalQuoteValue(e.target.value)}
-                            placeholder={String(totals.grandTotal)}
-                            disabled={!overrideFinal}
-                          />
-                        </div>
-                      </div>
+                    ))}
+                    {lineItems.length === 0 && (
+                      <p className="text-xs text-muted-foreground">Add a line item first.</p>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <div className="flex justify-between"><span>Subtotal (excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
-                    <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
-                    <div className="flex justify-between"><span>Grand Total (incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
-                    {overrideFinal && finalQuoteValue ? (
-                      <div className="flex justify-between font-medium text-primary"><span>Final Quote (override)</span><span className="font-mono">{formatINR(Number(finalQuoteValue) || totals.grandTotal)}</span></div>
-                    ) : null}
+                </section>
+
+                <section className="space-y-1.5">
+                  <p className="typo-section-title">Values</p>
+                  <div className="grid gap-3 rounded-md border border-border p-2.5 sm:grid-cols-[minmax(0,1fr)_12rem]">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Setup &amp; deployment</Label>
+                        <NumericInput
+                          className="h-9"
+                          min={0}
+                          emptyOnBlur={0}
+                          value={setupDeploymentCharges}
+                          onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                        />
+                      </div>
+                      {canOverride && (
+                        <div className="min-w-0 space-y-0.5">
+                          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Final override</Label>
+                          <div className="flex items-center gap-2">
+                            <Switch checked={overrideFinal} onCheckedChange={setOverrideFinal} />
+                            <Input
+                              type="number"
+                              className="h-9 min-w-0 flex-1 text-sm"
+                              value={finalQuoteValue}
+                              onChange={(e) => setFinalQuoteValue(e.target.value)}
+                              placeholder={String(totals.grandTotal)}
+                              disabled={!overrideFinal}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-1 text-xs tabular-nums text-muted-foreground sm:border-l sm:border-border sm:pl-3">
+                      <div className="flex justify-between gap-3"><span>Subtotal</span><span className="font-mono text-foreground">{formatINR(totals.subtotal)}</span></div>
+                      <div className="flex justify-between gap-3"><span>GST</span><span className="font-mono text-foreground">{formatINR(totals.totalTax)}</span></div>
+                      <div className="flex justify-between gap-3 font-medium text-foreground">
+                        <span>Grand total</span>
+                        <span className="font-mono">{formatINR(totals.grandTotal)}</span>
+                      </div>
+                      {overrideFinal && finalQuoteValue ? (
+                        <div className="flex justify-between gap-3 font-medium text-primary">
+                          <span>Override</span>
+                          <span className="font-mono">{formatINR(Number(finalQuoteValue) || totals.grandTotal)}</span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              </div>
+                </section>
               </div>
 
-              <div className="flex flex-shrink-0 items-center justify-end gap-2 border-t bg-background p-3 sm:p-4">
+              <div className="flex shrink-0 items-center justify-end gap-1.5 border-t border-border px-2.5 py-2">
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
+                  className="h-8 px-2.5 text-xs"
                   onClick={refreshPdfPreview}
                   disabled={pdfPreviewLoading || !canOpenPdfEditor}
                 >
-                  {pdfPreviewLoading ? "Refreshing..." : "Refresh preview"}
+                  {pdfPreviewLoading ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1 h-3.5 w-3.5" />}
+                  Refresh
                 </Button>
-                <Button type="button" onClick={() => setPdfEditorOpen(false)}>Done</Button>
+                <Button type="button" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setPdfEditorOpen(false)}>
+                  Done
+                </Button>
               </div>
             </div>
 
-            <div className="h-full overflow-hidden rounded-md border bg-muted/20">
+            <div className="relative h-full min-h-[280px] overflow-hidden rounded-[var(--radius-xl)] border border-border bg-muted/40">
+              {pdfPreviewLoading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/70 text-[11px] text-muted-foreground">
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Generating preview
+                </div>
+              )}
               {pdfPreviewUrl ? (
-                <iframe title="PDF preview" src={pdfPreviewUrl} className="h-full w-full" />
+                <iframe
+                  title="PDF preview"
+                  src={`${pdfPreviewUrl}#toolbar=0&navpanes=0&view=FitH`}
+                  className="h-full w-full border-0 bg-transparent"
+                />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                  {pdfPreviewLoading ? "Generating preview..." : "No preview yet"}
+                <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                  No preview yet
                 </div>
               )}
             </div>

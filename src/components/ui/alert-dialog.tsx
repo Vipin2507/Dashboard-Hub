@@ -59,7 +59,7 @@ AlertDialogHeader.displayName = "AlertDialogHeader";
 const AlertDialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse gap-2 border-t bg-white px-4 py-3 dark:bg-gray-950 sm:flex-row sm:justify-end sm:space-x-2 sm:px-6 sm:py-4",
+      "flex flex-col-reverse gap-2 border-t border-border bg-muted/40 px-4 py-3 sm:flex-row sm:justify-end sm:space-x-2 sm:px-6 sm:py-4",
       className,
     )}
     {...props}

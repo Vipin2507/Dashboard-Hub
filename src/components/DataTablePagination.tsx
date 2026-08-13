@@ -78,11 +78,11 @@ export function DataTablePagination({
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 border-t border-gray-100 px-4 py-3 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between",
+        "flex flex-col gap-2 border-t border-border px-3 py-2 sm:flex-row sm:items-center sm:justify-between",
         className,
       )}
     >
-      <p className="hidden text-xs text-gray-500 dark:text-gray-400 sm:block">
+      <p className="hidden text-xs text-muted-foreground sm:block">
         {total === 0 ? (
           <>Showing 0 of 0</>
         ) : (
@@ -108,7 +108,7 @@ export function DataTablePagination({
         <div className="flex items-center gap-1">
           {items.map((p, i) =>
             p === "..." ? (
-              <span key={`e-${i}`} className="w-8 text-center text-xs text-gray-400">
+              <span key={`e-${i}`} className="w-8 text-center text-xs text-muted-foreground">
                 …
               </span>
             ) : (
@@ -119,8 +119,8 @@ export function DataTablePagination({
                 className={cn(
                   "h-8 w-8 rounded-md text-xs transition-colors",
                   p === page
-                    ? "bg-blue-600 text-white dark:bg-blue-600"
-                    : "hover:bg-gray-100 dark:hover:bg-gray-800",
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted",
                 )}
               >
                 {p}

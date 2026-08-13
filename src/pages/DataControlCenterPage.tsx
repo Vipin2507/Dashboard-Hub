@@ -1,15 +1,33 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as XLSX from "xlsx";
 import { formatDistanceToNow } from "date-fns";
-import { Database, Download, History, Pencil, RefreshCw, Scale, Shield, Upload, Plus, Trash2 } from "lucide-react";
+import {
+  Columns,
+  Database,
+  Download,
+  History,
+  ListChecks,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Scale,
+  Search,
+  Shield,
+  Trash2,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { Topbar } from "@/components/Topbar";
-import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useSmUp } from "@/hooks/useSmUp";
+import { pageEnter, staggerContainer, staggerItem } from "@/lib/motion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -79,7 +97,41 @@ function moduleFileSlug(id: string) {
   return id.replace(/_/g, "-");
 }
 
+function DccKpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor,
+  iconBg,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+}) {
+  const n = Number(value);
+  const isNum = Number.isFinite(n) && value !== "—";
+  return (
+    <motion.div variants={staggerItem} className="card-kpi min-h-[3.25rem] w-full sm:min-h-0">
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isNum ? <CountUp value={n} /> : value}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{sub}</p>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function DataControlCenterPage() {
+  const smUp = useSmUp();
   const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
   const regions = useAppStore((s) => s.regions);
@@ -430,63 +482,82 @@ export default function DataControlCenterPage() {
     reader.readAsBinaryString(file);
   };
 
+  const saveCell = (row: RowBase, f: DccField, value: unknown) => {
+    if (!activeModule) return;
+    patchMutation.mutate(
+      { module: activeModule, recordId: row.id, fieldKey: f.key, value },
+      {
+        onSuccess: () => toast({ title: "Saved", description: `${f.label} updated.` }),
+        onError: (e: Error) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
+      },
+    );
+  };
+
   if (me.role !== "super_admin") {
     return <Navigate to="/" replace />;
   }
 
   return (
     <>
-      <Topbar
-        title="Data control center"
-        subtitle="Super Admin — per-module bulk add, multi-field bulk update, row selection, and export"
-      />
-      <div className="w-full space-y-4 sm:space-y-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <Badge variant="default" className="gap-1">
+      <Topbar title="Data control" subtitle={smUp ? "Bulk add, multi-field update, and export" : undefined} />
+      <motion.div {...pageEnter} className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone="info">
             <Shield className="h-3 w-3" />
             Super Admin
-          </Badge>
-          <p className="text-sm text-muted-foreground">
-            View actions are logged. Edits write to the database immediately and are audited.
+          </StatusPill>
+          <p className="hidden text-[11px] text-muted-foreground sm:block">
+            Views are logged. Edits write immediately and are audited.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total modules</p>
-              <p className="text-2xl font-semibold">{metaQuery.data?.totalModuleCount ?? "—"}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total fields</p>
-              <p className="text-2xl font-semibold">{metaQuery.data?.totalFieldCount ?? "—"}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Fields selected</p>
-              <p className="text-2xl font-semibold">{selectedKeys.size}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Records loaded</p>
-              <p className="text-2xl font-semibold">{filteredRows.length}</p>
-            </CardContent>
-          </Card>
-        </div>
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2"
+        >
+          <DccKpiCard
+            label="Modules"
+            value={String(metaQuery.data?.totalModuleCount ?? "—")}
+            sub="Available catalogs"
+            icon={Database}
+            iconColor="text-primary"
+            iconBg="bg-primary/15"
+          />
+          <DccKpiCard
+            label="Fields"
+            value={String(metaQuery.data?.totalFieldCount ?? "—")}
+            sub="Across modules"
+            icon={Columns}
+            iconColor="text-info"
+            iconBg="bg-info/15"
+          />
+          <DccKpiCard
+            label="Selected"
+            value={String(selectedKeys.size)}
+            sub="Columns in view"
+            icon={ListChecks}
+            iconColor="text-success"
+            iconBg="bg-success/15"
+          />
+          <DccKpiCard
+            label="Records"
+            value={String(filteredRows.length)}
+            sub={activeModule ? `of ${rows.length} loaded` : "Pick a module"}
+            icon={Scale}
+            iconColor="text-warning"
+            iconBg="bg-warning/15"
+          />
+        </motion.div>
 
-        <div className="space-y-2">
-          <Label className="text-xs uppercase text-muted-foreground">Step 1 — Module</Label>
-          <div className="flex flex-wrap gap-2">
+        <div className="card-soft space-y-2 px-3 py-3 sm:px-4">
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Module</p>
+          <div className="scrollbar-none -mx-1 flex gap-1 overflow-x-auto px-1">
             {(metaQuery.data?.modules ?? []).map((m) => (
-              <Button
+              <button
                 key={m.id}
                 type="button"
-                variant={activeModule === m.id ? "default" : "outline"}
-                size="sm"
                 onClick={() => {
                   setActiveModule(m.id);
                   setSelectedKeys(new Set());
@@ -494,42 +565,47 @@ export default function DataControlCenterPage() {
                   setCompareField(null);
                   setComparisonOn(false);
                 }}
+                className={cn(
+                  "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
+                  activeModule === m.id
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
               >
-                <Database className="h-3.5 w-3.5 mr-1.5" />
                 {m.label}
-              </Button>
+              </button>
             ))}
           </div>
         </div>
 
         {currentModuleDef && (
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <Label className="text-xs uppercase text-muted-foreground">Step 2 — Fields</Label>
-              <div className="flex gap-2">
-                <Button type="button" variant="secondary" size="sm" onClick={selectAllFields}>
+          <div className="card-soft space-y-2 px-3 py-3 sm:px-4">
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Fields</p>
+              <div className="flex gap-1">
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectAllFields}>
                   Select all
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={clearFields}>
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={clearFields}>
                   Clear
                 </Button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1">
               {currentModuleDef.fields.map((f) => (
                 <button
                   key={f.key}
                   type="button"
                   onClick={() => toggleField(f.key)}
                   className={cn(
-                    "rounded-full border px-3 py-1 text-xs transition-colors",
+                    "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
                     selectedKeys.has(f.key)
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:bg-muted",
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
                   {f.label}
-                  {!f.editable && <span className="ml-1 text-muted-foreground">(read-only)</span>}
+                  {!f.editable ? <span className="ml-1 opacity-70">RO</span> : null}
                 </button>
               ))}
             </div>
@@ -537,186 +613,227 @@ export default function DataControlCenterPage() {
         )}
 
         {activeModule && selectedFieldDefs.length > 0 && (
-          <div className="space-y-4 border rounded-lg p-4">
-            <div className="flex flex-wrap items-center gap-2 justify-between">
-              <Label className="text-xs uppercase text-muted-foreground">Step 3 — Data</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" onClick={() => rowsQuery.refetch()}>
-                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                  Refresh
+          <div className="card-soft overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-border px-3 py-2.5 sm:px-4">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Data</p>
+              <div className="flex flex-wrap items-center justify-end gap-1">
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => rowsQuery.refetch()}>
+                  <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Refresh</span>
                 </Button>
                 <Button
                   type="button"
                   variant={editMode ? "default" : "outline"}
                   size="sm"
+                  className="h-7 px-2 text-[11px]"
                   onClick={() => setEditMode((e) => !e)}
                 >
-                  <Pencil className="h-3.5 w-3.5 mr-1" />
-                  {editMode ? "Done editing" : "Edit rows"}
+                  <Pencil className="mr-1 h-3.5 w-3.5" />
+                  {editMode ? "Done" : smUp ? "Edit rows" : "Edit"}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={selectAllFiltered}>
-                  Select all filtered
+                <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={selectAllFiltered}>
+                  {smUp ? "Select all" : "All"}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={clearRowSelection}>
-                  Clear row selection
+                <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" onClick={clearRowSelection}>
+                  Clear
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="h-7 px-2 text-[11px]"
                   onClick={() => {
                     setBulkFieldRows([{ fieldKey: "", value: "" }]);
                     setBulkOpen(true);
                   }}
                 >
-                  Bulk update
+                  Bulk
                 </Button>
                 {importSupported && (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="h-7 px-2 text-[11px]"
                     onClick={() => {
                       setImportRows([]);
                       setImportParseError(null);
                       setImportOpen(true);
                     }}
                   >
-                    <Upload className="h-3.5 w-3.5 mr-1" />
-                    Bulk add (import)
+                    <Upload className="mr-1 h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Import</span>
                   </Button>
                 )}
-                <Button type="button" variant="secondary" size="sm" onClick={exportXlsx}>
-                  <Download className="h-3.5 w-3.5 mr-1" />
-                  Export selected
+                <Button type="button" size="sm" className="h-7 px-2 text-[11px]" onClick={exportXlsx}>
+                  <Download className="mr-1 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Export</span>
                 </Button>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {selectedRowIds.size > 0
-                ? `Bulk actions use ${selectedRowIds.size} selected row(s).`
-                : `No rows selected — bulk update applies to all ${filteredRows.length} filtered row(s).`}
-            </p>
 
-            <div className="flex flex-wrap gap-4 items-end">
-              <div className="flex-1 min-w-[200px]">
-                <Label className="text-xs">Search (all columns)</Label>
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter rows…" />
+            <div className="space-y-2 border-b border-border px-3 py-2.5 sm:px-4">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="h-9 pl-8 text-sm"
+                    placeholder="Search all columns…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant={comparisonOn ? "default" : "outline"}
+                    size="sm"
+                    className="h-8 px-2.5 text-xs"
+                    onClick={() => setComparisonOn((v) => !v)}
+                  >
+                    <Scale className="mr-1 h-3.5 w-3.5" />
+                    Compare
+                  </Button>
+                  {comparisonOn && (
+                    <Select value={compareField ?? ""} onValueChange={(v) => setCompareField(v || null)}>
+                      <SelectTrigger className="h-8 w-full min-w-0 sm:w-[180px]">
+                        <SelectValue placeholder="Sort by field" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {selectedFieldDefs.map((f) => (
+                          <SelectItem key={f.key} value={f.key}>
+                            {f.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant={comparisonOn ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setComparisonOn((v) => !v)}
-                >
-                  <Scale className="h-3.5 w-3.5 mr-1" />
-                  Comparison
-                </Button>
-                {comparisonOn && (
-                  <Select value={compareField ?? ""} onValueChange={(v) => setCompareField(v || null)}>
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="Sort by field" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selectedFieldDefs.map((f) => (
-                        <SelectItem key={f.key} value={f.key}>
-                          {f.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {selectedRowIds.size > 0
+                  ? `Bulk actions use ${selectedRowIds.size} selected row(s).`
+                  : `No rows selected — bulk update applies to all ${filteredRows.length} filtered row(s).`}
+              </p>
             </div>
 
-            <ScrollArea className="w-full border rounded-md max-h-[min(70vh,720px)]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10 pr-0">
+            {filteredRows.length === 0 ? (
+              <p className="px-4 py-12 text-center text-sm text-muted-foreground">No records match your filters</p>
+            ) : !smUp ? (
+              <div className="divide-y divide-border">
+                {filteredRows.map((row, idx) => (
+                  <div key={row.id} className="space-y-2 px-2.5 py-2.5">
+                    <div className="flex items-center gap-2">
                       <Checkbox
-                        checked={allFilteredSelected}
-                        onCheckedChange={(c) => (c ? selectAllFiltered() : clearRowSelection())}
-                        aria-label="Select all filtered rows"
+                        checked={selectedRowIds.has(row.id)}
+                        onCheckedChange={() => toggleRowSelected(row.id)}
+                        aria-label={`Select row ${idx + 1}`}
                       />
-                    </TableHead>
-                    <TableHead className="w-10 text-xs text-muted-foreground">#</TableHead>
+                      <span className="text-[11px] tabular-nums text-muted-foreground">#{idx + 1}</span>
+                      <span className="ml-auto truncate text-[11px] text-muted-foreground">
+                        {row._lastModified
+                          ? `${formatDistanceToNow(new Date(row._lastModified.at), { addSuffix: true })} · ${row._lastModified.by}`
+                          : "—"}
+                      </span>
+                    </div>
                     {selectedFieldDefs.map((f) => (
-                      <TableHead key={f.key} className="min-w-[120px]">
-                        <div className="space-y-1">
-                          <span>{f.label}</span>
-                          <Input
-                            className="h-7 text-xs"
-                            placeholder="Filter…"
-                            value={columnFilters[f.key] ?? ""}
-                            onChange={(e) =>
-                              setColumnFilters((prev) => ({ ...prev, [f.key]: e.target.value }))
-                            }
-                          />
-                        </div>
-                      </TableHead>
-                    ))}
-                    <TableHead className="min-w-[160px] text-xs">Last modified</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRows.map((row, idx) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="pr-0">
-                        <Checkbox
-                          checked={selectedRowIds.has(row.id)}
-                          onCheckedChange={() => toggleRowSelected(row.id)}
-                          aria-label={`Select row ${idx + 1}`}
+                      <div key={f.key} className="min-w-0">
+                        <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {f.label}
+                          {!f.editable ? " · RO" : ""}
+                        </p>
+                        <EditableCell
+                          row={row}
+                          field={f}
+                          moduleId={activeModule}
+                          editMode={editMode && f.editable}
+                          users={users}
+                          regions={regions}
+                          me={me}
+                          onSave={(value) => saveCell(row, f, value)}
                         />
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">{idx + 1}</TableCell>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="scrollbar-soft max-h-[min(70vh,720px)] overflow-auto">
+                <Table responsiveShell={false}>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10 pr-0">
+                        <Checkbox
+                          checked={allFilteredSelected}
+                          onCheckedChange={(c) => (c ? selectAllFiltered() : clearRowSelection())}
+                          aria-label="Select all filtered rows"
+                        />
+                      </TableHead>
+                      <TableHead className="w-10 text-[10px] uppercase tracking-wide text-muted-foreground">#</TableHead>
                       {selectedFieldDefs.map((f) => (
-                        <TableCell key={f.key} className="align-top">
-                          <EditableCell
-                            row={row}
-                            field={f}
-                            moduleId={activeModule}
-                            editMode={editMode && f.editable}
-                            users={users}
-                            regions={regions}
-                            me={me}
-                            onSave={(value) => {
-                              patchMutation.mutate(
-                                { module: activeModule, recordId: row.id, fieldKey: f.key, value },
-                                {
-                                  onSuccess: () =>
-                                    toast({ title: "Saved", description: `${f.label} updated.` }),
-                                  onError: (e: Error) =>
-                                    toast({ title: "Save failed", description: e.message, variant: "destructive" }),
-                                },
-                              );
-                            }}
+                        <TableHead key={f.key} className="min-w-[140px] text-[10px] uppercase tracking-wide">
+                          <div className="space-y-1">
+                            <span>{f.label}</span>
+                            <Input
+                              className="h-7 text-xs font-normal normal-case tracking-normal"
+                              placeholder="Filter…"
+                              value={columnFilters[f.key] ?? ""}
+                              onChange={(e) => setColumnFilters((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                            />
+                          </div>
+                        </TableHead>
+                      ))}
+                      <TableHead className="min-w-[160px] text-[10px] uppercase tracking-wide">Last modified</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredRows.map((row, idx) => (
+                      <TableRow key={row.id} className="align-top">
+                        <TableCell className="pr-0">
+                          <Checkbox
+                            checked={selectedRowIds.has(row.id)}
+                            onCheckedChange={() => toggleRowSelected(row.id)}
+                            aria-label={`Select row ${idx + 1}`}
                           />
                         </TableCell>
-                      ))}
-                      <TableCell className="text-xs text-muted-foreground">
-                        {row._lastModified ? (
-                          <span>
-                            {formatDistanceToNow(new Date(row._lastModified.at), { addSuffix: true })} ·{" "}
-                            {row._lastModified.by}
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                        <TableCell className="text-xs tabular-nums text-muted-foreground">{idx + 1}</TableCell>
+                        {selectedFieldDefs.map((f) => (
+                          <TableCell key={f.key}>
+                            <EditableCell
+                              row={row}
+                              field={f}
+                              moduleId={activeModule}
+                              editMode={editMode && f.editable}
+                              users={users}
+                              regions={regions}
+                              me={me}
+                              onSave={(value) => saveCell(row, f, value)}
+                            />
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-[11px] text-muted-foreground">
+                          {row._lastModified ? (
+                            <span>
+                              {formatDistanceToNow(new Date(row._lastModified.at), { addSuffix: true })} ·{" "}
+                              {row._lastModified.by}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
 
-            <p className="text-xs text-muted-foreground text-right">
+            <p className="border-t border-border px-3 py-2 text-right text-[11px] text-muted-foreground sm:px-4">
               Showing {filteredRows.length} of {rows.length} record(s)
             </p>
           </div>
         )}
-      </div>
+      </motion.div>
 
       <Sheet open={bulkOpen} onOpenChange={setBulkOpen}>
         <SheetContent className={cn(sheetContentDetail)}>
@@ -730,8 +847,8 @@ export default function DataControlCenterPage() {
           </SheetHeader>
           <div className="space-y-3 py-4">
             {bulkFieldRows.map((br, i) => (
-              <div key={i} className="flex gap-2 items-end">
-                <div className="flex-1 space-y-1">
+              <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="min-w-0 flex-1 space-y-1">
                   <Label className="text-xs">Field</Label>
                   <Select
                     value={br.fieldKey}
@@ -757,7 +874,7 @@ export default function DataControlCenterPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex-1 space-y-1">
+                <div className="min-w-0 flex-1 space-y-1">
                   <Label className="text-xs">Value</Label>
                   {br.fieldKey === "assignedTo" &&
                   (activeModule === "deals_section" || activeModule === "proposals_section") ? (

@@ -52,11 +52,11 @@ export function FilterPanel({
   return (
     <div
       className={cn(
-        "rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900",
+        "card-soft",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+      <div className="flex flex-wrap items-center justify-between gap-1.5 px-3 py-2 sm:px-4 sm:py-2.5">
         <Button
           type="button"
           variant="ghost"
@@ -76,7 +76,11 @@ export function FilterPanel({
           />
           <span className="sr-only">{open ? "Hide filters" : "Show filters"}</span>
         </Button>
-        {headerActions ? <div className="flex flex-shrink-0 items-center gap-2">{headerActions}</div> : null}
+        {headerActions ? (
+          <div className="min-w-0 max-w-full flex-1 basis-40">
+            {headerActions}
+          </div>
+        ) : null}
       </div>
 
       <div
@@ -87,7 +91,7 @@ export function FilterPanel({
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="border-t border-gray-100 px-3 pb-3 pt-3 sm:px-4 sm:pb-4 dark:border-gray-800">
+          <div className="border-t border-border px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
             {children}
           </div>
         </div>

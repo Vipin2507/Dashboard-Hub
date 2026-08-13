@@ -14,10 +14,8 @@ export default {
     extend: {
       screens: {
         xs: "375px",
-        /** Align custom name with `SIDEBAR_RAIL_BREAKPOINT_PX` / Tailwind `lg` */
         nav: "1024px",
       },
-      /** Design tokens from `src/index.css` :root — use p-4, gap-3, m-6, etc. */
       spacing: {
         1: "var(--space-1)",
         2: "var(--space-2)",
@@ -29,6 +27,7 @@ export default {
         10: "var(--space-10)",
         topbar: "var(--app-topbar-height)",
         sidebar: "var(--app-sidebar-width)",
+        "sidebar-rail": "var(--app-sidebar-rail-width)",
       },
       fontSize: {
         xs: ["var(--text-xs)", { lineHeight: "var(--lh-tight)" }],
@@ -44,20 +43,14 @@ export default {
         normal: "var(--lh-normal)",
         loose: "var(--lh-loose)",
       },
-      borderRadius: {
-        /** Maps `rounded-xl` to design token (16px); shadcn `lg`/`md`/`sm` still use `--radius` */
-        xl: "var(--radius-xl)",
-        "ds-sm": "var(--radius-sm)",
-        "ds-md": "var(--radius-md)",
-        "ds-lg": "var(--radius-lg)",
-        "ds-xl": "var(--radius-xl)",
-      },
       boxShadow: {
         card: "var(--shadow-card)",
         hover: "var(--shadow-hover)",
+        soft: "var(--shadow-soft)",
+        elevated: "var(--shadow-elevated)",
+        brand: "var(--shadow-brand)",
       },
       maxWidth: {
-        /** App content column (Part 0 page shell) */
         page: "var(--page-max-width)",
         "sidebar-drawer": "var(--app-sidebar-drawer-max)",
         "screen-xl": "1400px",
@@ -68,7 +61,7 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "monospace"],
+        mono: ["ui-monospace", "monospace"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -79,6 +72,14 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+        },
+        brand: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -124,9 +125,14 @@ export default {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius-lg)",
+        md: "var(--radius-md)",
+        sm: "var(--radius-sm)",
+        xl: "var(--radius-xl)",
+        "ds-sm": "var(--radius-sm)",
+        "ds-md": "var(--radius-md)",
+        "ds-lg": "var(--radius-lg)",
+        "ds-xl": "var(--radius-xl)",
       },
       keyframes: {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
@@ -135,6 +141,10 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+      },
+      transitionTimingFunction: {
+        theme: "cubic-bezier(0.33, 0, 0.2, 1)",
+        out: "cubic-bezier(0.22, 1, 0.36, 1)",
       },
     },
   },

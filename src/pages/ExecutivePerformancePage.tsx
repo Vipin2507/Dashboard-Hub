@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import {
   Bar,
@@ -24,11 +25,13 @@ import {
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { FilterPanel } from "@/components/FilterPanel";
+import { StatusPill } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSmUp } from "@/hooks/useSmUp";
+import { hoverLift, pageEnter, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
 import {
   Select,
   SelectContent,
@@ -141,14 +144,12 @@ function loadInitialExecutiveFilters(params: URLSearchParams): AppliedFilters {
   );
 }
 
-const CHART_COLORS = [
-  "hsl(221, 83%, 53%)",
-  "hsl(160, 84%, 39%)",
-  "hsl(38, 92%, 50%)",
-  "hsl(0, 72%, 51%)",
-  "hsl(262, 83%, 58%)",
-  "hsl(199, 89%, 48%)",
-];
+const CHART_PRIMARY = "var(--color-primary)";
+const CHART_SUCCESS = "var(--color-success)";
+const CHART_WARNING = "var(--color-warning)";
+const CHART_DANGER = "var(--color-danger)";
+const CHART_DEEP = "var(--color-primary-deep)";
+const CHART_COLORS = [CHART_PRIMARY, CHART_SUCCESS, CHART_WARNING, CHART_DANGER, CHART_DEEP, CHART_PRIMARY];
 
 const TYPE_META: Record<
   ExecutiveDetailRecord["type"],
@@ -157,22 +158,22 @@ const TYPE_META: Record<
   proposal: {
     label: "Proposal",
     icon: FileText,
-    className: "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+    className: "bg-primary/15 text-primary",
   },
   deal: {
     label: "Deal",
     icon: Handshake,
-    className: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    className: "bg-success/15 text-success",
   },
   customer: {
     label: "Customer",
     icon: Building2,
-    className: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
+    className: "bg-info/15 text-info",
   },
   payment: {
     label: "Payment",
     icon: TrendingUp,
-    className: "bg-amber-500/10 text-amber-800 dark:text-amber-300",
+    className: "bg-warning/15 text-warning",
   },
 };
 
@@ -190,14 +191,14 @@ function CountPill({ label, value, muted }: { label: string; value: number; mute
   return (
     <div
       className={cn(
-        "min-w-[4.5rem] rounded-lg border px-2.5 py-1.5 text-center transition-colors duration-200",
+        "min-w-[3.25rem] rounded-md border px-1.5 py-1 text-center",
         muted || value === 0
           ? "border-transparent bg-muted/40 text-muted-foreground"
-          : "border-border bg-background text-foreground",
+          : "border-border bg-card text-foreground",
       )}
     >
       <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold tabular-nums">{value}</p>
+      <p className="text-xs font-semibold tabular-nums">{value}</p>
     </div>
   );
 }
@@ -211,34 +212,27 @@ function DailyActivityTable({
 }) {
   if (rows.length === 0) {
     return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Daily activity</CardTitle>
-          <CardDescription className="text-xs">
-            Row-level counts for each day in the selected filters. Expand a day for full records.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-            No daily activity for this filter set.
-          </div>
-        </CardContent>
-      </Card>
+      <div className="card-soft overflow-hidden">
+        <div className="border-b border-border px-3 py-2.5 sm:px-4">
+          <h3 className="text-sm font-semibold text-foreground">Daily activity</h3>
+          <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">
+            Row-level counts for each day. Expand a day for full records.
+          </p>
+        </div>
+        <p className="px-4 py-10 text-center text-sm text-muted-foreground">No daily activity for this filter set.</p>
+      </div>
     );
   }
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Daily activity</CardTitle>
-        <CardDescription className="text-xs">
-          {rows.length} day{rows.length === 1 ? "" : "s"} with activity · expand any row for proposals,
-          deals, customers, and payments on that date.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="px-0 pb-0 sm:px-0">
-        {/* Desktop / tablet header */}
-        <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(6,minmax(0,0.7fr))_auto] gap-2 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground md:grid lg:px-6">
+    <div className="card-soft overflow-hidden">
+      <div className="border-b border-border px-3 py-2.5 sm:px-4">
+        <h3 className="text-sm font-semibold text-foreground">Daily activity</h3>
+        <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">
+          {rows.length} day{rows.length === 1 ? "" : "s"} with activity · expand a row for records.
+        </p>
+      </div>
+        <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(6,minmax(0,0.7fr))_auto] gap-2 border-b border-border px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground md:grid sm:px-4">
           <span>Date</span>
           <span className="text-center">Proposals</span>
           <span className="text-center">Deals</span>
@@ -262,7 +256,7 @@ function DailyActivityTable({
               <AccordionItem
                 key={day.date}
                 value={day.date}
-                className="border-b border-border px-4 last:border-b-0 lg:px-6"
+                className="border-b border-border px-3 last:border-b-0 sm:px-4"
               >
                 <AccordionTrigger
                   className={cn(
@@ -311,14 +305,12 @@ function DailyActivityTable({
                 <AccordionContent className="pb-4 pt-0">
                   <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3 transition-all duration-300">
                     {(day.wonValue > 0 || day.collectedRevenue > 0) && (
-                      <div className="mb-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <div className="mb-1 flex flex-wrap gap-1.5">
                         {day.wonValue > 0 ? (
-                          <Badge variant="secondary">Won value {formatINR(day.wonValue)}</Badge>
+                          <StatusPill tone="success">Won {formatINR(day.wonValue)}</StatusPill>
                         ) : null}
                         {day.collectedRevenue > 0 ? (
-                          <Badge variant="outline">
-                            Collected {formatINR(day.collectedRevenue)}
-                          </Badge>
+                          <StatusPill tone="info">Collected {formatINR(day.collectedRevenue)}</StatusPill>
                         ) : null}
                       </div>
                     )}
@@ -336,9 +328,9 @@ function DailyActivityTable({
                             type="button"
                             onClick={() => onOpenRecord(item)}
                             className={cn(
-                              "flex w-full items-start gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-left",
-                              "transition-all duration-200 hover:border-primary/30 hover:bg-accent/40 hover:shadow-sm",
-                              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              "flex w-full items-start gap-2.5 rounded-md border border-border bg-card px-2.5 py-2 text-left",
+                              "hover:border-primary/30",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                             )}
                           >
                             <div
@@ -352,9 +344,9 @@ function DailyActivityTable({
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="truncate text-sm font-medium">{item.title}</span>
-                                <Badge variant="outline" className="h-5 text-[10px]">
+                                <StatusPill tone="muted" className="h-5 text-[10px]">
                                   {meta.label}
-                                </Badge>
+                                </StatusPill>
                               </div>
                               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                 {item.executiveName || "—"}
@@ -382,8 +374,7 @@ function DailyActivityTable({
             );
           })}
         </Accordion>
-      </CardContent>
-    </Card>
+    </div>
   );
 }
 
@@ -392,35 +383,39 @@ function KpiCard({
   value,
   sub,
   icon: Icon,
+  iconColor,
+  iconBg,
   onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
   icon: React.ElementType;
+  iconColor: string;
+  iconBg: string;
   onClick?: () => void;
 }) {
+  const isPlainInt = /^\d+$/.test(String(value).trim());
   return (
-    <button
+    <motion.button
       type="button"
       onClick={onClick}
-      className={cn(
-        "group rounded-xl border border-border bg-card p-4 text-left shadow-sm transition-all duration-200",
-        "hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        onClick ? "cursor-pointer" : "cursor-default",
-      )}
+      variants={staggerItem}
+      whileHover={hoverLift}
+      whileTap={tapPress}
+      className="card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className="truncate text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-          {sub ? <p className="text-xs text-muted-foreground">{sub}</p> : null}
-        </div>
-        <div className="rounded-lg bg-primary/10 p-2 text-primary transition-colors duration-200 group-hover:bg-primary/15">
-          <Icon className="h-4 w-4" />
-        </div>
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
       </div>
-    </button>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isPlainInt ? <CountUp value={Number(value)} /> : value}
+        </p>
+        {sub ? <p className="truncate text-[10px] text-muted-foreground">{sub}</p> : null}
+      </div>
+    </motion.button>
   );
 }
 
@@ -438,32 +433,31 @@ function ChartCard({
   action?: React.ReactNode;
 }) {
   return (
-    <Card className={cn("overflow-hidden transition-shadow duration-200 hover:shadow-md", className)}>
-      <CardHeader className="space-y-1 pb-2">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1">
-            <CardTitle className="text-base font-semibold">{title}</CardTitle>
-            {description ? (
-              <CardDescription className="text-xs leading-relaxed">{description}</CardDescription>
-            ) : null}
-          </div>
-          {action ? <div className="shrink-0">{action}</div> : null}
+    <div className={cn("card-soft overflow-hidden", className)}>
+      <div className="flex flex-wrap items-start justify-between gap-2 px-3 py-2.5 sm:px-4">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {description ? (
+            <p className="mt-0.5 hidden text-[11px] leading-relaxed text-muted-foreground sm:block">{description}</p>
+          ) : null}
         </div>
-      </CardHeader>
-      <CardContent className="pt-2">{children}</CardContent>
-    </Card>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
+      <div className="px-3 pb-3 sm:px-4 sm:pb-4">{children}</div>
+    </div>
   );
 }
 
 function EmptyChart({ message }: { message: string }) {
   return (
-    <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-4 text-center text-sm text-muted-foreground sm:h-64 lg:h-72">
+    <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-border bg-muted/20 px-4 text-center text-sm text-muted-foreground sm:h-56">
       {message}
     </div>
   );
 }
 
 export default function ExecutivePerformancePage() {
+  const smUp = useSmUp();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -683,14 +677,14 @@ export default function ExecutivePerformancePage() {
     <>
       <Topbar
         title="Executive performance"
-        subtitle="Super Admin — sales executive analytics by person, team, region, day, and reason"
+        subtitle={smUp ? "Sales analytics by person, team, region, and reason" : undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-9"
+              className="h-8 px-2.5 text-xs"
               disabled={!data || query.isFetching}
               onClick={() => {
                 if (!data) return;
@@ -698,62 +692,91 @@ export default function ExecutivePerformancePage() {
                 toast({ title: "Export downloaded" });
               }}
             >
-              <Download className="mr-1.5 h-4 w-4" />
-              Export
+              <Download className="mr-1 h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Export</span>
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               size="sm"
-              className="h-9 w-9 p-0"
+              className="h-8 w-8 p-0"
               disabled={query.isFetching}
               onClick={() => query.refetch()}
               title="Refresh"
             >
               {query.isFetching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-3.5 w-3.5" />
               )}
             </Button>
           </div>
         }
       />
 
-      <div className="space-y-4 sm:space-y-6">
-        <FilterPanel title="Filters" storageKey="ui:executive-performance:filtersOpen">
-          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end">
-            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
-              <div className="min-w-[220px] flex-1 space-y-1">
-                <p className="text-xs text-muted-foreground">
-                  Date range{!draft.from && !draft.to ? " · All time" : ""}
-                </p>
-                <Datepicker
-                  controls={["calendar"]}
-                  select="range"
-                  touchUi={true}
-                  inputComponent="input"
-                  inputProps={{
-                    placeholder: "All time",
-                    className: "h-9 w-full",
-                  }}
-                  value={[ymdToDate(draft.from), ymdToDate(draft.to)]}
-                  onChange={(ev) => {
-                    const [f, t] = ev.value as [Date | null, Date | null];
-                    setDraft((prev) => ({
-                      ...prev,
-                      from: f ? dateToYmd(f) : "",
-                      to: t ? dateToYmd(t) : "",
-                    }));
-                  }}
-                />
+      <motion.div {...pageEnter} className="space-y-3">
+        <FilterPanel
+          title="Filters"
+          storageKey="ui:executive-performance:filtersOpen"
+          defaultOpen={smUp}
+          headerActions={
+            hasActiveAppliedFilters ? (
+              <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
+                {applied.from || applied.to ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {applied.from && applied.to ? `${applied.from} → ${applied.to}` : "Custom dates"}
+                  </span>
+                ) : (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    All time
+                  </span>
+                )}
+                {applied.executiveId !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {salesReps.find((u) => u.id === applied.executiveId)?.name ?? "Executive"}
+                  </span>
+                ) : null}
+                {applied.teamId !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {teams.find((t) => t.id === applied.teamId)?.name ?? "Team"}
+                  </span>
+                ) : null}
+                {applied.regionId !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {regions.find((r) => r.id === applied.regionId)?.name ?? "Region"}
+                  </span>
+                ) : null}
               </div>
+            ) : null
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <Datepicker
+                controls={["calendar"]}
+                select="range"
+                touchUi={true}
+                inputComponent="input"
+                inputProps={{
+                  placeholder: !draft.from && !draft.to ? "All time" : "Date range",
+                  className: "h-9 w-full text-sm",
+                }}
+                value={[ymdToDate(draft.from), ymdToDate(draft.to)]}
+                onChange={(ev) => {
+                  const [f, t] = ev.value as [Date | null, Date | null];
+                  setDraft((prev) => ({
+                    ...prev,
+                    from: f ? dateToYmd(f) : "",
+                    to: t ? dateToYmd(t) : "",
+                  }));
+                }}
+              />
 
               <Select
                 value={draft.executiveId}
                 onValueChange={(v) => setDraft((p) => ({ ...p, executiveId: v }))}
               >
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[180px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="All executives" />
                 </SelectTrigger>
                 <SelectContent>
@@ -767,7 +790,7 @@ export default function ExecutivePerformancePage() {
               </Select>
 
               <Select value={draft.teamId} onValueChange={(v) => setDraft((p) => ({ ...p, teamId: v }))}>
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[160px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="All teams" />
                 </SelectTrigger>
                 <SelectContent>
@@ -784,7 +807,7 @@ export default function ExecutivePerformancePage() {
                 value={draft.regionId}
                 onValueChange={(v) => setDraft((p) => ({ ...p, regionId: v }))}
               >
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[160px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="All regions" />
                 </SelectTrigger>
                 <SelectContent>
@@ -801,7 +824,7 @@ export default function ExecutivePerformancePage() {
                 value={draft.weekday}
                 onValueChange={(v) => setDraft((p) => ({ ...p, weekday: v }))}
               >
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[150px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="All days" />
                 </SelectTrigger>
                 <SelectContent>
@@ -824,7 +847,7 @@ export default function ExecutivePerformancePage() {
                   }))
                 }
               >
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[170px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="Reason type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -839,7 +862,7 @@ export default function ExecutivePerformancePage() {
                 onValueChange={(v) => setDraft((p) => ({ ...p, reason: v }))}
                 disabled={draft.reasonType === "all"}
               >
-                <SelectTrigger className="h-9 w-full shrink-0 sm:w-[180px]">
+                <SelectTrigger className="h-9 w-full">
                   <SelectValue placeholder="All reasons" />
                 </SelectTrigger>
                 <SelectContent>
@@ -853,17 +876,24 @@ export default function ExecutivePerformancePage() {
               </Select>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+            <div className="flex items-center gap-1.5">
               <Button
                 type="button"
                 variant="outline"
-                className="h-9"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
                 disabled={!hasActiveAppliedFilters && !hasPending}
                 onClick={clearFilters}
               >
                 Clear
               </Button>
-              <Button type="button" className="h-9" disabled={!hasPending} onClick={applyFilters}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                disabled={!hasPending}
+                onClick={applyFilters}
+              >
                 Apply
               </Button>
             </div>
@@ -871,8 +901,8 @@ export default function ExecutivePerformancePage() {
         </FilterPanel>
 
         {data?.coverage?.notes?.length ? (
-          <div className="flex flex-wrap items-start gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="card-soft flex items-start gap-2 px-3 py-2.5 text-[11px] text-warning-foreground">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
             <div className="min-w-0 space-y-0.5">
               {data.coverage.notes.map((n) => (
                 <p key={n}>{n}</p>
@@ -882,48 +912,51 @@ export default function ExecutivePerformancePage() {
         ) : null}
 
         {query.isLoading ? (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-xl" />
+              <Skeleton key={i} className="h-[3.25rem] rounded-lg" />
             ))}
           </div>
         ) : query.isError ? (
-          <Card className="border-destructive/40">
-            <CardContent className="flex flex-col items-start gap-3 py-8">
-              <p className="text-sm text-destructive">
-                {(query.error as Error)?.message || "Failed to load executive performance"}
-              </p>
-              <Button type="button" variant="outline" size="sm" onClick={() => query.refetch()}>
-                Retry
-              </Button>
-            </CardContent>
-          </Card>
+          <div className="card-soft flex flex-col items-start gap-2 px-4 py-8">
+            <p className="text-sm text-destructive">
+              {(query.error as Error)?.message || "Failed to load executive performance"}
+            </p>
+            <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => query.refetch()}>
+              Retry
+            </Button>
+          </div>
         ) : (
           <>
             {selectedExec && "name" in selectedExec ? (
-              <div className="rounded-xl border border-border bg-card px-4 py-3 transition-colors duration-200">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Selected executive</p>
-                    <p className="text-lg font-semibold">{selectedExec.name}</p>
-                  </div>
-                  {"winRate" in selectedExec ? (
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="secondary">Win rate {selectedExec.winRate}%</Badge>
-                      <Badge variant="outline">Won {formatINR(selectedExec.wonValue)}</Badge>
-                      <Badge variant="outline">Pipeline {formatINR(selectedExec.pipelineValue)}</Badge>
-                    </div>
-                  ) : null}
+              <div className="card-soft flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Selected executive</p>
+                  <p className="truncate text-sm font-semibold">{selectedExec.name}</p>
                 </div>
+                {"winRate" in selectedExec ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    <StatusPill tone="info">Win rate {selectedExec.winRate}%</StatusPill>
+                    <StatusPill tone="success">Won {formatINR(selectedExec.wonValue)}</StatusPill>
+                    <StatusPill tone="muted">Pipeline {formatINR(selectedExec.pipelineValue)}</StatusPill>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-5">
+            <motion.div
+              variants={staggerContainer}
+              initial="initial"
+              animate="animate"
+              className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2"
+            >
               <KpiCard
                 label="Won value"
                 value={formatINR(summary?.wonValue ?? 0)}
-                sub={`${summary?.dealsWon ?? 0} deals won · avg ${formatINR(summary?.avgWonDealSize ?? 0)}`}
+                sub={`${summary?.dealsWon ?? 0} won · avg ${formatINR(summary?.avgWonDealSize ?? 0)}`}
                 icon={TrendingUp}
+                iconColor="text-success"
+                iconBg="bg-success/15"
                 onClick={() => openDetail("deals_won")}
               />
               <KpiCard
@@ -931,35 +964,35 @@ export default function ExecutivePerformancePage() {
                 value={`${summary?.winRate ?? 0}%`}
                 sub={`${summary?.dealsWon ?? 0} won / ${summary?.dealsLost ?? 0} lost`}
                 icon={Target}
+                iconColor="text-primary"
+                iconBg="bg-primary/15"
                 onClick={() => openDetail("deals_lost")}
               />
               <KpiCard
-                label="Collected revenue"
+                label="Collected"
                 value={formatINR(summary?.collectedRevenue ?? 0)}
                 sub={`${summary?.collectedPaymentCount ?? 0} payments`}
                 icon={Handshake}
+                iconColor="text-info"
+                iconBg="bg-info/15"
                 onClick={() => openDetail("payments_collected")}
               />
               <KpiCard
                 label="Pipeline"
                 value={formatINR(summary?.pipelineValue ?? 0)}
-                sub={`${summary?.pipelineCount ?? 0} open deals · ${summary?.customersNew ?? 0} new customers`}
+                sub={`${summary?.pipelineCount ?? 0} open · ${summary?.customersNew ?? 0} new`}
                 icon={Users}
+                iconColor="text-warning"
+                iconBg="bg-warning/15"
                 onClick={() => openDetail("pipeline")}
               />
-            </div>
+            </motion.div>
 
-            <Tabs value={tab} onValueChange={onTabChange} className="space-y-4">
-              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 sm:w-auto">
-                <TabsTrigger value="overview" className="transition-all duration-200">
-                  Overview
-                </TabsTrigger>
-                <TabsTrigger value="comparison" className="transition-all duration-200">
-                  Employee comparison
-                </TabsTrigger>
-                <TabsTrigger value="reasons" className="transition-all duration-200">
-                  Reasons & details
-                </TabsTrigger>
+            <Tabs value={tab} onValueChange={onTabChange} className="space-y-3">
+              <TabsList className="w-full sm:w-auto">
+                <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="comparison">{smUp ? "Employee comparison" : "Compare"}</TabsTrigger>
+                <TabsTrigger value="reasons">{smUp ? "Reasons & details" : "Reasons"}</TabsTrigger>
               </TabsList>
 
               <TabsContent
@@ -973,7 +1006,7 @@ export default function ExecutivePerformancePage() {
                   {(data?.trend?.length ?? 0) === 0 ? (
                     <EmptyChart message="No trend data for this range." />
                   ) : (
-                    <ChartContainer config={trendConfig} className="h-56 w-full sm:h-72 lg:h-80">
+                    <ChartContainer config={trendConfig} className="h-40 w-full sm:h-56 lg:h-72">
                       <LineChart data={data?.trend} margin={{ left: 8, right: 12, top: 8, bottom: 0 }}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
                         <XAxis
@@ -1034,7 +1067,7 @@ export default function ExecutivePerformancePage() {
                     ) : (
                       <ChartContainer
                         config={rankingConfig}
-                        className="h-64 w-full sm:h-72 lg:h-80"
+                        className="h-48 w-full sm:h-64 lg:h-72"
                         style={{ height: Math.max(256, wonRankingData.length * 36) }}
                       >
                         <BarChart
@@ -1086,7 +1119,7 @@ export default function ExecutivePerformancePage() {
                     {(data?.funnel?.length ?? 0) === 0 ? (
                       <EmptyChart message="No funnel activity in this period." />
                     ) : (
-                      <ChartContainer config={funnelConfig} className="h-64 w-full sm:h-72 lg:h-80">
+                      <ChartContainer config={funnelConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart
                           data={data?.funnel}
                           margin={{ left: 8, right: 12, top: 8, bottom: 24 }}
@@ -1138,7 +1171,7 @@ export default function ExecutivePerformancePage() {
                         value={comparisonMetric}
                         onValueChange={(v) => setComparisonMetric(v as ComparisonMetricKey)}
                       >
-                        <SelectTrigger className="h-8 w-[180px] text-xs">
+                        <SelectTrigger className="h-8 w-full min-w-0 text-xs sm:w-[180px]">
                           <SelectValue placeholder="Metric" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1154,7 +1187,7 @@ export default function ExecutivePerformancePage() {
                     {rankingData.length === 0 ? (
                       <EmptyChart message="No comparison data for this metric." />
                     ) : (
-                      <ChartContainer config={comparisonConfig} className="h-72 w-full lg:h-80">
+                      <ChartContainer config={comparisonConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart data={rankingData} layout="vertical" margin={{ left: 8, right: 16 }}>
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis
@@ -1204,7 +1237,7 @@ export default function ExecutivePerformancePage() {
                     {winRateData.length === 0 ? (
                       <EmptyChart message="No closed deals to compare." />
                     ) : (
-                      <ChartContainer config={winRateConfig} className="h-72 w-full lg:h-80">
+                      <ChartContainer config={winRateConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart data={winRateData} layout="vertical" margin={{ left: 8, right: 16 }}>
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} />
@@ -1221,7 +1254,7 @@ export default function ExecutivePerformancePage() {
                   title="Weekday performance"
                   description="When wins, losses, and proposal creation happen across the week."
                 >
-                  <ChartContainer config={weekdayConfig} className="h-64 w-full sm:h-72">
+                  <ChartContainer config={weekdayConfig} className="h-40 w-full sm:h-56">
                     <BarChart
                       data={data?.weekdayPerformance}
                       margin={{ left: 8, right: 12, top: 8, bottom: 0 }}
@@ -1237,39 +1270,62 @@ export default function ExecutivePerformancePage() {
                   </ChartContainer>
                 </ChartCard>
 
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Executive comparison table</CardTitle>
-                    <CardDescription className="text-xs">
-                      Precise numbers for the same filters used in the charts.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Executive</TableHead>
-                          <TableHead className="hidden md:table-cell">Team</TableHead>
-                          <TableHead className="text-right">Won</TableHead>
-                          <TableHead className="text-right">Lost</TableHead>
-                          <TableHead className="text-right">Win %</TableHead>
-                          <TableHead className="text-right">Won value</TableHead>
-                          <TableHead className="hidden text-right lg:table-cell">Collected</TableHead>
-                          <TableHead className="hidden text-right lg:table-cell">Pipeline</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(data?.executives ?? []).length === 0 ? (
+                <div className="card-soft overflow-hidden">
+                  <div className="border-b border-border px-3 py-2.5 sm:px-4">
+                    <h3 className="text-sm font-semibold text-foreground">Executive comparison</h3>
+                    <p className="mt-0.5 hidden text-[11px] text-muted-foreground sm:block">
+                      Same filters as the charts. Tap a row to focus that executive.
+                    </p>
+                  </div>
+                  {(data?.executives ?? []).length === 0 ? (
+                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">No executives match these filters.</p>
+                  ) : !smUp ? (
+                    <div className="divide-y divide-border">
+                      {data?.executives.map((e) => (
+                        <button
+                          key={e.userId}
+                          type="button"
+                          className="flex w-full items-start justify-between gap-2 px-2.5 py-2.5 text-left"
+                          onClick={() => {
+                            const next = { ...applied, executiveId: e.userId };
+                            setDraft(next);
+                            setApplied(next);
+                            setSearchParams(executiveFiltersToSearchParams(next, tab), { replace: true });
+                          }}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{e.name}</p>
+                            <p className="truncate text-[11px] text-muted-foreground">{e.teamName || "—"}</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-semibold tabular-nums">{formatINR(e.wonValue)}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {e.dealsWon} won · {e.winRate}%
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="scrollbar-soft overflow-x-auto">
+                      <Table responsiveShell={false}>
+                        <TableHeader>
                           <TableRow>
-                            <TableCell colSpan={8} className="py-8 text-center text-sm text-muted-foreground">
-                              No executives match these filters.
-                            </TableCell>
+                            <TableHead className="text-[10px] uppercase tracking-wide">Executive</TableHead>
+                            <TableHead className="hidden text-[10px] uppercase tracking-wide md:table-cell">Team</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide">Won</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide">Lost</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide">Win %</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide">Won value</TableHead>
+                            <TableHead className="hidden text-right text-[10px] uppercase tracking-wide lg:table-cell">Collected</TableHead>
+                            <TableHead className="hidden text-right text-[10px] uppercase tracking-wide lg:table-cell">Pipeline</TableHead>
                           </TableRow>
-                        ) : (
-                          data?.executives.map((e) => (
+                        </TableHeader>
+                        <TableBody>
+                          {data?.executives.map((e) => (
                             <TableRow
                               key={e.userId}
-                              className="cursor-pointer transition-colors duration-150"
+                              className="cursor-pointer"
                               onClick={() => {
                                 const next = { ...applied, executiveId: e.userId };
                                 setDraft(next);
@@ -1281,23 +1337,23 @@ export default function ExecutivePerformancePage() {
                             >
                               <TableCell className="font-medium">{e.name}</TableCell>
                               <TableCell className="hidden md:table-cell">{e.teamName || "—"}</TableCell>
-                              <TableCell className="text-right">{e.dealsWon}</TableCell>
-                              <TableCell className="text-right">{e.dealsLost}</TableCell>
-                              <TableCell className="text-right">{e.winRate}%</TableCell>
-                              <TableCell className="text-right">{formatINR(e.wonValue)}</TableCell>
-                              <TableCell className="hidden text-right lg:table-cell">
+                              <TableCell className="text-right tabular-nums">{e.dealsWon}</TableCell>
+                              <TableCell className="text-right tabular-nums">{e.dealsLost}</TableCell>
+                              <TableCell className="text-right tabular-nums">{e.winRate}%</TableCell>
+                              <TableCell className="text-right tabular-nums">{formatINR(e.wonValue)}</TableCell>
+                              <TableCell className="hidden text-right tabular-nums lg:table-cell">
                                 {formatINR(e.collectedRevenue)}
                               </TableCell>
-                              <TableCell className="hidden text-right lg:table-cell">
+                              <TableCell className="hidden text-right tabular-nums lg:table-cell">
                                 {formatINR(e.pipelineValue)}
                               </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
               </TabsContent>
 
               <TabsContent
@@ -1312,7 +1368,7 @@ export default function ExecutivePerformancePage() {
                     {(data?.lossReasons?.length ?? 0) === 0 ? (
                       <EmptyChart message="No lost deals with reasons in this period." />
                     ) : (
-                      <ChartContainer config={reasonConfig} className="h-72 w-full lg:h-80">
+                      <ChartContainer config={reasonConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart
                           data={(data?.lossReasons ?? []).slice(0, 10)}
                           layout="vertical"
@@ -1348,7 +1404,7 @@ export default function ExecutivePerformancePage() {
                     {(data?.rejectionReasons?.length ?? 0) === 0 ? (
                       <EmptyChart message="No rejected proposals with reasons in this period." />
                     ) : (
-                      <ChartContainer config={reasonConfig} className="h-72 w-full lg:h-80">
+                      <ChartContainer config={reasonConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart
                           data={(data?.rejectionReasons ?? []).slice(0, 10)}
                           layout="vertical"
@@ -1378,49 +1434,70 @@ export default function ExecutivePerformancePage() {
                   </ChartCard>
                 </div>
 
-                <Card>
-                  <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 pb-2">
-                    <div>
-                      <CardTitle className="text-base">Event details</CardTitle>
-                      <CardDescription className="text-xs">
-                        {data?.details.total ?? 0} matching records — open a KPI or chart to focus the list.
-                      </CardDescription>
+                <div className="card-soft overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2.5 sm:px-4">
+                    <div className="min-w-0">
+                      <h3 className="text-sm font-semibold text-foreground">Event details</h3>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {data?.details.total ?? 0} matching · open a KPI to focus
+                      </p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" variant="outline" onClick={() => openDetail("proposals_created")}>
+                    <div className="flex flex-wrap gap-1">
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("proposals_created")}>
                         Proposals
                       </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={() => openDetail("deals_won")}>
-                        Won deals
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("deals_won")}>
+                        Won
                       </Button>
-                      <Button type="button" size="sm" variant="outline" onClick={() => openDetail("deals_lost")}>
-                        Lost deals
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("deals_lost")}>
+                        Lost
                       </Button>
                     </div>
-                  </CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Record</TableHead>
-                          <TableHead className="hidden sm:table-cell">Executive</TableHead>
-                          <TableHead className="hidden md:table-cell">Status / reason</TableHead>
-                          <TableHead className="text-right">Amount</TableHead>
-                          <TableHead className="hidden text-right lg:table-cell">When</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {(data?.details.rows ?? []).length === 0 ? (
+                  </div>
+                  {(data?.details.rows ?? []).length === 0 ? (
+                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">No detail rows for the current filters.</p>
+                  ) : !smUp ? (
+                    <div className="divide-y divide-border">
+                      {data?.details.rows.map((row) => (
+                        <button
+                          key={row.id}
+                          type="button"
+                          className="flex w-full items-start justify-between gap-2 px-2.5 py-2.5 text-left"
+                          onClick={() => row.href && navigate(row.href)}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{row.title}</p>
+                            <p className="truncate text-[11px] text-muted-foreground">
+                              {row.executiveName || "—"}
+                              {row.reason ? ` · ${row.reason}` : row.status ? ` · ${row.status}` : ""}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-xs font-semibold tabular-nums">
+                              {row.amount != null ? formatINR(row.amount) : "—"}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">{String(row.at).slice(0, 10)}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="scrollbar-soft overflow-x-auto">
+                      <Table responsiveShell={false}>
+                        <TableHeader>
                           <TableRow>
-                            <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                              No detail rows for the current filters.
-                            </TableCell>
+                            <TableHead className="text-[10px] uppercase tracking-wide">Record</TableHead>
+                            <TableHead className="text-[10px] uppercase tracking-wide">Executive</TableHead>
+                            <TableHead className="hidden text-[10px] uppercase tracking-wide md:table-cell">Status / reason</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase tracking-wide">Amount</TableHead>
+                            <TableHead className="hidden text-right text-[10px] uppercase tracking-wide lg:table-cell">When</TableHead>
                           </TableRow>
-                        ) : (
-                          data?.details.rows.map((row) => (
+                        </TableHeader>
+                        <TableBody>
+                          {data?.details.rows.map((row) => (
                             <TableRow
                               key={row.id}
-                              className="cursor-pointer transition-colors duration-150"
+                              className="cursor-pointer"
                               onClick={() => row.href && navigate(row.href)}
                             >
                               <TableCell>
@@ -1432,33 +1509,33 @@ export default function ExecutivePerformancePage() {
                                   </p>
                                 </div>
                               </TableCell>
-                              <TableCell className="hidden sm:table-cell">
-                                {row.executiveName || "—"}
-                              </TableCell>
+                              <TableCell>{row.executiveName || "—"}</TableCell>
                               <TableCell className="hidden max-w-[200px] truncate md:table-cell">
                                 {row.reason || row.status || "—"}
                               </TableCell>
-                              <TableCell className="text-right">
+                              <TableCell className="text-right tabular-nums">
                                 {row.amount != null ? formatINR(row.amount) : "—"}
                               </TableCell>
                               <TableCell className="hidden text-right text-xs text-muted-foreground lg:table-cell">
                                 {String(row.at).slice(0, 10)}
                               </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                     {(data?.details.total ?? 0) > (data?.details.pageSize ?? 25) ? (
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <p className="text-xs text-muted-foreground">
+                      <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-2 sm:px-4">
+                        <p className="text-[11px] text-muted-foreground">
                           Page {data?.details.page} · {data?.details.total} total
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1">
                           <Button
                             type="button"
                             size="sm"
                             variant="outline"
+                            className="h-7 px-2 text-[11px]"
                             disabled={detailPage <= 1}
                             onClick={() => setDetailPage((p) => Math.max(1, p - 1))}
                           >
@@ -1468,6 +1545,7 @@ export default function ExecutivePerformancePage() {
                             type="button"
                             size="sm"
                             variant="outline"
+                            className="h-7 px-2 text-[11px]"
                             disabled={
                               (data?.details.page ?? 1) * (data?.details.pageSize ?? 25) >=
                               (data?.details.total ?? 0)
@@ -1479,8 +1557,7 @@ export default function ExecutivePerformancePage() {
                         </div>
                       </div>
                     ) : null}
-                  </CardContent>
-                </Card>
+                </div>
               </TabsContent>
             </Tabs>
 
@@ -1492,7 +1569,7 @@ export default function ExecutivePerformancePage() {
             />
           </>
         )}
-      </div>
+      </motion.div>
 
       <Sheet
         open={detailOpen}
@@ -1521,7 +1598,7 @@ export default function ExecutivePerformancePage() {
                 <button
                   key={row.id}
                   type="button"
-                  className="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-left transition-colors duration-150 hover:bg-muted/50"
+                  className="w-full rounded-md border border-border bg-card px-2.5 py-2 text-left hover:border-primary/30"
                   onClick={() => {
                     if (row.href) {
                       setDetailOpen(false);

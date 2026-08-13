@@ -67,7 +67,7 @@ export const SearchableSelect = React.forwardRef<HTMLButtonElement, SearchableSe
             disabled={disabled}
             className={cn("h-10 w-full justify-between font-normal px-3", triggerClassName, className)}
           >
-            <span className="truncate text-left">
+            <span className="min-w-0 flex-1 truncate text-left" title={selected?.label}>
               {selected ? (
                 selected.label
               ) : (
@@ -78,10 +78,14 @@ export const SearchableSelect = React.forwardRef<HTMLButtonElement, SearchableSe
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] p-0"
           align="start"
+          collisionPadding={12}
+          className="p-0"
+          style={{
+            width: "max(var(--radix-popover-trigger-width), min(22rem, calc(100vw - 1.5rem)))",
+            maxWidth: "min(36rem, calc(100vw - 1.5rem))",
+          }}
           onWheelCapture={(e) => {
-            // Keep wheel scrolling inside the dropdown list (DialogBody is scrollable too).
             e.stopPropagation();
           }}
         >
@@ -95,13 +99,19 @@ export const SearchableSelect = React.forwardRef<HTMLButtonElement, SearchableSe
                     key={opt.value}
                     value={`${opt.label} ${opt.value}`}
                     disabled={opt.disabled}
+                    title={opt.label}
                     onSelect={() => {
                       onValueChange(opt.value);
                       setOpen(false);
                     }}
                   >
-                    <Check className={cn("mr-2 h-4 w-4 shrink-0", value === opt.value ? "opacity-100" : "opacity-0")} />
-                    <span className="truncate">{opt.label}</span>
+                    <Check
+                      className={cn(
+                        "mt-0.5 h-3.5 w-3.5 shrink-0 text-primary",
+                        value === opt.value ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 whitespace-normal break-words">{opt.label}</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

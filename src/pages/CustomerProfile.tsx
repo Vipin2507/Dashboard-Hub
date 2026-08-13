@@ -99,18 +99,18 @@ import { getCustomerBrief } from "@/lib/aiMemoryService";
 import { GenerateEstimateDialog } from "@/components/GenerateEstimateDialog";
 
 const STATUS_PILL: Record<string, string> = {
-  active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  inactive: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-  lead: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  churned: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  blacklisted: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
+  active: "border-success/30 bg-success/15 text-success",
+  inactive: "border-border bg-muted/40 text-muted-foreground",
+  lead: "border-primary/30 bg-primary/15 text-primary",
+  churned: "border-warning/30 bg-warning/15 text-warning-foreground",
+  blacklisted: "border-destructive/30 bg-destructive/15 text-destructive",
 };
 
 const TICKET_PRIORITY_BADGE: Record<string, string> = {
-  low: "bg-muted",
-  medium: "bg-blue-500/15 text-blue-700",
-  high: "bg-orange-500/15 text-orange-700",
-  critical: "bg-red-500/15 text-red-700",
+  low: "border-border bg-muted/40 text-muted-foreground",
+  medium: "border-primary/30 bg-primary/15 text-primary",
+  high: "border-warning/30 bg-warning/15 text-warning-foreground",
+  critical: "border-destructive/30 bg-destructive/15 text-destructive",
 };
 
 const TICKET_STATUS_BADGE: Record<string, string> = {

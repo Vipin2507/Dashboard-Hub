@@ -16,8 +16,11 @@ import { toast } from "@/components/ui/use-toast";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Topbar } from "@/components/Topbar";
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
+import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -45,17 +48,23 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
+  AlertTriangle,
   Bell,
+  CheckCircle2,
   Clock,
   ExternalLink,
+  FileText,
+  LayoutTemplate,
   Mail,
   MessageSquare,
   Pencil,
   Play,
   Plus,
   Power,
+  Send,
   Trash2,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 
 const ALL_TRIGGERS: AutomationTrigger[] = [
@@ -103,11 +112,83 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
 };
 
 const CHANNEL_ICON: Record<AutomationChannel, React.ReactNode> = {
-  whatsapp: <MessageSquare className="h-4 w-4 text-green-600" />,
-  email: <Mail className="h-4 w-4 text-blue-600" />,
-  sms: <MessageSquare className="h-4 w-4 text-orange-600" />,
-  in_app: <Bell className="h-4 w-4 text-purple-600" />,
+  whatsapp: <MessageSquare className="h-3.5 w-3.5 text-success" />,
+  email: <Mail className="h-3.5 w-3.5 text-primary" />,
+  sms: <MessageSquare className="h-3.5 w-3.5 text-warning" />,
+  in_app: <Bell className="h-3.5 w-3.5 text-muted-foreground" />,
 };
+
+const CHANNEL_META: Record<
+  AutomationChannel,
+  { icon: LucideIcon; color: string; bg: string; label: string }
+> = {
+  whatsapp: { icon: MessageSquare, color: "text-success", bg: "bg-success/10", label: "WhatsApp" },
+  email: { icon: Mail, color: "text-primary", bg: "bg-primary/10", label: "Email" },
+  sms: { icon: MessageSquare, color: "text-warning", bg: "bg-warning/10", label: "SMS" },
+  in_app: { icon: Bell, color: "text-muted-foreground", bg: "bg-muted", label: "In-app" },
+};
+
+function logStatusTone(status: AutomationLog["status"]): StatusTone {
+  if (status === "sent") return "success";
+  if (status === "failed") return "danger";
+  if (status === "pending") return "warning";
+  return "muted";
+}
+
+function AutomationKpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor,
+  iconBg,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const isPlainInt = /^\d+$/.test(String(value).trim());
+  const inner = (
+    <>
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isPlainInt ? <CountUp value={Number(value)} /> : value}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{sub}</p>
+      </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <motion.button
+        type="button"
+        onClick={onClick}
+        variants={staggerItem}
+        whileHover={hoverLift}
+        whileTap={tapPress}
+        className={cn("card-kpi w-full text-left hover:border-primary/30", active && "border-primary/40 bg-primary/5")}
+      >
+        {inner}
+      </motion.button>
+    );
+  }
+  return (
+    <motion.div variants={staggerItem} className="card-kpi w-full">
+      {inner}
+    </motion.div>
+  );
+}
 
 function AutomationKillSwitch() {
   const settings = useAppStore((s) => s.automationSettings);
@@ -117,34 +198,32 @@ function AutomationKillSwitch() {
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between",
-        enabled
-          ? "border-emerald-200 bg-emerald-50/80 dark:border-emerald-900 dark:bg-emerald-950/30"
-          : "border-red-300 bg-red-50 dark:border-red-900 dark:bg-red-950/40",
+        "card-soft flex flex-col gap-2.5 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between",
+        enabled ? "border-success/30 bg-success/5" : "border-destructive/30 bg-destructive/5",
       )}
     >
-      <div className="flex items-start gap-3 min-w-0">
+      <div className="flex min-w-0 items-start gap-2.5">
         <div
           className={cn(
-            "flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg",
-            enabled ? "bg-emerald-100 dark:bg-emerald-900/50" : "bg-red-100 dark:bg-red-900/50",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+            enabled ? "bg-success/15" : "bg-destructive/15",
           )}
         >
-          <Power className={cn("h-5 w-5", enabled ? "text-emerald-700" : "text-red-600")} />
+          <Power className={cn("h-3.5 w-3.5", enabled ? "text-success" : "text-destructive")} />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground">
-            {enabled ? "Automations are ON" : "Automations are OFF (kill switch)"}
+            {enabled ? "Automations are on" : "Automations are off"}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
             {enabled
               ? "Templates, rules, and scheduled checks can send WhatsApp, email, and in-app messages."
-              : "Nothing will send automatically — proposal/deal triggers, payment reminders, follow-ups, and n8n webhooks are paused."}
+              : "Nothing will send automatically — triggers, reminders, follow-ups, and n8n webhooks are paused."}
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        <Label htmlFor="automation-kill-switch" className="text-sm font-medium cursor-pointer">
+      <div className="flex shrink-0 items-center gap-2">
+        <Label htmlFor="automation-kill-switch" className="cursor-pointer text-[11px] font-medium text-muted-foreground">
           {enabled ? "Enabled" : "Disabled"}
         </Label>
         <Switch
@@ -171,16 +250,9 @@ function ConnectionStatusPill({ service }: { service: "n8n" | "waha" }) {
   const isConnected = service === "n8n" ? settings.isN8nConnected : settings.isWahaConnected;
   const label = service === "n8n" ? "n8n" : "WAHA";
   return (
-    <span
-      className={cn(
-        "px-2.5 py-1 rounded-full text-xs font-medium",
-        isConnected
-          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-      )}
-    >
+    <StatusPill tone={isConnected ? "success" : "muted"}>
       {label} {isConnected ? "connected" : "offline"}
-    </span>
+    </StatusPill>
   );
 }
 
@@ -194,14 +266,14 @@ function RulesTab({
   onToggle: (id: string) => void;
 }) {
   return (
-    <div className="pt-4 space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Define when automations fire automatically (local rules with cooldown).
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          Local rules with cooldown — when an event fires, matching actions run.
         </p>
         <Button
           size="sm"
-          className="h-8 px-3 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg"
+          className="h-8 px-2.5 text-xs"
           onClick={() => {
             const next: AutomationRule = {
               id: `r_${Math.random().toString(36).slice(2, 10)}`,
@@ -216,33 +288,28 @@ function RulesTab({
             toast({ title: "Rule added", description: "Toggle is ready. Editing UI will be added next." });
           }}
         >
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Add Rule
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add rule
         </Button>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         {rules.map((rule) => (
-          <div
-            key={rule.id}
-            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4"
-          >
+          <div key={rule.id} className={cn("card-soft p-3", !rule.isActive && "opacity-60")}>
             <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{rule.name}</p>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                    {TRIGGER_LABELS[rule.trigger]}
-                  </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                  <p className="text-sm font-semibold text-foreground">{rule.name}</p>
+                  <StatusPill tone="info">{TRIGGER_LABELS[rule.trigger]}</StatusPill>
                 </div>
 
                 {rule.conditions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    <span className="text-xs text-gray-500">When:</span>
+                  <div className="mb-1.5 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground">When</span>
                     {rule.conditions.map((c, i) => (
                       <span
                         key={i}
-                        className="text-xs px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                        className="rounded-md bg-muted/70 px-1.5 py-0.5 text-[11px] text-muted-foreground"
                       >
                         {c.field} {c.operator} {String(c.value)}
                       </span>
@@ -250,12 +317,12 @@ function RulesTab({
                   </div>
                 )}
 
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="text-xs text-gray-500">Then:</span>
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground">Then</span>
                   {rule.actions.map((a, i) => (
                     <span
                       key={i}
-                      className="text-xs px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300"
+                      className="rounded-md border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] text-success"
                     >
                       {a.type.replaceAll("_", " ")}
                       {a.delayHours > 0 ? ` after ${a.delayHours}h` : ""}
@@ -264,16 +331,16 @@ function RulesTab({
                 </div>
 
                 {rule.cooldownHours > 0 && (
-                  <p className="text-xs text-gray-400 mt-2">Cooldown: {rule.cooldownHours}h between fires</p>
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">Cooldown: {rule.cooldownHours}h between fires</p>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex shrink-0 items-center gap-1.5">
                 <Switch checked={rule.isActive} onCheckedChange={() => onToggle(rule.id)} />
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 w-7 p-0 rounded-md"
+                  className="h-7 w-7 p-0"
                   onClick={() =>
                     toast({
                       title: "Editing UI coming next",
@@ -289,7 +356,10 @@ function RulesTab({
         ))}
 
         {rules.length === 0 && (
-          <p className="text-sm text-muted-foreground py-8 text-center">No rules yet.</p>
+          <div className="card-soft flex flex-col items-center px-4 py-10 text-center">
+            <p className="text-sm font-medium">No rules yet</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">Add a rule to fire templates automatically.</p>
+          </div>
         )}
       </div>
     </div>
@@ -434,14 +504,15 @@ export default function Automation() {
     <>
       <Topbar
         title="Automation"
-        subtitle="Manage WhatsApp, email and notification workflows"
+        subtitle="WhatsApp, email, and in-app workflows"
         actions={
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             <ConnectionStatusPill service="n8n" />
             <ConnectionStatusPill service="waha" />
             <Button
               variant="outline"
-              className="h-9"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
               disabled={automationSettings.automationsEnabled === false}
               onClick={() => {
                 if (automationSettings.automationsEnabled === false) {
@@ -456,94 +527,113 @@ export default function Automation() {
                 toast({ title: "Rule check started", description: "Proposal follow-up and payment rules evaluated." });
               }}
             >
-              Run Rules Now
+              Run rules
             </Button>
             <Button
+              size="sm"
+              className="h-8 px-2.5 text-xs"
               onClick={() => setShowAddTemplate(true)}
-              className="h-9 rounded-lg bg-blue-600 px-4 text-sm text-white hover:bg-blue-700"
             >
-              <Plus className="mr-1.5 h-4 w-4" />
-              New Template
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              New
             </Button>
           </div>
         }
       />
-      <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { label: "Total Templates", value: automationTemplates.length },
-          {
-            label: "Active",
-            value: automationTemplates.filter((t) => t.isActive).length,
-            color: "text-emerald-600",
-          },
-          { label: "Sent Today", value: sentToday, color: "text-blue-600" },
-          {
-            label: "Failed",
-            value: failed,
-            color: failed > 0 ? "text-red-600" : "text-gray-900 dark:text-gray-100",
-          },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4"
-          >
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">{s.label}</p>
-            <p className={cn("text-2xl font-bold tracking-tight", s.color ?? "text-gray-900 dark:text-gray-100")}>
-              {s.value}
-            </p>
-          </div>
-        ))}
-      </div>
+      <div className="space-y-2.5">
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+        >
+          <AutomationKpiCard
+            label="Templates"
+            value={String(automationTemplates.length)}
+            sub="All workflows"
+            icon={LayoutTemplate}
+            iconColor="text-primary"
+            iconBg="bg-primary/10"
+            active={activeTab === "Templates"}
+            onClick={() => setActiveTab("Templates")}
+          />
+          <AutomationKpiCard
+            label="Active"
+            value={String(automationTemplates.filter((t) => t.isActive).length)}
+            sub="Currently on"
+            icon={CheckCircle2}
+            iconColor="text-success"
+            iconBg="bg-success/10"
+            onClick={() => setActiveTab("Templates")}
+          />
+          <AutomationKpiCard
+            label="Sent today"
+            value={String(sentToday)}
+            sub="Successful sends"
+            icon={Send}
+            iconColor="text-info"
+            iconBg="bg-info/10"
+            active={activeTab === "Activity Logs"}
+            onClick={() => setActiveTab("Activity Logs")}
+          />
+          <AutomationKpiCard
+            label="Failed"
+            value={String(failed)}
+            sub={failed > 0 ? "Needs attention" : "No failures"}
+            icon={AlertTriangle}
+            iconColor={failed > 0 ? "text-destructive" : "text-muted-foreground"}
+            iconBg={failed > 0 ? "bg-destructive/10" : "bg-muted"}
+            active={activeTab === "Activity Logs"}
+            onClick={() => setActiveTab("Activity Logs")}
+          />
+        </motion.div>
 
-      <AutomationKillSwitch />
+        <AutomationKillSwitch />
 
-      <div className="border-b border-gray-200 dark:border-gray-800">
-        <div className="flex gap-0">
+        <div className="inline-flex h-8 items-center rounded-lg border border-border bg-muted/40 p-0.5">
           {(["Templates", "Rules", "Activity Logs", "Settings"] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors",
+                "h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors",
                 activeTab === tab
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {tab}
+              {tab === "Activity Logs" ? "Logs" : tab}
             </button>
           ))}
         </div>
-      </div>
 
-      {activeTab === "Templates" && (
-        <TemplatesTab onNew={() => setShowAddTemplate(true)} onEdit={(t) => setEditingTemplate(t)} />
-      )}
-      {activeTab === "Rules" && (
-        <RulesTab
-          rules={rules}
-          onChange={(next) => {
-            setRules(next);
-            saveRulesToStore(next);
-          }}
-          onToggle={(id) => {
-            const updated = toggleRule(id);
-            setRules(updated);
-          }}
-        />
-      )}
-      {activeTab === "Activity Logs" && <LogsTab />}
-      {activeTab === "Settings" && <SettingsTab />}
+        {activeTab === "Templates" && (
+          <TemplatesTab onNew={() => setShowAddTemplate(true)} onEdit={(t) => setEditingTemplate(t)} />
+        )}
+        {activeTab === "Rules" && (
+          <RulesTab
+            rules={rules}
+            onChange={(next) => {
+              setRules(next);
+              saveRulesToStore(next);
+            }}
+            onToggle={(id) => {
+              const updated = toggleRule(id);
+              setRules(updated);
+            }}
+          />
+        )}
+        {activeTab === "Activity Logs" && <LogsTab />}
+        {activeTab === "Settings" && <SettingsTab />}
 
-      <Dialog open={showAddTemplate} onOpenChange={setShowAddTemplate}>
-        <TemplateDialog template={null} onClose={() => setShowAddTemplate(false)} />
-      </Dialog>
+        <Dialog open={showAddTemplate} onOpenChange={setShowAddTemplate}>
+          <TemplateDialog template={null} onClose={() => setShowAddTemplate(false)} />
+        </Dialog>
 
-      <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
-        <TemplateDialog template={editingTemplate} onClose={() => setEditingTemplate(null)} />
-      </Dialog>
+        <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
+          <TemplateDialog template={editingTemplate} onClose={() => setEditingTemplate(null)} />
+        </Dialog>
       </div>
     </>
   );
@@ -562,77 +652,34 @@ function AutomationTemplateCard({
   onToggle: (id: string) => void;
   onTest: (t: AutomationTemplate) => void;
 }) {
-  const CHANNEL_CONFIG: Record<
-    string,
-    { icon: typeof MessageSquare; color: string; bg: string; label: string }
-  > = {
-    whatsapp: {
-      icon: MessageSquare,
-      color: "text-emerald-600",
-      bg: "bg-emerald-50 dark:bg-emerald-950",
-      label: "WhatsApp",
-    },
-    email: {
-      icon: Mail,
-      color: "text-blue-600",
-      bg: "bg-blue-50 dark:bg-blue-950",
-      label: "Email",
-    },
-    in_app: {
-      icon: Bell,
-      color: "text-purple-600",
-      bg: "bg-purple-50 dark:bg-purple-950",
-      label: "In-App",
-    },
-    sms: {
-      icon: MessageSquare,
-      color: "text-orange-600",
-      bg: "bg-orange-50 dark:bg-orange-950",
-      label: "SMS",
-    },
-  };
-
-  const ch = CHANNEL_CONFIG[template.channel] ?? CHANNEL_CONFIG.in_app;
+  const ch = CHANNEL_META[template.channel] ?? CHANNEL_META.in_app;
   const ChannelIcon = ch.icon;
 
   return (
-    <div
-      className={cn(
-        "bg-white dark:bg-gray-900 border rounded-xl p-5",
-        "transition-all duration-200",
-        template.isActive
-          ? "border-gray-200 dark:border-gray-800 hover:shadow-sm"
-          : "border-gray-100 dark:border-gray-800/50 opacity-60",
-      )}
+    <motion.div
+      variants={staggerItem}
+      whileHover={hoverLift}
+      className={cn("card-soft flex flex-col p-3", !template.isActive && "opacity-60")}
     >
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0", ch.bg)}>
-            <ChannelIcon className={cn("h-4.5 w-4.5", ch.color)} />
+      <div className="mb-2.5 flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", ch.bg)}>
+            <ChannelIcon className={cn("h-3.5 w-3.5", ch.color)} />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-snug truncate">
-              {template.name}
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">{ch.label}</p>
+            <p className="truncate text-sm font-semibold leading-snug text-foreground">{template.name}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{ch.label}</p>
           </div>
         </div>
-
-        <Switch
-          checked={template.isActive}
-          onCheckedChange={() => onToggle(template.id)}
-          className="flex-shrink-0"
-        />
+        <Switch checked={template.isActive} onCheckedChange={() => onToggle(template.id)} className="shrink-0" />
       </div>
 
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-          {TRIGGER_LABELS[template.trigger] ?? template.trigger}
-        </span>
+      <div className="mb-2 flex flex-wrap gap-1">
+        <StatusPill tone="info">{TRIGGER_LABELS[template.trigger] ?? template.trigger}</StatusPill>
         {template.recipients.map((r) => (
           <span
             key={r}
-            className="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 capitalize"
+            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] capitalize text-muted-foreground"
           >
             {r.replace("_", " ")}
           </span>
@@ -640,43 +687,36 @@ function AutomationTemplateCard({
       </div>
 
       {(template.delayHours ?? 0) > 0 && (
-        <div className="flex items-center gap-1.5 mb-3">
-          <Clock className="h-3.5 w-3.5 text-gray-400" />
-          <span className="text-xs text-gray-500 dark:text-gray-400">
-            Sends after {template.delayHours}h
-            {template.repeatEveryHours ? ` · repeats every ${template.repeatEveryHours}h` : ""}
+        <div className="mb-2 flex items-center gap-1.5">
+          <Clock className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[11px] text-muted-foreground">
+            After {template.delayHours}h
+            {template.repeatEveryHours ? ` · every ${template.repeatEveryHours}h` : ""}
             {template.maxRepeats ? ` · max ${template.maxRepeats}x` : ""}
           </span>
         </div>
       )}
 
       {template.channel === "email" && (template.emailCc ?? "").trim() !== "" && (
-        <div className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-          <span className="font-medium text-gray-600 dark:text-gray-300">CC:</span>{" "}
-          <span className="font-mono break-all">{(template.emailCc ?? "").trim()}</span>
-        </div>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">CC</span>{" "}
+          <span className="break-all font-mono">{(template.emailCc ?? "").trim()}</span>
+        </p>
       )}
 
-      <div className="bg-gray-50 dark:bg-gray-800/60 rounded-lg px-3 py-2.5 mb-4 border border-gray-100 dark:border-gray-700">
-        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed font-mono">
-          {template.body}
-        </p>
+      <div className="mb-2.5 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+        <p className="line-clamp-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{template.body}</p>
       </div>
 
-      <div className="flex items-center gap-2 pt-1">
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1 h-8 text-xs rounded-lg"
-          onClick={() => onEdit(template)}
-        >
-          <Pencil className="h-3 w-3 mr-1.5" />
+      <div className="mt-auto flex items-center gap-1.5">
+        <Button variant="outline" size="sm" className="h-7 flex-1 px-2 text-[11px]" onClick={() => onEdit(template)}>
+          <Pencil className="mr-1 h-3 w-3" />
           Edit
         </Button>
         <Button
           variant="outline"
           size="sm"
-          className="h-8 w-8 p-0 rounded-lg text-blue-600 border-blue-200 hover:bg-blue-50 dark:hover:bg-blue-950/40"
+          className="h-7 w-7 p-0 text-primary"
           title="Test send"
           onClick={() => onTest(template)}
         >
@@ -685,14 +725,14 @@ function AutomationTemplateCard({
         <Button
           variant="outline"
           size="sm"
-          className="h-8 w-8 p-0 rounded-lg text-red-500 border-red-100 hover:bg-red-50 dark:hover:bg-red-950/30"
+          className="h-7 w-7 p-0 text-destructive"
           onClick={() => onDelete(template.id)}
           title="Delete"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -771,21 +811,21 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
       const res =
         template.channel === "whatsapp"
           ? await fetchWahaSendText(settings, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "X-Api-Key": settings.wahaApiKey,
-              },
-              body: JSON.stringify({
-                session: settings.wahaSession,
-                chatId: recipient.phone ? toWahaChatId(recipient.phone) : "",
-                text: template.body,
-              }),
-            })
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Api-Key": settings.wahaApiKey,
+            },
+            body: JSON.stringify({
+              session: settings.wahaSession,
+              chatId: recipient.phone ? toWahaChatId(recipient.phone) : "",
+              text: template.body,
+            }),
+          })
           : await fetchN8nWebhook(
-              settings,
-              template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email",
-              {
+            settings,
+            template.trigger === "estimate_shared" ? "buildesk-estimate" : "buildesk-email",
+            {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -816,10 +856,10 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
         .automationLogs.map((l) =>
           l.id === logEntry.id
             ? {
-                ...l,
-                status: ok ? "sent" : ("failed" as const),
-                errorMessage: ok ? undefined : `${res.status} ${res.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
-              }
+              ...l,
+              status: ok ? "sent" : ("failed" as const),
+              errorMessage: ok ? undefined : `${res.status} ${res.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
+            }
             : l,
         );
       useAppStore.setState({ automationLogs: nextLogs });
@@ -852,10 +892,10 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
+    <div className="space-y-2.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Select value={triggerFilter} onValueChange={(v) => setTriggerFilter(v as AutomationTrigger | "all")}>
-          <SelectTrigger className="h-9 w-[200px] text-sm">
+          <SelectTrigger className="h-9 w-full sm:w-[200px]">
             <SelectValue placeholder="All triggers" />
           </SelectTrigger>
           <SelectContent>
@@ -868,7 +908,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
           </SelectContent>
         </Select>
         <Select value={channelFilter} onValueChange={(v) => setChannelFilter(v as AutomationChannel | "all")}>
-          <SelectTrigger className="h-9 w-[140px] text-sm">
+          <SelectTrigger className="h-9 w-full sm:w-[140px]">
             <SelectValue placeholder="All channels" />
           </SelectTrigger>
           <SelectContent>
@@ -880,18 +920,33 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
         </Select>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {filteredTemplates.map((template) => (
-          <AutomationTemplateCard
-            key={template.id}
-            template={template}
-            onEdit={onEdit}
-            onDelete={confirmDelete}
-            onToggle={toggleAutomationTemplate}
-            onTest={openTestTemplate}
-          />
-        ))}
-      </div>
+      {filteredTemplates.length === 0 ? (
+        <div className="card-soft flex flex-col items-center px-4 py-10 text-center">
+          <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+            <FileText className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium">No templates found</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Adjust filters or create a template.</p>
+        </div>
+      ) : (
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {filteredTemplates.map((template) => (
+            <AutomationTemplateCard
+              key={template.id}
+              template={template}
+              onEdit={onEdit}
+              onDelete={confirmDelete}
+              onToggle={toggleAutomationTemplate}
+              onTest={openTestTemplate}
+            />
+          ))}
+        </motion.div>
+      )}
 
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
@@ -937,46 +992,47 @@ function TestTemplateDialog({
     <DialogContent className={dialogSmMaxMd}>
       <DialogHeader>
         <DialogTitle>Test template</DialogTitle>
-        <DialogDescription className="text-sm text-gray-500">
+        <DialogDescription className="text-xs text-muted-foreground">
           Send a one-time test message using the configured channel.
         </DialogDescription>
       </DialogHeader>
 
       <DialogBody className="space-y-3">
         <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Template</p>
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{template.name}</p>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Template</p>
+          <p className="text-sm font-medium text-foreground">{template.name}</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recipient name</p>
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Recipient name</p>
             <Input className="h-9 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           {isWhatsApp && (
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Phone</p>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Phone</p>
               <Input className="h-9 text-sm" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} />
             </div>
           )}
           {isEmail && (
             <div>
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Email</p>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Email</p>
               <Input className="h-9 text-sm" placeholder="test@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
           )}
           {!isEmail && !isWhatsApp && (
-            <p className="text-sm text-gray-500">In-app templates can’t be tested via n8n. Trigger the event to generate logs.</p>
+            <p className="text-xs text-muted-foreground">In-app templates can’t be tested via n8n. Trigger the event to generate logs.</p>
           )}
         </div>
       </DialogBody>
 
       <DialogFooter>
-        <Button variant="outline" onClick={onClose}>
+        <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onClose}>
           Cancel
         </Button>
         <Button
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          size="sm"
+          className="h-8 px-2.5 text-xs"
           onClick={async () => {
             if (isWhatsApp && !phone.trim()) {
               toast({ title: "Phone is required", variant: "destructive" });
@@ -1149,30 +1205,30 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
     <DialogContent className={dialogSmMax2xl}>
       <DialogHeader>
         <DialogTitle>{template ? "Edit Template" : "New Automation Template"}</DialogTitle>
-        <DialogDescription className="text-sm text-gray-500">
+        <DialogDescription className="text-xs text-muted-foreground">
           Configure trigger, channel, recipients, and message variables.
         </DialogDescription>
       </DialogHeader>
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <DialogBody className="space-y-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+        <DialogBody className="space-y-3">
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template Name</p>
+              <p className="mb-1 text-xs font-medium text-foreground">Template name</p>
               <Input className="h-9 text-sm" {...form.register("name")} />
               {form.formState.errors.name && (
-                <p className="text-xs text-destructive mt-1">{form.formState.errors.name.message}</p>
+                <p className="mt-1 text-xs text-destructive">{form.formState.errors.name.message}</p>
               )}
             </div>
             <div className="flex items-center gap-2 pb-1 sm:justify-end">
               <Switch checked={form.watch("isActive")} onCheckedChange={(v) => form.setValue("isActive", v)} />
-              <span className="text-sm text-gray-500">Active</span>
+              <span className="text-xs text-muted-foreground">Active</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trigger Event</p>
+              <p className="mb-1 text-xs font-medium text-foreground">Trigger event</p>
               <SearchableSelect
                 value={watchedTrigger}
                 onValueChange={(v) => form.setValue("trigger", v as AutomationTrigger)}
@@ -1197,7 +1253,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
               )}
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Channel</p>
+              <p className="mb-1 text-xs font-medium text-foreground">Channel</p>
               <SearchableSelect
                 value={watchedChannel}
                 onValueChange={(v) => form.setValue("channel", v as AutomationChannel)}
@@ -1213,8 +1269,8 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 block">Recipients</label>
-            <div className="flex flex-wrap gap-2">
+            <label className="mb-1.5 block text-xs font-medium text-foreground">Recipients</label>
+            <div className="flex flex-wrap gap-1.5">
               {(["customer", "sales_rep", "sales_manager", "finance", "super_admin"] as const).map((r) => {
                 const checked = form.watch("recipients")?.includes(r);
                 return (
@@ -1228,13 +1284,13 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
                       form.setValue("recipients", Array.from(current) as AutomationRecipient[], { shouldDirty: true });
                     }}
                     className={cn(
-                      "flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg border text-sm capitalize transition-colors",
+                      "h-7 rounded-md px-2 text-[11px] font-medium capitalize transition-colors",
                       checked
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-950"
-                        : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-900",
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
-                    <span>{r.replace("_", " ")}</span>
+                    {r.replace("_", " ")}
                   </button>
                 );
               })}
@@ -1245,19 +1301,19 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
           </div>
 
           {watchedChannel === "email" && (
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email Subject</p>
+                <p className="mb-1 text-xs font-medium text-foreground">Email subject</p>
                 <Input className="h-9 text-sm" {...form.register("subject")} />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CC</p>
+                <p className="mb-1 text-xs font-medium text-foreground">CC</p>
                 <Input
                   className="h-9 text-sm"
                   placeholder="ops@example.com, manager@example.com"
                   {...form.register("emailCc")}
                 />
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="mt-1 text-[11px] text-muted-foreground">
                   Optional. Comma-separated for this template; merged with Settings → CC. Supports the same{" "}
                   <code className="text-[11px]">{"{{ }}"}</code> variables as the subject (e.g.{" "}
                   <code className="text-[11px]">{"{{sales_rep_email}}"}</code>).
@@ -1266,9 +1322,9 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">Delay (hours)</label>
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Delay (hours)</label>
               <Controller
                 name="delayHours"
                 control={form.control}
@@ -1288,7 +1344,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Repeat every (hours)
               </label>
               <Controller
@@ -1310,7 +1366,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">Max repeats</label>
+              <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Max repeats</label>
               <Controller
                 name="maxRepeats"
                 control={form.control}
@@ -1332,17 +1388,17 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Message Body</label>
-              <span className="text-xs text-gray-400">Click a variable to insert</span>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-foreground">Message body</label>
+              <span className="text-[11px] text-muted-foreground">Click a variable to insert</span>
             </div>
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="mb-1.5 flex flex-wrap gap-1">
               {availableVars.map((v) => (
                 <button
                   key={v}
                   type="button"
                   onClick={() => insertVariable(v)}
-                  className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs font-mono hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+                  className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-[11px] text-primary transition-colors hover:bg-primary/15"
                 >
                   {v}
                 </button>
@@ -1361,7 +1417,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
             {form.formState.errors.body && (
               <p className="text-xs text-destructive mt-1">{form.formState.errors.body.message}</p>
             )}
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               {watchedChannel === "whatsapp"
                 ? "WhatsApp: use *bold*, _italic_. Max 1024 chars."
                 : "Email: plain text. HTML not supported."}
@@ -1370,11 +1426,11 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         </DialogBody>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white">
-            {template ? "Save Changes" : "Create Template"}
+          <Button type="submit" size="sm" className="h-8 px-2.5 text-xs">
+            {template ? "Save" : "Create"}
           </Button>
         </DialogFooter>
       </form>
@@ -1394,13 +1450,6 @@ function LogsTab() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearFailedConfirmOpen, setClearFailedConfirmOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const STATUS_STYLE: Record<AutomationLog["status"], string> = {
-    sent: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-    failed: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-    pending: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
-    skipped: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-  };
 
   const stats = useMemo(() => {
     return {
@@ -1471,19 +1520,17 @@ function LogsTab() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Activity logs are stored on the server (up to 1000 recent entries).
-        </p>
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="h-8" onClick={exportCsv} disabled={logs.length === 0}>
-            Export CSV
+        <p className="text-[11px] text-muted-foreground">Server activity log — last 1000 entries.</p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={exportCsv} disabled={logs.length === 0}>
+            Export
           </Button>
           <Button
             size="sm"
             variant="outline"
-            className="h-8"
+            className="h-8 px-2.5 text-xs"
             onClick={async () => {
               try {
                 const res = await fetch(apiUrl("/api/automation/logs"));
@@ -1501,7 +1548,7 @@ function LogsTab() {
           <Button
             size="sm"
             variant="outline"
-            className="h-8 text-destructive"
+            className="h-8 px-2.5 text-xs text-destructive"
             onClick={() => setClearFailedConfirmOpen(true)}
             disabled={stats.failed === 0}
           >
@@ -1510,7 +1557,7 @@ function LogsTab() {
           <Button
             size="sm"
             variant="outline"
-            className="h-8 text-destructive"
+            className="h-8 px-2.5 text-xs text-destructive"
             onClick={() => setClearConfirmOpen(true)}
             disabled={logs.length === 0}
           >
@@ -1519,114 +1566,137 @@ function LogsTab() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-        {[
-          { label: "Total Sent", value: stats.sent, color: "text-emerald-600" },
-          { label: "Failed", value: stats.failed, color: "text-red-600" },
-          { label: "Pending", value: stats.pending, color: "text-amber-600" },
-          { label: "Total", value: stats.total, color: "text-gray-900 dark:text-gray-100" },
-        ].map((s) => (
-          <Card key={s.label} className="border border-gray-200 dark:border-gray-800 shadow-none">
-            <CardContent className="p-4">
-              <p className="text-xs text-gray-500 uppercase tracking-wide">{s.label}</p>
-              <p className={cn("text-2xl font-bold mt-1", s.color)}>{s.value}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <motion.div
+        variants={staggerContainer}
+        initial="initial"
+        animate="animate"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+      >
+        <AutomationKpiCard
+          label="Sent"
+          value={String(stats.sent)}
+          sub="Delivered"
+          icon={CheckCircle2}
+          iconColor="text-success"
+          iconBg="bg-success/10"
+        />
+        <AutomationKpiCard
+          label="Failed"
+          value={String(stats.failed)}
+          sub="Needs attention"
+          icon={AlertTriangle}
+          iconColor={stats.failed > 0 ? "text-destructive" : "text-muted-foreground"}
+          iconBg={stats.failed > 0 ? "bg-destructive/10" : "bg-muted"}
+        />
+        <AutomationKpiCard
+          label="Pending"
+          value={String(stats.pending)}
+          sub="In flight"
+          icon={Clock}
+          iconColor="text-warning"
+          iconBg="bg-warning/10"
+        />
+        <AutomationKpiCard
+          label="Total"
+          value={String(stats.total)}
+          sub="All entries"
+          icon={FileText}
+          iconColor="text-primary"
+          iconBg="bg-primary/10"
+        />
+      </motion.div>
 
-      <Card className="overflow-hidden border border-gray-200 shadow-none dark:border-gray-800">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
+      <div className="card-soft overflow-hidden">
+          <div className="scrollbar-soft overflow-x-auto">
             <table className="w-full min-w-[600px] text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
-                <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
-                  Template
-                </th>
-                <th className="px-3 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
-                  Status
-                </th>
-                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
-                  Date
-                </th>
-                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell md:px-4 md:py-3">
-                  Channel
-                </th>
-                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 md:table-cell md:px-4 md:py-3">
-                  Recipient
-                </th>
-                <th className="hidden px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-gray-500 lg:table-cell md:px-4 md:py-3">
-                  Entity
-                </th>
-                <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500 md:px-4 md:py-3">
-                  Manage
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {paginatedLogs.map((log) => (
-                <tr key={log.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900">
-                  <td className="px-3 py-3 md:px-4 md:py-3.5">
-                    <span className="text-xs font-medium text-gray-800 dark:text-gray-200">{log.templateName}</span>
-                  </td>
-                  <td className="px-3 py-3 text-center md:px-4 md:py-3.5">
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", STATUS_STYLE[log.status])}>
-                      {log.status}
-                    </span>
-                    {log.errorMessage && <p className="mt-0.5 text-xs text-red-500">{log.errorMessage}</p>}
-                  </td>
-                  <td className="px-3 py-3 text-right text-xs text-gray-400 md:px-4 md:py-3.5">
-                    {new Date(log.sentAt).toLocaleString("en-IN")}
-                  </td>
-                  <td className="hidden px-3 py-3 md:table-cell md:px-4 md:py-3.5">
-                    <div className="flex items-center gap-1.5">
-                      {CHANNEL_ICON[log.channel]}
-                      <span className="text-xs capitalize text-gray-500">{log.channel}</span>
-                    </div>
-                  </td>
-                  <td className="hidden px-3 py-3 md:table-cell md:px-4 md:py-3.5">
-                    <span className="text-xs text-gray-600 dark:text-gray-400">{log.recipientName}</span>
-                  </td>
-                  <td className="hidden px-3 py-3 lg:table-cell md:px-4 md:py-3.5">
-                    <span className="text-xs text-gray-500">{log.entityName}</span>
-                  </td>
-                  <td className="px-3 py-3 text-right md:px-4 md:py-3.5">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 px-2 text-xs text-destructive"
-                      disabled={deletingId === log.id}
-                      onClick={async () => {
-                        setDeletingId(log.id);
-                        try {
-                          const res = await fetch(apiUrl(`/api/automation/logs/${encodeURIComponent(log.id)}`), {
-                            method: "DELETE",
-                          });
-                          if (!res.ok) throw new Error(String(res.status));
-                          setAutomationLogs(useAppStore.getState().automationLogs.filter((l) => l.id !== log.id));
-                          toast({ title: "Log removed" });
-                        } catch {
-                          toast({ title: "Delete failed", variant: "destructive" });
-                        } finally {
-                          setDeletingId(null);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </td>
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Template
+                  </th>
+                  <th className="px-3 py-2 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Status
+                  </th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Date
+                  </th>
+                  <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground md:table-cell">
+                    Channel
+                  </th>
+                  <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground md:table-cell">
+                    Recipient
+                  </th>
+                  <th className="hidden px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wide text-muted-foreground lg:table-cell">
+                    Entity
+                  </th>
+                  <th className="px-3 py-2 text-right text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Manage
+                  </th>
                 </tr>
-              ))}
-              {paginatedLogs.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-500">
-                    No automation logs yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {paginatedLogs.map((log) => (
+                  <tr key={log.id} className="transition-colors hover:bg-muted/30">
+                    <td className="px-3 py-2.5">
+                      <span className="text-xs font-medium text-foreground">{log.templateName}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center">
+                      <StatusPill tone={logStatusTone(log.status)} className="capitalize">
+                        {log.status}
+                      </StatusPill>
+                      {log.errorMessage && <p className="mt-0.5 text-[11px] text-destructive">{log.errorMessage}</p>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-[11px] tabular-nums text-muted-foreground">
+                      {new Date(log.sentAt).toLocaleString("en-IN")}
+                    </td>
+                    <td className="hidden px-3 py-2.5 md:table-cell">
+                      <div className="flex items-center gap-1.5">
+                        {CHANNEL_ICON[log.channel]}
+                        <span className="text-[11px] capitalize text-muted-foreground">{log.channel}</span>
+                      </div>
+                    </td>
+                    <td className="hidden px-3 py-2.5 md:table-cell">
+                      <span className="text-[11px] text-muted-foreground">{log.recipientName}</span>
+                    </td>
+                    <td className="hidden px-3 py-2.5 lg:table-cell">
+                      <span className="text-[11px] text-muted-foreground">{log.entityName}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs text-destructive"
+                        disabled={deletingId === log.id}
+                        onClick={async () => {
+                          setDeletingId(log.id);
+                          try {
+                            const res = await fetch(apiUrl(`/api/automation/logs/${encodeURIComponent(log.id)}`), {
+                              method: "DELETE",
+                            });
+                            if (!res.ok) throw new Error(String(res.status));
+                            setAutomationLogs(useAppStore.getState().automationLogs.filter((l) => l.id !== log.id));
+                            toast({ title: "Log removed" });
+                          } catch {
+                            toast({ title: "Delete failed", variant: "destructive" });
+                          } finally {
+                            setDeletingId(null);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {paginatedLogs.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No automation logs yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
           {logs.length > PAGE_SIZE && (
@@ -1638,8 +1708,7 @@ function LogsTab() {
               onPageChange={setPage}
             />
           )}
-        </CardContent>
-      </Card>
+      </div>
 
       <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
         <AlertDialogContent>
@@ -1749,120 +1818,108 @@ function SettingsTab() {
   };
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <div className="grid grid-cols-2 gap-4">
+    <div className="max-w-2xl space-y-2.5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <ConnectionCard
           title="n8n Workflow Engine"
           url={settings.n8nWebhookBase}
           isConnected={settings.isN8nConnected}
           onTest={testN8nConnection}
-          icon={<Zap className="h-5 w-5" />}
-          iconBg="bg-orange-50 dark:bg-orange-950"
-          iconColor="text-orange-500"
+          icon={<Zap className="h-3.5 w-3.5" />}
+          iconBg="bg-warning/10"
+          iconColor="text-warning"
         />
         <ConnectionCard
           title="WAHA WhatsApp"
           url={settings.wahaApiUrl}
           isConnected={settings.isWahaConnected}
           onTest={testWahaConnection}
-          icon={<MessageSquare className="h-5 w-5" />}
-          iconBg="bg-green-50 dark:bg-green-950"
-          iconColor="text-green-600"
+          icon={<MessageSquare className="h-3.5 w-3.5" />}
+          iconBg="bg-success/10"
+          iconColor="text-success"
         />
       </div>
 
-      <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-        <CardHeader className="px-6 pt-5 pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Zap className="h-4 w-4 text-orange-500" />
-            n8n Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-6 space-y-4">
-          <SettingField
-            label="Webhook Base URL"
-            value={settings.n8nWebhookBase}
-            onChange={(v) => updateSettings({ n8nWebhookBase: v })}
-            hint="e.g. http://72.60.200.185:5678/webhook"
-          />
-          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800">
-            <p className="text-xs text-amber-800 dark:text-amber-200 font-medium mb-1">Required n8n webhooks</p>
-            <div className="space-y-1">
-              {[
-                { path: "buildesk-email", desc: "Email via Gmail/SMTP" },
-                { path: "buildesk-estimate", desc: "Estimate share email (with PDF)" },
-                { path: "buildesk-health", desc: "Health check for settings tab" },
-              ].map((w) => (
-                <div key={w.path} className="flex items-center gap-2">
-                  <code className="text-xs bg-white dark:bg-gray-900 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-700 text-amber-900 dark:text-amber-100">
-                    /webhook/{w.path}
-                  </code>
-                  <span className="text-xs text-amber-700 dark:text-amber-300">— {w.desc}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
-              WhatsApp automation is sent directly via WAHA (n8n not used for WhatsApp).
-            </p>
+      <div className="card-soft space-y-3 p-3">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <Zap className="h-3.5 w-3.5 text-warning" />
+          n8n
+        </p>
+        <SettingField
+          label="Webhook base URL"
+          value={settings.n8nWebhookBase}
+          onChange={(v) => updateSettings({ n8nWebhookBase: v })}
+          hint="e.g. http://72.60.200.185:5678/webhook"
+        />
+        <div className="rounded-md border border-warning/30 bg-warning/10 p-2.5">
+          <p className="mb-1.5 text-[11px] font-medium text-warning-foreground">Required n8n webhooks</p>
+          <div className="space-y-1">
+            {[
+              { path: "buildesk-email", desc: "Email via Gmail/SMTP" },
+              { path: "buildesk-estimate", desc: "Estimate share email (with PDF)" },
+              { path: "buildesk-health", desc: "Health check for settings tab" },
+            ].map((w) => (
+              <div key={w.path} className="flex flex-wrap items-center gap-2">
+                <code className="rounded border border-border bg-card px-1.5 py-0.5 text-[11px] text-foreground">
+                  /webhook/{w.path}
+                </code>
+                <span className="text-[11px] text-muted-foreground">— {w.desc}</span>
+              </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-        <CardHeader className="px-6 pt-5 pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-green-600" />
-            WAHA WhatsApp Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <SettingField label="WAHA API URL" value={settings.wahaApiUrl} onChange={(v) => updateSettings({ wahaApiUrl: v })} />
-            <SettingField label="API Key" type="password" value={settings.wahaApiKey} onChange={(v) => updateSettings({ wahaApiKey: v })} />
-            <SettingField label="Session Name" value={settings.wahaSession} onChange={(v) => updateSettings({ wahaSession: v })} hint="Default: 'default'" />
-            <SettingField label="WhatsApp Number" value={settings.wahaFromNumber} onChange={(v) => updateSettings({ wahaFromNumber: v })} hint="Linked number (with country code)" />
-          </div>
-          <a
-            href={`${settings.wahaApiUrl}/dashboard`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open WAHA Dashboard to scan QR code
-          </a>
-        </CardContent>
-      </Card>
-
-      <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-        <CardHeader className="px-6 pt-5 pb-3">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Mail className="h-4 w-4 text-blue-600" />
-            Email Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-6 pb-6">
-          <div className="grid grid-cols-2 gap-4">
-            <SettingField
-              label="From Address"
-              value={settings.emailFromAddress}
-              onChange={(v) => updateSettings({ emailFromAddress: v })}
-            />
-            <SettingField label="From Name" value={settings.emailFromName} onChange={(v) => updateSettings({ emailFromName: v })} />
-            <div className="col-span-2">
-              <SettingField
-                label="CC (email automation)"
-                value={settings.emailCc ?? ""}
-                onChange={(v) => updateSettings({ emailCc: v })}
-                hint="Comma-separated; merged with per-template CC. Same {{variables}} as templates (e.g. {{sales_rep_email}}). Sent as emailCc to n8n."
-              />
-            </div>
-          </div>
-          <p className="text-xs text-gray-400 mt-3">
-            Email is sent via your n8n Gmail or SMTP node. Configure credentials inside n8n directly.
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            WhatsApp is sent directly via WAHA (n8n is not used for WhatsApp).
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      <div className="card-soft space-y-3 p-3">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <MessageSquare className="h-3.5 w-3.5 text-success" />
+          WAHA WhatsApp
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SettingField label="WAHA API URL" value={settings.wahaApiUrl} onChange={(v) => updateSettings({ wahaApiUrl: v })} />
+          <SettingField label="API key" type="password" value={settings.wahaApiKey} onChange={(v) => updateSettings({ wahaApiKey: v })} />
+          <SettingField label="Session name" value={settings.wahaSession} onChange={(v) => updateSettings({ wahaSession: v })} hint="Default: 'default'" />
+          <SettingField label="WhatsApp number" value={settings.wahaFromNumber} onChange={(v) => updateSettings({ wahaFromNumber: v })} hint="Linked number (with country code)" />
+        </div>
+        <a
+          href={`${settings.wahaApiUrl}/dashboard`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          Open WAHA dashboard to scan QR
+        </a>
+      </div>
+
+      <div className="card-soft space-y-3 p-3">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <Mail className="h-3.5 w-3.5 text-primary" />
+          Email
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <SettingField
+            label="From address"
+            value={settings.emailFromAddress}
+            onChange={(v) => updateSettings({ emailFromAddress: v })}
+          />
+          <SettingField label="From name" value={settings.emailFromName} onChange={(v) => updateSettings({ emailFromName: v })} />
+          <div className="sm:col-span-2">
+            <SettingField
+              label="CC (email automation)"
+              value={settings.emailCc ?? ""}
+              onChange={(v) => updateSettings({ emailCc: v })}
+              hint="Comma-separated; merged with per-template CC. Same {{variables}} as templates (e.g. {{sales_rep_email}}). Sent as emailCc to n8n."
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Email is sent via your n8n Gmail or SMTP node. Configure credentials inside n8n directly.
+        </p>
+      </div>
     </div>
   );
 }
@@ -1885,34 +1942,25 @@ function ConnectionCard({
   iconColor: string;
 }) {
   return (
-    <Card className="border border-gray-200 dark:border-gray-800 shadow-none">
-      <CardContent className="p-5 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{title}</p>
-            <p className="text-xs text-gray-500 truncate">{url}</p>
-          </div>
-          <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center", iconBg)}>
-            <div className={iconColor}>{icon}</div>
-          </div>
+    <div className="card-soft space-y-2.5 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{url}</p>
         </div>
-        <div className="flex items-center justify-between">
-          <span
-            className={cn(
-              "px-2.5 py-1 rounded-full text-xs font-medium",
-              isConnected
-                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-            )}
-          >
-            {isConnected ? "Connected" : "Not connected"}
-          </span>
-          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onTest}>
-            Test
-          </Button>
+        <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+          <div className={iconColor}>{icon}</div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <StatusPill tone={isConnected ? "success" : "muted"}>
+          {isConnected ? "Connected" : "Offline"}
+        </StatusPill>
+        <Button variant="outline" size="sm" className="h-7 px-2.5 text-[11px]" onClick={onTest}>
+          Test
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1931,9 +1979,9 @@ function SettingField({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium text-gray-500 mb-1 block uppercase tracking-wide">{label}</p>
+      <p className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <Input className="h-9 text-sm" type={type} value={value} onChange={(e) => onChange(e.target.value)} />
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }

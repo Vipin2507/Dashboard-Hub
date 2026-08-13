@@ -12,6 +12,9 @@ export const dialogSmMax4xl = 'sm:max-w-4xl';
 /** Ultra-wide editor dialogs (PDF editor / heavy side-by-side) */
 export const dialogSmMax6xl = 'sm:max-w-6xl';
 
+/** Near-full editor (PDF edit + live preview) */
+export const dialogSmMaxEditor = 'sm:max-w-[min(1440px,96vw)]';
+
 /** Side panels — merge onto SheetContent (widths come from `ui/sheet` right variant) */
 export const sheetContentDetail = 'flex flex-col overflow-y-auto p-6 pt-14';
 
@@ -25,5 +28,5 @@ export const dialogBodyLayout = cn('flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:
 
 /** Sticky footer — primary action on the right on desktop */
 export const dialogFooterLayout = cn(
-  'flex flex-shrink-0 flex-col gap-2 border-t bg-white px-4 py-3 dark:bg-gray-950 sm:flex-row sm:justify-end sm:px-6 sm:py-4',
+  'flex flex-shrink-0 flex-col gap-2 border-t border-border bg-muted/40 px-4 py-3 sm:flex-row sm:justify-end sm:px-6 sm:py-4',
 );

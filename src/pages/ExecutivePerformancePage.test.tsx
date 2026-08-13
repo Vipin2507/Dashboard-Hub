@@ -80,7 +80,7 @@ describe("ExecutivePerformancePage access", () => {
     renderAt("/admin/executive-performance");
     expect(screen.getByText("Executive performance")).toBeInTheDocument();
     expect(screen.getByText("Filters")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/Jul 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/\d{4}-\d{2}-\d{2}\s*→\s*\d{4}-\d{2}-\d{2}/)).toBeInTheDocument();
   });
 
   it("redirects non-super-admin logged-in users to the dashboard", () => {

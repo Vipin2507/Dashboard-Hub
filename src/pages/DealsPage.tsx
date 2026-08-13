@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAppStore } from "@/store/useAppStore";
-import { can, getScope, visibleWithScope } from "@/lib/rbac";
+import { can, getScope, visibleWithScope, formatINR } from "@/lib/rbac";
 import { canDeleteDeal, canEditDeal, dealStatusOptionsForRole, isDealSuperAdmin } from "@/lib/dealPermissions";
 import { apiUrl } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 import { useUpdateDealStage } from "@/hooks/useWorkflow";
 import {
   DEAL_STATUSES,
-  DEAL_STATUS_META,
   DEAL_SOURCES,
   DEAL_PRIORITIES,
   normalizeDealStatus,
@@ -29,7 +28,6 @@ import {
   triggerAutomation,
   type AutomationContext,
 } from "@/lib/automationService";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +58,11 @@ import {
   Send,
   Receipt,
   AlertTriangle,
+  IndianRupee,
+  Loader2,
+  LayoutGrid,
+  List,
+  type LucideIcon,
 } from "lucide-react";
 import type { Deal, Proposal } from "@/types";
 import { BulkImportDealsDialog } from "@/components/BulkImportDealsDialog";
@@ -87,14 +90,20 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { FilterPanel } from "@/components/FilterPanel";
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
+import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
+import { motion } from "framer-motion";
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
+  hasAnySearchParam,
   loadSessionFilters,
   saveSessionFilters,
 } from "@/lib/filterSessionPersistence";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
+import { useSmUp } from "@/hooks/useSmUp";
 import { generateEstimatePdf, generateEstimatePdfFromData } from "@/lib/generateEstimatePdf";
 import { generateInvoicePdfFromData, type InvoiceData } from "@/lib/generateInvoicePdf";
 import type { EstimateData } from "@/types/estimate";
@@ -212,32 +221,32 @@ const DEAL_STAGE_VISUAL: StageVisual[] = [
   {
     key: "Prospecting",
     label: "Prospecting",
-    pillColor: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
-    dotColor: "bg-slate-400",
+    pillColor: "border-border bg-muted/40 text-muted-foreground",
+    dotColor: "bg-muted-foreground",
   },
   {
     key: "Won",
     label: "Won",
-    pillColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
-    dotColor: "bg-blue-500",
+    pillColor: "border-primary/30 bg-primary/15 text-primary",
+    dotColor: "bg-primary",
   },
   {
     key: "Proposal",
     label: "Proposal",
-    pillColor: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-200",
-    dotColor: "bg-violet-500",
+    pillColor: "border-info/30 bg-info/15 text-info",
+    dotColor: "bg-info",
   },
   {
     key: "Negotiation",
     label: "Negotiation",
-    pillColor: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-    dotColor: "bg-amber-500",
+    pillColor: "border-warning/30 bg-warning/15 text-warning-foreground",
+    dotColor: "bg-warning",
   },
   {
     key: "Closing",
     label: "Closing",
-    pillColor: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
-    dotColor: "bg-emerald-500",
+    pillColor: "border-success/30 bg-success/15 text-success",
+    dotColor: "bg-success",
   },
 ];
 
@@ -250,13 +259,13 @@ function dealStatusLabel(s: string) {
 function stagePillClass(stage: string) {
   return (
     DEAL_STAGE_VISUAL.find((s) => s.key === normalizeDealStage(stage))?.pillColor ??
-    "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+    "border-border bg-muted/40 text-muted-foreground"
   );
 }
 
 function stageDotClass(stage: string) {
   return (
-    DEAL_STAGE_VISUAL.find((s) => s.key === normalizeDealStage(stage))?.dotColor ?? "bg-gray-400"
+    DEAL_STAGE_VISUAL.find((s) => s.key === normalizeDealStage(stage))?.dotColor ?? "bg-muted-foreground"
   );
 }
 
@@ -300,20 +309,12 @@ function normalizeDealStatusKey(dealStatus: unknown, invoiceStatus?: string | nu
   return "Active";
 }
 
-function dealStatusPillClass(s: DealStatusKey) {
-  switch (s) {
-    case "Active":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
-    case "Closed/Won":
-      return "bg-blue-500/15 text-blue-700 dark:text-blue-300";
-    case "Closed/Lost":
-      return "bg-red-500/15 text-red-700 dark:text-red-300";
-    case "In Progress":
-      return "bg-orange-500/15 text-orange-700 dark:text-orange-300";
-    case "Pending":
-    default:
-      return "bg-gray-500/15 text-gray-700 dark:text-gray-300";
-  }
+function dealStatusTone(s: DealStatusKey): StatusTone {
+  if (s === "Closed/Won") return "success";
+  if (s === "Active") return "info";
+  if (s === "Closed/Lost") return "danger";
+  if (s === "In Progress" || s === "Pending") return "warning";
+  return "muted";
 }
 
 function dealDisplayId(deal: Deal): string {
@@ -364,13 +365,13 @@ function deriveDealFinanceFromEstimateOrProposal(deal: Deal, proposal: Proposal 
     (dealWithout != null && dealWithout > 0) || (dealTax != null && dealTax > 0);
   const proposalSplit = proposal
     ? dealAmountsFromProposal(
-        proposal,
-        deal.totalAmount != null && Number(deal.totalAmount) > 0
-          ? Number(deal.totalAmount)
-          : deal.value != null && Number(deal.value) > 0
-            ? Number(deal.value)
-            : undefined,
-      )
+      proposal,
+      deal.totalAmount != null && Number(deal.totalAmount) > 0
+        ? Number(deal.totalAmount)
+        : deal.value != null && Number(deal.value) > 0
+          ? Number(deal.value)
+          : undefined,
+    )
     : null;
 
   const estSub = est?.tax?.subTotal;
@@ -441,13 +442,71 @@ function DealStageBadge({ stage }: { stage: string }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-[140px] truncate text-xs font-medium px-2 py-0.5 rounded-full",
+        "inline-flex max-w-[140px] truncate rounded-full border px-2 py-0.5 text-xs font-medium",
         stagePillClass(stage),
       )}
       title={label}
     >
       {label}
     </span>
+  );
+}
+
+function DealKpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor,
+  iconBg,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const isPlainInt = /^\d+$/.test(String(value).trim());
+  const inner = (
+    <>
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isPlainInt ? <CountUp value={Number(value)} /> : value}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{sub}</p>
+      </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <motion.button
+        type="button"
+        onClick={onClick}
+        variants={staggerItem}
+        whileHover={hoverLift}
+        whileTap={tapPress}
+        className={cn(
+          "card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0",
+          active && "border-primary/40 bg-primary/5",
+        )}
+      >
+        {inner}
+      </motion.button>
+    );
+  }
+  return (
+    <motion.div variants={staggerItem} className="card-kpi min-h-[3.25rem] w-full sm:min-h-0">
+      {inner}
+    </motion.div>
   );
 }
 
@@ -491,6 +550,7 @@ export default function DealsPage() {
   const updateDealStage = useUpdateDealStage();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const smUp = useSmUp();
   const me = useAppStore((s) => s.me);
   const deals = useAppStore((s) => s.deals);
   const setDeals = useAppStore((s) => s.setDeals);
@@ -513,7 +573,13 @@ export default function DealsPage() {
   const canUpdateDeal = canEditDeal(me.role);
   const canRemoveDeal = canDeleteDeal(me.role);
 
-  const persistedFilters = useMemo(() => loadPersistedDealFilters(), []);
+  const persistedFilters = useMemo(() => {
+    if (hasAnySearchParam(searchParams, ["q", "stage", "status", "owner", "team", "region", "from", "to", "range"])) {
+      return null;
+    }
+    return loadPersistedDealFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate from URL or session once on mount
+  }, []);
 
   const [search, setSearch] = useState(() => persistedFilters?.search ?? "");
   const [stageFilter, setStageFilter] = useState(() =>
@@ -521,19 +587,34 @@ export default function DealsPage() {
       ? "all"
       : normalizeDealStage(persistedFilters.stageFilter),
   );
-  const [statusFilter, setStatusFilter] = useState<"all" | DealPipelineStatus>(
-    () => persistedFilters?.statusFilter ?? "all",
+  const [statusFilter, setStatusFilter] = useState<"all" | DealPipelineStatus>(() => {
+    const status = searchParams.get("status");
+    if (status && (DEAL_STATUSES as readonly string[]).includes(status)) return status as DealPipelineStatus;
+    return persistedFilters?.statusFilter ?? "all";
+  });
+  const [ownerFilter, setOwnerFilter] = useState(
+    () => searchParams.get("owner") || persistedFilters?.ownerFilter || "all",
   );
-  const [ownerFilter, setOwnerFilter] = useState(() => persistedFilters?.ownerFilter ?? "all");
-  const [teamFilter, setTeamFilter] = useState(() => persistedFilters?.teamFilter ?? "all");
-  const [regionFilter, setRegionFilter] = useState(() => persistedFilters?.regionFilter ?? "all");
-  const [timeRangeFilter, setTimeRangeFilter] = useState(
-    () => persistedFilters?.timeRangeFilter ?? "this_month",
+  const [teamFilter, setTeamFilter] = useState(
+    () => searchParams.get("team") || persistedFilters?.teamFilter || "all",
   );
-  const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>(() => [
-    persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
-    persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
-  ]);
+  const [regionFilter, setRegionFilter] = useState(
+    () => searchParams.get("region") || persistedFilters?.regionFilter || "all",
+  );
+  const [timeRangeFilter, setTimeRangeFilter] = useState(() => {
+    if (searchParams.get("range") === "all") return "all";
+    if (searchParams.get("from") || searchParams.get("to")) return "custom";
+    return persistedFilters?.timeRangeFilter ?? "this_month";
+  });
+  const [customDateRange, setCustomDateRange] = useState<[Date | null, Date | null]>(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (from || to) return [from ? ymdToDate(from) : null, to ? ymdToDate(to) : null];
+    return [
+      persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
+      persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
+    ];
+  });
   // Draft filters (edit, then Apply)
   const [draftSearch, setDraftSearch] = useState(() => persistedFilters?.search ?? "");
   const [draftStageFilter, setDraftStageFilter] = useState(() =>
@@ -541,19 +622,34 @@ export default function DealsPage() {
       ? "all"
       : normalizeDealStage(persistedFilters.stageFilter),
   );
-  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DealPipelineStatus>(
-    () => persistedFilters?.statusFilter ?? "all",
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"all" | DealPipelineStatus>(() => {
+    const status = searchParams.get("status");
+    if (status && (DEAL_STATUSES as readonly string[]).includes(status)) return status as DealPipelineStatus;
+    return persistedFilters?.statusFilter ?? "all";
+  });
+  const [draftOwnerFilter, setDraftOwnerFilter] = useState(
+    () => searchParams.get("owner") || persistedFilters?.ownerFilter || "all",
   );
-  const [draftOwnerFilter, setDraftOwnerFilter] = useState(() => persistedFilters?.ownerFilter ?? "all");
-  const [draftTeamFilter, setDraftTeamFilter] = useState(() => persistedFilters?.teamFilter ?? "all");
-  const [draftRegionFilter, setDraftRegionFilter] = useState(() => persistedFilters?.regionFilter ?? "all");
-  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState(
-    () => persistedFilters?.timeRangeFilter ?? "this_month",
+  const [draftTeamFilter, setDraftTeamFilter] = useState(
+    () => searchParams.get("team") || persistedFilters?.teamFilter || "all",
   );
-  const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>(() => [
-    persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
-    persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
-  ]);
+  const [draftRegionFilter, setDraftRegionFilter] = useState(
+    () => searchParams.get("region") || persistedFilters?.regionFilter || "all",
+  );
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState(() => {
+    if (searchParams.get("range") === "all") return "all";
+    if (searchParams.get("from") || searchParams.get("to")) return "custom";
+    return persistedFilters?.timeRangeFilter ?? "this_month";
+  });
+  const [draftCustomDateRange, setDraftCustomDateRange] = useState<[Date | null, Date | null]>(() => {
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    if (from || to) return [from ? ymdToDate(from) : null, to ? ymdToDate(to) : null];
+    return [
+      persistedFilters?.customFrom ? ymdToDate(persistedFilters.customFrom) : null,
+      persistedFilters?.customTo ? ymdToDate(persistedFilters.customTo) : null,
+    ];
+  });
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetMode, setSheetMode] = useState<"create" | "edit" | "view">("create");
   const [sheetDeal, setSheetDeal] = useState<Deal | null>(null);
@@ -914,12 +1010,22 @@ export default function DealsPage() {
     const owner = searchParams.get("owner");
     const team = searchParams.get("team");
     const region = searchParams.get("region");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
+    const range = searchParams.get("range");
     if (q) setSearch(q);
     if (stage) setStageFilter(stage === "all" ? "all" : normalizeDealStage(stage));
     if (status && (DEAL_STATUSES as readonly string[]).includes(status)) setStatusFilter(status);
     if (owner) setOwnerFilter(owner);
     if (team) setTeamFilter(team);
     if (region) setRegionFilter(region);
+    if (range === "all") {
+      setTimeRangeFilter("all");
+      setCustomDateRange([null, null]);
+    } else if (from || to) {
+      setTimeRangeFilter("custom");
+      setCustomDateRange([from ? ymdToDate(from) : null, to ? ymdToDate(to) : null]);
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -1212,10 +1318,10 @@ export default function DealsPage() {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     const now = new Date();
-    
+
     let rangeStart: Date | null = null;
     let rangeEnd: Date | null = null;
-    
+
     if (timeRangeFilter === "this_week") {
       rangeStart = new Date(now);
       rangeStart.setDate(now.getDate() - now.getDay());
@@ -1256,7 +1362,7 @@ export default function DealsPage() {
       if (ownerFilter !== "all" && d.ownerUserId !== ownerFilter) return false;
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
-      
+
       if (timeRangeFilter !== "all") {
         const t = getDealDateForFilter(d);
         if (!t) return false;
@@ -1505,12 +1611,12 @@ export default function DealsPage() {
     const schedule =
       paymentPlanType === "custom"
         ? customRows
-            .map((r, idx) => ({
-              label: (r.label || `Installment ${idx + 1}`).trim(),
-              due_date: r.due_date,
-              amount: Number(r.amount || 0),
-            }))
-            .filter((r) => Number.isFinite(r.amount) && r.amount > 0)
+          .map((r, idx) => ({
+            label: (r.label || `Installment ${idx + 1}`).trim(),
+            due_date: r.due_date,
+            amount: Number(r.amount || 0),
+          }))
+          .filter((r) => Number.isFinite(r.amount) && r.amount > 0)
         : undefined;
 
     try {
@@ -1775,61 +1881,122 @@ export default function DealsPage() {
     setSheetOpen(true);
   };
 
+  const dateChip =
+    timeRangeFilter === "custom" && customDateRange[0] && customDateRange[1]
+      ? `${dateToYmd(customDateRange[0])} – ${dateToYmd(customDateRange[1])}`
+      : timeRangeFilter !== "all"
+        ? timeRangeFilter.replace(/_/g, " ")
+        : null;
+
+  const persistListFilters = (overrides: Partial<PersistedDealFilters> = {}) => {
+    persistDealFilters({
+      search,
+      stageFilter,
+      statusFilter,
+      ownerFilter,
+      teamFilter,
+      regionFilter,
+      timeRangeFilter,
+      customFrom: customDateRange[0] ? dateToYmd(customDateRange[0]) : null,
+      customTo: customDateRange[1] ? dateToYmd(customDateRange[1]) : null,
+      ...overrides,
+    });
+  };
+
+  const applyStageKpi = (stageKey: string) => {
+    const next = stageFilter === stageKey ? "all" : stageKey;
+    setStageFilter(next);
+    setDraftStageFilter(next);
+    persistListFilters({ stageFilter: next });
+  };
+
+  const applyStatusKpi = (s: "all" | "Active" | "Closed/Won") => {
+    if (s === "Closed/Won") {
+      const nextStatus = statusFilter === "Closed/Won" && timeRangeFilter === "this_month" ? "all" : "Closed/Won";
+      const nextRange = nextStatus === "Closed/Won" ? "this_month" : "all";
+      setTimeRangeFilter(nextRange);
+      setDraftTimeRangeFilter(nextRange);
+      setStatusFilterAndUrl(nextStatus);
+      persistListFilters({ statusFilter: nextStatus, timeRangeFilter: nextRange });
+      return;
+    }
+    if (s === "Active") {
+      setStatusFilterAndUrl(statusFilter === "Active" ? "all" : "Active");
+      return;
+    }
+    setStageFilter("all");
+    setDraftStageFilter("all");
+    setTimeRangeFilter("all");
+    setDraftTimeRangeFilter("all");
+    setStatusFilterAndUrl("all");
+    persistListFilters({ stageFilter: "all", statusFilter: "all", timeRangeFilter: "all" });
+  };
+
   return (
     <>
       <Topbar
         title="Deals"
-        subtitle={`${visible.length} deals shown`}
+        subtitle={smUp ? `${visible.length} in scope` : undefined}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center rounded-lg border border-border bg-muted p-0.5">
-              <Button
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="flex items-center rounded-md border border-border bg-muted/40 p-0.5">
+              <button
                 type="button"
-                variant={viewMode === "kanban" ? "secondary" : "ghost"}
-                className="h-8 px-3 text-xs"
+                title="Board"
                 onClick={() => setViewMode("kanban")}
+                className={cn(
+                  "flex h-7 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium transition-colors sm:px-2",
+                  viewMode === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
               >
-                Board
-              </Button>
-              <Button
+                <LayoutGrid className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Board</span>
+              </button>
+              <button
                 type="button"
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                className="h-8 px-3 text-xs"
+                title="List"
                 onClick={() => setViewMode("list")}
+                className={cn(
+                  "flex h-7 items-center gap-1 rounded-[5px] px-1.5 text-[11px] font-medium transition-colors sm:px-2",
+                  viewMode === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
               >
-                List
-              </Button>
+                <List className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">List</span>
+              </button>
             </div>
             {canUpdateDeal && (
               <Button
                 type="button"
                 variant="outline"
-                className="h-9"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
                 disabled={activeStatusDeals.length === 0 || bulkMarkWonMutation.isPending}
                 onClick={() => setBulkMarkWonOpen(true)}
               >
-                <Trophy className="h-4 w-4 mr-1.5" />
-                Mark Active as Won
+                <Trophy className="mr-1 h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Mark won</span>
                 {activeStatusDeals.length > 0 ? ` (${activeStatusDeals.length})` : ""}
               </Button>
             )}
             {canCreate && (
               <>
-                <Button type="button" variant="outline" className="h-9" onClick={() => setBulkImportOpen(true)}>
-                  <Upload className="h-4 w-4 mr-1.5" />
-                  Bulk import
+                <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setBulkImportOpen(true)}>
+                  <Upload className="mr-1 h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Import</span>
                 </Button>
                 <Button
                   type="button"
-                  className="h-9 bg-blue-600 hover:bg-blue-700 text-white"
+                  size="sm"
+                  className="h-8 px-2.5 text-xs"
                   onClick={() => {
                     setSheetDeal(null);
                     setSheetMode("create");
                     setSheetOpen(true);
                   }}
                 >
-                  <Plus className="h-4 w-4 mr-1.5" />
-                  New Deal
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  New
                 </Button>
               </>
             )}
@@ -1837,127 +2004,79 @@ export default function DealsPage() {
         }
       />
 
-      <div className="space-y-4">
+      <div className="space-y-2.5">
+        {dealsQuery.isLoading && (
+          <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Syncing deals
+          </p>
+        )}
 
-        {dealsQuery.isLoading && <p className="text-sm text-muted-foreground">Loading deals...</p>}
-
-        <FilterPanel title="Filters" storageKey="ui:deals:filtersOpen">
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-1 gap-2 lg:grid-cols-12 lg:items-center">
-              <div className="relative min-w-0 lg:col-span-4">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <FilterPanel
+          title="Filters"
+          storageKey="ui:deals:filtersOpen"
+          defaultOpen={smUp}
+          headerActions={
+            hasActiveAppliedFilters ? (
+              <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
+                {dateChip ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                    {dateChip}
+                  </span>
+                ) : null}
+                {stageFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {dealStageLabel(stageFilter)}
+                  </span>
+                ) : null}
+                {statusFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {dealStatusLabel(statusFilter)}
+                  </span>
+                ) : null}
+                {ownerFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {users.find((u) => u.id === ownerFilter)?.name ?? "Owner"}
+                  </span>
+                ) : null}
+                {teamFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {teams.find((t) => t.id === teamFilter)?.name ?? "Team"}
+                  </span>
+                ) : null}
+                {regionFilter !== "all" ? (
+                  <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {regions.find((r) => r.id === regionFilter)?.name ?? "Region"}
+                  </span>
+                ) : null}
+              </div>
+            ) : null
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-2.5">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  className="pl-8 h-9 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800"
-                  placeholder="Search deal, customer..."
+                  className="h-9 pl-8 text-sm"
+                  placeholder="Search deal, customer…"
                   value={draftSearch}
                   onChange={(e) => setDraftSearch(e.target.value)}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:col-span-8 lg:grid-cols-6">
-                <Select value={draftStageFilter} onValueChange={setDraftStageFilter}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All stages" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All stages</SelectItem>
-                    {stageSelectOptions.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {dealStageLabel(s)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftStatusFilter} onValueChange={(v) => setDraftStatusFilter(v as "all" | DealPipelineStatus)}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="Deal status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All statuses</SelectItem>
-                    {DEAL_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {dealStatusLabel(s)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All owners" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All owners</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All teams" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All teams</SelectItem>
-                    {teams.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All regions" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All regions</SelectItem>
-                    {regions.map((r) => (
-                      <SelectItem key={r.id} value={r.id}>
-                        {r.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={draftTimeRangeFilter} onValueChange={setDraftTimeRangeFilter}>
-                  <SelectTrigger className="h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800">
-                    <SelectValue placeholder="All time" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All time</SelectItem>
-                    <SelectItem value="this_week">This week</SelectItem>
-                    <SelectItem value="this_month">This month</SelectItem>
-                    <SelectItem value="this_year">This year</SelectItem>
-                    <SelectItem value="previous_year">Previous year</SelectItem>
-                    <SelectItem value="custom">Custom range</SelectItem>
-                  </SelectContent>
-                </Select>
-
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex gap-2 overflow-x-auto pb-1 pt-1 sm:flex-1">
+              <div className="scrollbar-none -mx-1 flex items-center gap-1 overflow-x-auto px-1">
                 <button
                   type="button"
                   onClick={() => setStatusFilterAndUrl("all")}
                   className={cn(
-                    "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                    "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
                     statusFilter === "all"
-                      ? "border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
-                      : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
                 >
                   All
                 </button>
                 {DEAL_STATUSES.map((st) => {
-                  const meta = DEAL_STATUS_META[st];
                   const active = statusFilter === st;
                   return (
                     <button
@@ -1965,124 +2084,203 @@ export default function DealsPage() {
                       type="button"
                       onClick={() => setStatusFilterAndUrl(active ? "all" : st)}
                       className={cn(
-                        "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                        "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
                         active
-                          ? cn("ring-2 ring-blue-500", meta.cardClass)
-                          : "border-gray-200 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-600 dark:text-gray-400",
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                       )}
                     >
-                      {dealStatusLabel(st)} ({statusCounts[st]})
+                      {dealStatusLabel(st)} ({statusCounts[st] ?? 0})
                     </button>
                   );
                 })}
               </div>
+            </div>
+
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              <Select value={draftStageFilter} onValueChange={setDraftStageFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All stages" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All stages</SelectItem>
+                  {stageSelectOptions.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {dealStageLabel(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All owners" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All owners</SelectItem>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftTeamFilter} onValueChange={setDraftTeamFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All teams" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All teams</SelectItem>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftRegionFilter} onValueChange={setDraftRegionFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All regions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All regions</SelectItem>
+                  {regions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={draftTimeRangeFilter} onValueChange={setDraftTimeRangeFilter}>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="All time" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All time</SelectItem>
+                  <SelectItem value="this_week">This week</SelectItem>
+                  <SelectItem value="this_month">This month</SelectItem>
+                  <SelectItem value="this_year">This year</SelectItem>
+                  <SelectItem value="previous_year">Previous year</SelectItem>
+                  <SelectItem value="custom">Custom range</SelectItem>
+                </SelectContent>
+              </Select>
 
               {draftTimeRangeFilter === "custom" && (
-                <div className="w-64 sm:shrink-0">
-                  <Datepicker
-                    controls={['calendar']}
-                    select="range"
-                    touchUi={true}
-                    inputComponent="input"
-                    inputProps={{
-                      placeholder: 'Select range...',
-                      className: 'h-9 w-full bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800',
-                    }}
-                    value={draftCustomDateRange}
-                    onChange={(ev) => setDraftCustomDateRange(ev.value)}
-                  />
-                </div>
+                <Datepicker
+                  controls={["calendar"]}
+                  select="range"
+                  touchUi={true}
+                  inputComponent="input"
+                  inputProps={{
+                    placeholder: "Deal date…",
+                    className: "h-9 w-full text-sm",
+                  }}
+                  value={draftCustomDateRange}
+                  onChange={(ev) => setDraftCustomDateRange(ev.value)}
+                />
               )}
-
-              <div className="flex items-center justify-end gap-2 sm:shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-9 w-[140px]"
-                  onClick={clearFilters}
-                  disabled={!hasPendingFilterChanges && !hasActiveAppliedFilters}
-                >
-                  Clear
-                </Button>
-                <Button
-                  type="button"
-                  className="h-9 w-[140px] bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={applyFilters}
-                  disabled={!hasPendingFilterChanges}
-                >
-                  Apply
-                </Button>
-              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                onClick={clearFilters}
+                disabled={!hasPendingFilterChanges && !hasActiveAppliedFilters}
+              >
+                Clear
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                onClick={applyFilters}
+                disabled={!hasPendingFilterChanges}
+              >
+                Apply
+              </Button>
             </div>
           </div>
         </FilterPanel>
 
-        {/* Deal dashboard */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="col-span-2 lg:col-span-2 bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-5 text-white shadow-sm">
-            <p className="text-xs font-medium text-blue-100 mb-3 uppercase tracking-wide">Total deal value</p>
-            <p className="text-3xl font-bold tracking-tight mb-1 tabular-nums">
-              ₹{totalValue.toLocaleString("en-IN")}
-            </p>
-            <p className="text-sm text-blue-100">{activeDealsCount} active deals</p>
-            <div className="mt-4 space-y-1.5">
-              <div className="flex justify-between text-xs text-blue-100">
-                <span>Won this month</span>
-                <span className="tabular-nums">₹{wonValueThisMonth.toLocaleString("en-IN")}</span>
-              </div>
-              <div className="h-1.5 bg-blue-500/50 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white rounded-full transition-all duration-300"
-                  style={{ width: `${wonPct}%` }}
-                />
-              </div>
-            </div>
-          </div>
-
+        <motion.div
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+          className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2 xl:grid-cols-6"
+        >
+          <DealKpiCard
+            label="Pipeline"
+            value={formatINR(totalValue)}
+            sub={`${visible.length} shown`}
+            icon={IndianRupee}
+            iconColor="text-primary"
+            iconBg="bg-primary/10"
+            active={statusFilter === "all" && stageFilter === "all"}
+            onClick={() => applyStatusKpi("all")}
+          />
+          <DealKpiCard
+            label="Active"
+            value={String(activeDealsCount)}
+            sub="Open pipeline"
+            icon={LayoutGrid}
+            iconColor="text-info"
+            iconBg="bg-info/10"
+            active={statusFilter === "Active"}
+            onClick={() => applyStatusKpi("Active")}
+          />
+          <DealKpiCard
+            label="Won this month"
+            value={formatINR(wonValueThisMonth)}
+            sub={`${Math.round(wonPct)}% of shown value`}
+            icon={Trophy}
+            iconColor="text-success"
+            iconBg="bg-success/10"
+            active={statusFilter === "Closed/Won" && timeRangeFilter === "this_month"}
+            onClick={() => applyStatusKpi("Closed/Won")}
+          />
           {DASHBOARD_STAGES.map((stageKey) => {
             const sv = DEAL_STAGE_VISUAL.find((s) => s.key === stageKey);
             return (
-              <div
+              <DealKpiCard
                 key={stageKey}
-                className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between mb-3 gap-2">
-                  <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full truncate max-w-[7rem]", sv?.pillColor ?? stagePillClass(stageKey))}>
-                    {sv?.label ?? stageKey}
-                  </span>
-                  <span className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums shrink-0">
-                    {stageCounts[stageKey] ?? 0}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
-                  ₹{(stageValues[stageKey] ?? 0).toLocaleString("en-IN")}
-                </p>
-              </div>
+                label={sv?.label ?? stageKey}
+                value={String(stageCounts[stageKey] ?? 0)}
+                sub={formatINR(stageValues[stageKey] ?? 0)}
+                icon={CheckCircle2}
+                iconColor="text-muted-foreground"
+                iconBg="bg-muted"
+                active={stageFilter === stageKey}
+                onClick={() => applyStageKpi(stageKey)}
+              />
             );
           })}
-        </div>
+        </motion.div>
 
-        {/* Kanban */}
         {viewMode === "kanban" && (
-          <div className="overflow-x-auto pb-2">
-            <div className="flex gap-4 min-w-max">
+          <div className="scrollbar-soft -mx-3 overflow-x-auto px-3 pb-1 snap-x snap-mandatory sm:mx-0 sm:px-0">
+            <div className="flex min-w-max gap-3">
               {stageSelectOptions.map((stage) => (
-                <div key={stage} className="w-72 flex-shrink-0">
-                  <div className="flex items-center justify-between mb-3 gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={cn("w-2.5 h-2.5 rounded-full shrink-0", stageDotClass(stage))} />
-                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 truncate">
+                <div key={stage} className="w-[min(18rem,calc(100vw-2.5rem))] flex-shrink-0 snap-start sm:w-72">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className={cn("h-2 w-2 shrink-0 rounded-full", stageDotClass(stage))} />
+                      <span className="truncate text-xs font-semibold text-foreground">
                         {dealStageLabel(stage)}
                       </span>
-                      <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full shrink-0 tabular-nums">
+                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
                         {visible.filter((d) => normalizeDealStage(d.stage) === stage).length}
                       </span>
                     </div>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400 tabular-nums shrink-0">
-                      ₹{(stageValues[stage] ?? 0).toLocaleString("en-IN")}
+                    <span className="shrink-0 text-[10px] font-medium tabular-nums text-muted-foreground">
+                      {formatINR(stageValues[stage] ?? 0)}
                     </span>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {visible
                       .filter((d) => normalizeDealStage(d.stage) === stage)
                       .map((deal) => {
@@ -2091,10 +2289,12 @@ export default function DealsPage() {
                         const cust = custObj?.customerName || custObj?.companyName || "—";
                         const ownerName = users.find((u) => u.id === deal.ownerUserId)?.name ?? "";
                         return (
-                          <div
+                          <motion.div
                             key={deal.id}
                             role="button"
                             tabIndex={0}
+                            whileHover={hoverLift}
+                            whileTap={tapPress}
                             onClick={() => openDeal(deal)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
@@ -2102,32 +2302,32 @@ export default function DealsPage() {
                                 openDeal(deal);
                               }
                             }}
-                            className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-blue-200 dark:hover:border-blue-800 transition-all duration-150 text-left w-full"
+                            className="card-soft w-full cursor-pointer p-3 text-left hover:border-primary/30"
                           >
-                            <div className="flex items-start justify-between gap-2 mb-2.5">
-                              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 leading-snug line-clamp-2 flex-1">
+                            <div className="mb-1.5 flex items-start justify-between gap-2">
+                              <p className="line-clamp-2 flex-1 text-sm font-semibold leading-snug text-foreground">
                                 {deal.name}
                               </p>
-                              <span className="text-xs font-bold text-blue-600 whitespace-nowrap flex-shrink-0 tabular-nums">
-                                ₹{(deal.value ?? 0).toLocaleString("en-IN")}
+                              <span className="shrink-0 whitespace-nowrap text-xs font-semibold tabular-nums text-primary">
+                                {formatINR(deal.value ?? 0)}
                               </span>
                             </div>
-                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 mb-0.5 line-clamp-1">{comp}</p>
-                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-3 line-clamp-1">{cust}</p>
+                            <p className="mb-0.5 line-clamp-1 text-xs font-medium text-foreground">{comp}</p>
+                            <p className="mb-2 line-clamp-1 text-[11px] text-muted-foreground">{cust}</p>
                             <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <div className="w-5 h-5 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shrink-0">
-                                  <span className="text-[10px] font-medium text-gray-600 dark:text-gray-300">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+                                  <span className="text-[10px] font-medium text-muted-foreground">
                                     {ownerName?.[0] ?? "?"}
                                   </span>
                                 </div>
-                                <span className="text-xs text-gray-400 truncate">{ownerName?.split(" ")[0] ?? "—"}</span>
+                                <span className="truncate text-[11px] text-muted-foreground">{ownerName?.split(" ")[0] ?? "—"}</span>
                               </div>
                               {deal.nextFollowUpDate && (
                                 <span
                                   className={cn(
-                                    "text-xs flex items-center gap-1 shrink-0",
-                                    isFollowUpOverdue(deal.nextFollowUpDate) ? "text-red-500 font-medium" : "text-gray-400",
+                                    "flex shrink-0 items-center gap-1 text-[11px]",
+                                    isFollowUpOverdue(deal.nextFollowUpDate) ? "font-medium text-destructive" : "text-muted-foreground",
                                   )}
                                 >
                                   <Calendar className="h-3 w-3" />
@@ -2135,7 +2335,7 @@ export default function DealsPage() {
                                 </span>
                               )}
                             </div>
-                          </div>
+                          </motion.div>
                         );
                       })}
                   </div>
@@ -2145,13 +2345,116 @@ export default function DealsPage() {
           </div>
         )}
 
-        {/* List view */}
         {viewMode === "list" && (
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden shadow-sm">
-            {/* Top horizontal scrollbar (synced with table) */}
+          <div className="card-soft overflow-hidden">
+            {!smUp ? (
+              listItems.length === 0 ? (
+                <p className="px-4 py-12 text-center text-sm text-muted-foreground">No deals match your filters</p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {listItems.map((deal) => {
+                    const custObj = customers.find((c) => c.id === deal.customerId);
+                    const comp = custObj?.companyName || custObj?.customerName || "—";
+                    const st = normalizeDealStatusKey(deal.dealStatus, deal.invoiceStatus);
+                    const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
+                    const fin = deriveDealFinanceFromEstimateOrProposal(deal, p);
+                    return (
+                      <div key={deal.id} className="flex items-start gap-2 px-2.5 py-2.5">
+                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openDeal(deal)}>
+                          <p className="truncate text-sm font-semibold text-primary">
+                            {deal.invoiceNumber ?? dealDisplayId(deal)}
+                          </p>
+                          <p className="truncate text-sm font-medium">{comp}</p>
+                          <p className="truncate text-[11px] text-muted-foreground">{deal.name}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <StatusPill tone={dealStatusTone(st)} className="whitespace-nowrap">
+                              {dealStatusLabel(st)}
+                            </StatusPill>
+                            <span className="text-xs font-semibold tabular-nums">
+                              {formatINRAmount(fin.totalAmount ?? deal.value)}
+                            </span>
+                          </div>
+                        </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-7 shrink-0 px-2 text-[11px]">
+                              Actions
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={6} className="max-h-[min(70vh,24rem)] min-w-[220px] overflow-y-auto">
+                            <DropdownMenuItem className="cursor-pointer" onClick={() => openDeal(deal)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View
+                            </DropdownMenuItem>
+                            {deal.estimateNumber && deal.estimateJson && (
+                              <DropdownMenuItem className="cursor-pointer" onClick={() => void generateEstimatePdf(deal)}>
+                                <FileDown className="mr-2 h-4 w-4" />
+                                Download Estimate PDF
+                              </DropdownMenuItem>
+                            )}
+                            {deal.estimateNumber && deal.estimateJson && (
+                              <>
+                                <DropdownMenuItem className="cursor-pointer" onClick={() => setSendEstimateOpen({ deal, channel: "email" })}>
+                                  <Mail className="mr-2 h-4 w-4" />
+                                  Send via Email
+                                </DropdownMenuItem>
+                                <DropdownMenuItem className="cursor-pointer" onClick={() => setSendEstimateOpen({ deal, channel: "whatsapp" })}>
+                                  <MessageCircle className="mr-2 h-4 w-4" />
+                                  Send via WhatsApp
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            {deal.invoiceNumber && (
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                disabled={invoiceSendBusyKey === `${deal.id}:deal`}
+                                onClick={() => void sendInvoiceFromDealUi(deal, null)}
+                              >
+                                <Receipt className="mr-2 h-4 w-4" />
+                                Send invoice
+                              </DropdownMenuItem>
+                            )}
+                            {(canUpdateDeal || canRemoveDeal) && <DropdownMenuSeparator />}
+                            {canUpdateDeal && !deal.locked && (
+                              <DropdownMenuItem
+                                className="cursor-pointer"
+                                onClick={() => {
+                                  setSheetDeal(deal);
+                                  setSheetMode("edit");
+                                  setSheetOpen(true);
+                                }}
+                              >
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                            )}
+                            {canRemoveDeal && !deal.locked && (
+                              <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => setDeleteTarget(deal)}>
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Archive
+                              </DropdownMenuItem>
+                            )}
+                            {me.role === "super_admin" && (
+                              <DropdownMenuItem
+                                className="cursor-pointer text-destructive focus:text-destructive"
+                                onClick={() => setHardDeleteTarget(deal)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete permanently
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
+              <>
             <div
               ref={topHScrollRef}
-              className="overflow-x-scroll"
+              className="scrollbar-soft overflow-x-scroll"
               style={{ scrollbarGutter: "stable" }}
               onScroll={() => syncListHScroll("top")}
             >
@@ -2160,13 +2463,13 @@ export default function DealsPage() {
 
             <div
               ref={bottomHScrollRef}
-              className="overflow-x-scroll pb-2"
+              className="scrollbar-soft overflow-x-scroll pb-1"
               style={{ scrollbarGutter: "stable" }}
               onScroll={() => syncListHScroll("bottom")}
             >
               <table className="w-full min-w-[1480px]">
                 <thead className="sticky top-0 z-10">
-                  <tr className="border-b border-gray-100 dark:border-gray-800 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm">
+                  <tr className="border-b border-border bg-muted/40">
                     {[
                       "Status",
                       "Deal Date",
@@ -2185,19 +2488,19 @@ export default function DealsPage() {
                       <th
                         key={h}
                         className={cn(
-                          "px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide",
+                          "px-3 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground",
                           (h === "Customer Name" ||
                             h === "Deal #" ||
                             h === "Owner" ||
                             h === "Place of Supply" ||
                             h === "Service") &&
-                            "text-left",
+                          "text-left",
                           (h === "Total" ||
                             h === "Tax Amount" ||
                             h === "Amount Without Tax" ||
                             h === "Balance" ||
                             h === "Amount Paid") &&
-                            "text-right",
+                          "text-right",
                           // Keep columns visible; use horizontal scroll instead of hiding.
                           (h === "Deal Date" ||
                             h === "Deal #" ||
@@ -2207,7 +2510,7 @@ export default function DealsPage() {
                             h === "Amount Without Tax" ||
                             h === "Balance" ||
                             h === "Amount Paid") &&
-                            "whitespace-nowrap",
+                          "whitespace-nowrap",
                           h === "Service" && "min-w-[180px]",
                           h === "Actions" && "text-center pr-5 min-w-[170px] whitespace-nowrap",
                         )}
@@ -2217,7 +2520,7 @@ export default function DealsPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                <tbody className="divide-y divide-border">
                   {listItems.map((deal) => {
                     const custObj = customers.find((c) => c.id === deal.customerId);
                     const comp = custObj?.companyName || custObj?.customerName || "—";
@@ -2225,85 +2528,85 @@ export default function DealsPage() {
                     return (
                       <tr
                         key={deal.id}
-                        className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40 transition-colors duration-100"
+                        className="transition-colors duration-100 hover:bg-muted/30"
                       >
-                        <td className="px-4 py-3.5 pl-5 text-sm font-medium">
+                        <td className="px-3 py-2.5 pl-4 text-sm font-medium">
                           {(() => {
                             const st = normalizeDealStatusKey(deal.dealStatus, deal.invoiceStatus);
                             return (
-                              <Badge variant="secondary" className={cn("whitespace-nowrap", dealStatusPillClass(st))}>
-                                {st}
-                              </Badge>
+                              <StatusPill tone={dealStatusTone(st)} className="whitespace-nowrap">
+                                {dealStatusLabel(st)}
+                              </StatusPill>
                             );
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-sm tabular-nums">
+                        <td className="px-3 py-2.5 text-sm tabular-nums text-muted-foreground">
                           {(() => {
                             const d = getDealDate(deal);
                             return formatDDMMYYYY(d);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 whitespace-nowrap">
+                        <td className="whitespace-nowrap px-3 py-2.5">
                           <button
                             type="button"
                             onClick={() => openDeal(deal)}
-                            className="text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left"
+                            className="text-left text-sm font-semibold text-primary hover:underline"
                             title={deal.id}
                           >
                             {deal.invoiceNumber ?? dealDisplayId(deal)}
                           </button>
                         </td>
-                        <td className="px-4 py-3.5">
+                        <td className="px-3 py-2.5">
                           {customers.find((c) => c.id === deal.customerId) ? (
                             <button
                               type="button"
-                              className="text-sm font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 text-left"
+                              className="text-left text-sm font-medium text-foreground hover:text-primary"
                               onClick={() => navigate(`/customers/${deal.customerId}`)}
                             >
                               <div className="leading-tight">
                                 <div className="text-sm font-medium">{comp}</div>
-                                <div className="text-xs text-gray-500 dark:text-gray-400">{cust}</div>
+                                <div className="text-[11px] text-muted-foreground">{cust}</div>
                               </div>
                             </button>
                           ) : (
                             <div className="leading-tight">
-                              <div className="text-sm font-medium text-gray-800 dark:text-gray-200">{comp}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{cust}</div>
+                              <div className="text-sm font-medium text-foreground">{comp}</div>
+                              <div className="text-[11px] text-muted-foreground">{cust}</div>
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3.5 text-sm whitespace-nowrap">
+                        <td className="whitespace-nowrap px-3 py-2.5 text-sm text-muted-foreground">
                           {users.find((u) => u.id === deal.ownerUserId)?.name ?? "—"}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        <td className="px-3 py-2.5 text-right text-sm font-semibold tabular-nums text-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return formatINRAmount(d.totalAmount ?? deal.value);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return formatINRAmount(d.taxAmount);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return formatINRAmount(d.subTotal);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-sm">
+                        <td className="px-3 py-2.5 text-sm text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return d.placeOfSupply ?? "—";
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
@@ -2311,7 +2614,7 @@ export default function DealsPage() {
                             return formatINRAmount(pay.balanceAmount ?? d.balanceAmount);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-right tabular-nums text-sm">
+                        <td className="px-3 py-2.5 text-right text-sm tabular-nums text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
@@ -2319,17 +2622,17 @@ export default function DealsPage() {
                             return formatINRAmount(pay.amountPaid ?? d.amountPaid);
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 text-sm min-w-[180px]">
+                        <td className="min-w-[180px] px-3 py-2.5 text-sm text-muted-foreground">
                           {(() => {
                             const p = deal.proposalId ? proposals.find((x) => x.id === deal.proposalId) : undefined;
                             const d = deriveDealFinanceFromEstimateOrProposal(deal, p);
                             return d.serviceName ?? "—";
                           })()}
                         </td>
-                        <td className="px-4 py-3.5 pr-5 min-w-[170px]">
+                        <td className="min-w-[170px] px-3 py-2.5 pr-4">
                           <div className="flex items-center justify-center gap-2 flex-wrap">
                             {deal.locked && (
-                              <span title="Locked" className="text-emerald-600">
+                              <span title="Locked" className="text-success">
                                 <Lock className="h-3.5 w-3.5" />
                               </span>
                             )}
@@ -2414,7 +2717,7 @@ export default function DealsPage() {
                                 )}
 
                                 {canRemoveDeal && !deal.locked && (
-                                  <DropdownMenuItem className="cursor-pointer text-red-600 focus:text-red-600" onClick={() => setDeleteTarget(deal)}>
+                                  <DropdownMenuItem className="cursor-pointer text-destructive focus:text-destructive" onClick={() => setDeleteTarget(deal)}>
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Archive
                                   </DropdownMenuItem>
@@ -2422,7 +2725,7 @@ export default function DealsPage() {
 
                                 {me.role === "super_admin" && (
                                   <DropdownMenuItem
-                                    className="cursor-pointer text-red-600 focus:text-red-600"
+                                    className="cursor-pointer text-destructive focus:text-destructive"
                                     onClick={() => setHardDeleteTarget(deal)}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -2438,7 +2741,7 @@ export default function DealsPage() {
                   })}
                   {visible.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">
+                      <td colSpan={13} className="py-12 text-center text-sm text-muted-foreground">
                         No deals match your filters
                       </td>
                     </tr>
@@ -2446,10 +2749,12 @@ export default function DealsPage() {
                 </tbody>
               </table>
             </div>
+              </>
+            )}
 
-            <div className="border-t border-gray-100 dark:border-gray-800">
-              <div className="flex items-center justify-end gap-2 px-5 py-3">
-                <span className="text-xs text-muted-foreground">Rows</span>
+            <div className="border-t border-border">
+              <div className="flex items-center justify-end gap-2 px-2.5 py-2 sm:px-4">
+                <span className="text-[11px] text-muted-foreground">Rows</span>
                 <Select
                   value={String(listPageSize)}
                   onValueChange={(v) => {
@@ -2471,7 +2776,7 @@ export default function DealsPage() {
                 </Select>
               </div>
               <DataTablePagination
-                className="border-t-0 px-5 py-0 dark:border-gray-800"
+                className="border-t-0 px-2.5 py-0 sm:px-4"
                 page={listCurrentPage}
                 totalPages={listTotalPages}
                 total={visible.length}
@@ -2482,8 +2787,7 @@ export default function DealsPage() {
           </div>
         )}
 
-        <Card className="bg-card border border-border">
-          <CardContent className="space-y-1 p-4 text-xs text-muted-foreground">
+        <div className="card-soft hidden space-y-1 px-3 py-2.5 text-[11px] text-muted-foreground sm:block">
             <p>
               <strong className="text-foreground">Deal status</strong> controls reminders and win/loss messages.
               Changing to <strong>Closed/Won</strong> notifies the team (deal_won templates).{" "}
@@ -2500,17 +2804,15 @@ export default function DealsPage() {
               <strong className="text-foreground">Roles:</strong> Super Admin can edit, archive (soft delete), and set{" "}
               <strong>Closed/Lost</strong>. Other roles can create and view.
             </p>
-          </CardContent>
-        </Card>
+        </div>
 
         {deletedDealsInScope.length > 0 && (
-          <Card className="bg-card border border-destructive/30">
-            <CardContent className="p-0">
-              <div className="px-5 py-4 border-b border-border">
-                <h3 className="font-semibold text-foreground">Deleted records (soft-deleted)</h3>
-                <p className="text-xs text-muted-foreground mt-1">Visible to Super Admin only. Rows stay in the database for audit.</p>
+          <div className="card-soft overflow-hidden border-destructive/30">
+              <div className="border-b border-border px-3 py-2.5">
+                <h3 className="text-sm font-semibold text-foreground">Deleted records</h3>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">Visible to Super Admin only. Rows stay in the database for audit.</p>
               </div>
-              <div className="p-4">
+              <div className="overflow-x-auto p-3 sm:p-4">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -2547,8 +2849,7 @@ export default function DealsPage() {
                   </TableBody>
                 </Table>
               </div>
-            </CardContent>
-          </Card>
+          </div>
         )}
       </div>
 
@@ -3224,9 +3525,9 @@ export default function DealsPage() {
                                         className={cn(
                                           "text-[10px] capitalize",
                                           isPaid &&
-                                            "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+                                          "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
                                           isOverdue &&
-                                            "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
+                                          "border-red-300 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300",
                                         )}
                                       >
                                         {i.payment_status}

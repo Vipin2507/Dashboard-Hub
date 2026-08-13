@@ -83,6 +83,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS notification_reads (
+  userId TEXT NOT NULL,
+  notificationId TEXT NOT NULL,
+  readAt TEXT NOT NULL,
+  PRIMARY KEY (userId, notificationId)
+);
+CREATE INDEX IF NOT EXISTS idx_notification_reads_user ON notification_reads(userId);
+
 CREATE TABLE IF NOT EXISTS inventory (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

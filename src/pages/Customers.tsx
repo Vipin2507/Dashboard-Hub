@@ -6,7 +6,6 @@ import { mapCustomersApiRowsToStore, patchCustomerRowInStore, persistCustomerCre
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { apiUrl } from "@/lib/api";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +17,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { currentMonthYmd } from "@/lib/dateRange";
@@ -29,6 +29,8 @@ import {
   saveSessionFilters,
 } from "@/lib/filterSessionPersistence";
 import { FilterPanel } from "@/components/FilterPanel";
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
 import {
   Building2,
   Plus,
@@ -40,6 +42,12 @@ import {
   LayoutGrid,
   List,
   Upload,
+  Users,
+  UserPlus,
+  DollarSign,
+  CheckCircle,
+  Loader2,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSmUp } from "@/hooks/useSmUp";
@@ -60,6 +68,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
+import { motion } from "framer-motion";
 
 const VIEW_STORAGE_KEY = "buildesk_customers_view";
 const TABLE_PAGE_SIZE = 10;
@@ -74,24 +84,77 @@ const STATUS_OPTIONS: { value: CustomerStatus | "all"; label: string }[] = [
   { value: "blacklisted", label: "Blacklisted" },
 ];
 
-const STATUS_PILL: Record<string, string> = {
-  active: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
-  inactive: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
-  lead: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-  churned: "bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-  blacklisted: "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300",
-};
+function statusTone(status: CustomerStatus): StatusTone {
+  if (status === "active") return "success";
+  if (status === "lead") return "info";
+  if (status === "churned") return "warning";
+  if (status === "blacklisted") return "danger";
+  return "muted";
+}
 
 function CustomerStatusBadge({ status }: { status: CustomerStatus }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
-        STATUS_PILL[status] ?? STATUS_PILL.inactive,
-      )}
-    >
+    <StatusPill tone={statusTone(status)} className="capitalize">
       {status}
-    </span>
+    </StatusPill>
+  );
+}
+
+function CustomerKpiCard({
+  label,
+  value,
+  sub,
+  icon: Icon,
+  iconColor,
+  iconBg,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
+  const isPlainInt = /^\d+$/.test(String(value).trim());
+  const inner = (
+    <>
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", iconBg)}>
+        <Icon className={cn("h-3.5 w-3.5", iconColor)} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+        <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+          {isPlainInt ? <CountUp value={Number(value)} /> : value}
+        </p>
+        <p className="truncate text-[10px] text-muted-foreground">{sub}</p>
+      </div>
+    </>
+  );
+  if (onClick) {
+    return (
+      <motion.button
+        type="button"
+        onClick={onClick}
+        variants={staggerItem}
+        whileHover={hoverLift}
+        whileTap={tapPress}
+        className={cn(
+          "card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0",
+          active && "border-primary/40 bg-primary/5",
+        )}
+      >
+        {inner}
+      </motion.button>
+    );
+  }
+  return (
+    <motion.div variants={staggerItem} className="card-kpi w-full">
+      {inner}
+    </motion.div>
   );
 }
 
@@ -122,9 +185,36 @@ function defaultCustomerFilters(): PersistedCustomerFilters {
   };
 }
 
+function filtersFromSearchParams(params: URLSearchParams): Partial<PersistedCustomerFilters> {
+  const next: Partial<PersistedCustomerFilters> = {};
+  const q = params.get("q");
+  const status = params.get("status");
+  const owner = params.get("owner");
+  const team = params.get("team");
+  const region = params.get("region");
+  const from = params.get("from");
+  const to = params.get("to");
+  const range = params.get("range");
+  if (q != null) next.search = q;
+  if (status && STATUS_OPTIONS.some((s) => s.value === status)) {
+    next.statusFilter = status as CustomerStatus | "all";
+  }
+  if (owner) next.assignedToFilter = owner;
+  if (team) next.teamQueryFilter = team;
+  if (region) next.regionFilter = region;
+  if (range === "all") {
+    next.dateFrom = "";
+    next.dateTo = "";
+  } else {
+    if (from) next.dateFrom = from;
+    if (to) next.dateTo = to;
+  }
+  return next;
+}
+
 function loadInitialCustomerFilters(searchParams: URLSearchParams): PersistedCustomerFilters {
-  if (hasAnySearchParam(searchParams, ["q", "status", "owner", "team", "region", "from", "to"])) {
-    return defaultCustomerFilters();
+  if (hasAnySearchParam(searchParams, ["q", "status", "owner", "team", "region", "from", "to", "range", "tab"])) {
+    return { ...defaultCustomerFilters(), ...filtersFromSearchParams(searchParams) };
   }
   return loadSessionFilters<PersistedCustomerFilters>(FILTER_SESSION_KEYS.customers) ?? defaultCustomerFilters();
 }
@@ -138,6 +228,7 @@ export default function Customers() {
   const setCustomers = useAppStore((s) => s.setCustomers);
   const regions = useAppStore((s) => s.regions);
   const users = useAppStore((s) => s.users);
+  const teams = useAppStore((s) => s.teams);
   const updateCustomer = useAppStore((s) => s.updateCustomer);
   const deleteCustomer = useAppStore((s) => s.deleteCustomer);
 
@@ -198,7 +289,9 @@ export default function Customers() {
   const [createSuccessOpen, setCreateSuccessOpen] = useState(false);
   const [createdCustomerId, setCreatedCustomerId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
-  const [customerModuleTab, setCustomerModuleTab] = useState<"directory" | "renewals">("directory");
+  const [customerModuleTab, setCustomerModuleTab] = useState<"directory" | "renewals">(
+    () => (searchParams.get("tab") === "renewals" ? "renewals" : "directory"),
+  );
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   useEffect(() => {
@@ -213,13 +306,21 @@ export default function Customers() {
     const region = searchParams.get("region");
     const from = searchParams.get("from");
     const to = searchParams.get("to");
-    if (q) setSearch(q);
+    const range = searchParams.get("range");
+    const tab = searchParams.get("tab");
+    if (q != null) setSearch(q);
     if (status && STATUS_OPTIONS.some((s) => s.value === status)) setStatusFilter(status as CustomerStatus | "all");
     if (owner) setAssignedToFilter(owner);
     if (team) setTeamQueryFilter(team);
     if (region) setRegionFilter(region);
-    if (from) setDateFrom(from);
-    if (to) setDateTo(to);
+    if (range === "all") {
+      setDateFrom("");
+      setDateTo("");
+    } else {
+      if (from) setDateFrom(from);
+      if (to) setDateTo(to);
+    }
+    if (tab === "renewals" || tab === "directory") setCustomerModuleTab(tab);
   }, [searchParams]);
 
   useEffect(() => {
@@ -302,16 +403,11 @@ export default function Customers() {
     return list;
   }, [visible, search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, dateFrom, dateTo, industryFilter, tagsFilter]);
 
-  const effectiveViewMode = smUp ? viewMode : "table";
-  const totalPages =
-    effectiveViewMode === "table"
-      ? Math.max(1, Math.ceil(filtered.length / TABLE_PAGE_SIZE))
-      : Math.max(1, Math.ceil(filtered.length / CARD_PAGE_SIZE));
+  const listLayout: "stack" | "table" | "card" = smUp ? viewMode : "stack";
+  const pageSize = listLayout === "card" ? CARD_PAGE_SIZE : TABLE_PAGE_SIZE;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageItems =
-    effectiveViewMode === "table"
-      ? filtered.slice((currentPage - 1) * TABLE_PAGE_SIZE, currentPage * TABLE_PAGE_SIZE)
-      : filtered.slice((currentPage - 1) * CARD_PAGE_SIZE, currentPage * CARD_PAGE_SIZE);
+  const pageItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const totalRevenue = useMemo(() => filtered.reduce((s, c) => s + c.totalRevenue, 0), [filtered]);
   const activeCount = useMemo(() => filtered.filter((c) => c.status === "active").length, [filtered]);
@@ -386,28 +482,31 @@ export default function Customers() {
 
   const primaryContact = (c: Customer) => c.contacts.find((x) => x.isPrimary) ?? c.contacts[0];
 
+  const month = currentMonthYmd();
+  const dateChip = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : null;
+
   return (
     <>
       <Topbar
         title="Customers"
         subtitle={
           customerModuleTab === "renewals"
-            ? "Renewal & subscription tracker"
-            : `${filtered.length} customers across all regions`
+            ? smUp
+              ? "Expiries, reminders, and renewals."
+              : undefined
+            : `${filtered.length} in scope`
         }
         actions={
           customerModuleTab === "directory" ? (
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <div className="hidden items-center rounded-md border border-border bg-muted/40 p-0.5 sm:flex">
                 <button
                   type="button"
                   title="Table view"
                   onClick={() => persistView("table")}
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                    viewMode === "table"
-                      ? "bg-background text-primary shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "flex h-7 w-7 items-center justify-center rounded-[5px] transition-colors",
+                    viewMode === "table" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <List className="h-3.5 w-3.5" />
@@ -417,10 +516,8 @@ export default function Customers() {
                   title="Card view"
                   onClick={() => persistView("card")}
                   className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                    viewMode === "card"
-                      ? "bg-background text-primary shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "flex h-7 w-7 items-center justify-center rounded-[5px] transition-colors",
+                    viewMode === "card" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <LayoutGrid className="h-3.5 w-3.5" />
@@ -428,24 +525,20 @@ export default function Customers() {
               </div>
               {canCreate && (
                 <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 shrink-0 px-4 text-sm font-medium"
-                    onClick={() => setBulkImportOpen(true)}
-                  >
-                    <Upload className="mr-1.5 h-4 w-4 shrink-0" />
-                    <span className="hidden sm:inline">Bulk import</span>
+                  <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setBulkImportOpen(true)}>
+                    <Upload className="mr-1 h-3.5 w-3.5 shrink-0" />
+                    <span className="hidden sm:inline">Import</span>
                   </Button>
                   <Button
-                    className="h-9 shrink-0 px-4 text-sm font-medium"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs"
                     onClick={() => {
                       setEditingCustomer(null);
                       setFormOpen(true);
                     }}
                   >
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    Add Customer
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    Add
                   </Button>
                 </>
               )}
@@ -453,74 +546,147 @@ export default function Customers() {
           ) : undefined
         }
       />
-      <div className="w-full space-y-5">
-        {customersQuery.isLoading && (
-          <div className="text-sm text-muted-foreground">Loading customers...</div>
-        )}
-        <div className="flex flex-wrap gap-2">
-          <Button
+      <div className="space-y-2.5">
+        <div className="inline-flex h-8 items-center rounded-lg border border-border bg-muted/40 p-0.5">
+          <button
             type="button"
-            variant={customerModuleTab === "directory" ? "default" : "outline"}
-            size="sm"
             onClick={() => setCustomerModuleTab("directory")}
+            className={cn(
+              "h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors",
+              customerModuleTab === "directory" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
           >
-            Customer directory
-          </Button>
-          <Button
+            Directory
+          </button>
+          <button
             type="button"
-            variant={customerModuleTab === "renewals" ? "default" : "outline"}
-            size="sm"
             onClick={() => setCustomerModuleTab("renewals")}
+            className={cn(
+              "h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors",
+              customerModuleTab === "renewals" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
           >
-            Renewal &amp; subscription tracker
-          </Button>
+            Renewals
+          </button>
         </div>
         {customerModuleTab === "renewals" ? (
           <RenewalSubscriptionTracker />
         ) : (
-          <div className="w-full space-y-5">
-              {/* STAT CARDS */}
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-                {(
-                  [
-                    {
-                      label: "Total",
-                      value: String(filtered.length),
-                      color: "text-gray-900 dark:text-gray-100",
-                    },
-                    { label: "Active", value: String(activeCount), color: "text-emerald-600" },
-                    {
-                      label: "Revenue",
-                      value: formatINR(totalRevenue),
-                      color: "text-blue-600 dark:text-blue-400",
-                    },
-                    {
-                      label: "New This Month",
-                      value: String(newThisMonth),
-                      color: "text-purple-600 dark:text-purple-400",
-                    },
-                  ] as const
-                ).map(({ label, value, color }) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900"
-                  >
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                      {label}
-                    </p>
-                    <p className={cn("text-2xl font-bold tracking-tight", color)}>{value}</p>
-                  </div>
-                ))}
-              </div>
+          <div className="space-y-2.5">
+            {customersQuery.isLoading && (
+              <p className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Syncing customers
+              </p>
+            )}
+            <motion.div
+              variants={staggerContainer}
+              initial="initial"
+              animate="animate"
+              className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4"
+            >
+              <CustomerKpiCard
+                label="Total"
+                value={String(filtered.length)}
+                sub="In current filters"
+                icon={Users}
+                iconColor="text-primary"
+                iconBg="bg-primary/10"
+                active={statusFilter === "all"}
+                onClick={() => {
+                  setStatusFilter("all");
+                  setPage(1);
+                }}
+              />
+              <CustomerKpiCard
+                label="Active"
+                value={String(activeCount)}
+                sub="Paying accounts"
+                icon={CheckCircle}
+                iconColor="text-success"
+                iconBg="bg-success/15"
+                active={statusFilter === "active"}
+                onClick={() => {
+                  setStatusFilter("active");
+                  setPage(1);
+                }}
+              />
+              <CustomerKpiCard
+                label="Revenue"
+                value={formatINR(totalRevenue)}
+                sub="Lifetime collected"
+                icon={DollarSign}
+                iconColor="text-success"
+                iconBg="bg-success/15"
+              />
+              <CustomerKpiCard
+                label="New this month"
+                value={String(newThisMonth)}
+                sub="Created in calendar month"
+                icon={UserPlus}
+                iconColor="text-info"
+                iconBg="bg-info/15"
+                active={dateFrom === month.from && dateTo === month.to}
+                onClick={() => {
+                  setDateFrom(month.from);
+                  setDateTo(month.to);
+                  setPage(1);
+                }}
+              />
+            </motion.div>
 
-              {/* FILTERS */}
-              <FilterPanel title="Filters" storageKey="ui:customers:filtersOpen">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
-                  <div className="relative min-w-0 max-w-sm flex-1">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <FilterPanel
+              title="Filters"
+              storageKey="ui:customers:filtersOpen"
+              defaultOpen={smUp}
+              headerActions={
+                hasActiveAppliedFilters ? (
+                  <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
+                    {dateChip ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                        {dateChip}
+                      </span>
+                    ) : null}
+                    {statusFilter !== "all" ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] capitalize text-muted-foreground">
+                        {statusFilter}
+                      </span>
+                    ) : null}
+                    {assignedToFilter !== "all" ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {users.find((u) => u.id === assignedToFilter)?.name ?? "Owner"}
+                      </span>
+                    ) : null}
+                    {teamQueryFilter !== "all" ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {teams.find((t) => t.id === teamQueryFilter)?.name ?? "Team"}
+                      </span>
+                    ) : null}
+                    {regionFilter !== "all" ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {regions.find((r) => r.id === regionFilter)?.name ?? "Region"}
+                      </span>
+                    ) : null}
+                    {industryFilter !== "all" ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {industryFilter}
+                      </span>
+                    ) : null}
+                    {tagsFilter ? (
+                      <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {tagsFilter}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null
+              }
+            >
+              <div className="flex min-w-0 flex-col gap-2.5">
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      placeholder="Search company, GSTIN..."
-                      className="h-9 pl-9 text-sm"
+                      placeholder="Search company, GSTIN, city…"
+                      className="h-9 pl-8 text-sm"
                       value={search}
                       onChange={(e) => {
                         setSearch(e.target.value);
@@ -528,391 +694,479 @@ export default function Customers() {
                       }}
                     />
                   </div>
-                  <div className="scrollbar-none flex flex-shrink-0 items-center gap-1.5 overflow-x-auto">
-                    {["All", "Active", "Inactive", "Lead", "Churned", "Blacklisted"].map((s) => (
+                  <div className="scrollbar-none -mx-1 flex items-center gap-1 overflow-x-auto px-1 sm:max-w-[min(100%,28rem)] sm:flex-shrink-0">
+                    {STATUS_OPTIONS.map((s) => (
                       <button
-                        key={s}
+                        key={s.value}
                         type="button"
                         onClick={() => {
-                          setStatusFilter((s === "All" ? "all" : s.toLowerCase()) as CustomerStatus | "all");
+                          setStatusFilter(s.value);
                           setPage(1);
                         }}
                         className={cn(
-                          "h-8 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition-colors duration-150",
-                          statusFilter === (s === "All" ? "all" : s.toLowerCase())
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700",
+                          "h-7 shrink-0 whitespace-nowrap rounded-md px-2 text-[11px] font-medium transition-colors",
+                          statusFilter === s.value
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
                         )}
                       >
-                        {s}
+                        {s.label}
                       </button>
                     ))}
                   </div>
-                  <div className="ml-auto flex flex-shrink-0 flex-wrap items-center gap-2">
-                    <div className="min-w-[200px]">
-                      <Datepicker
-                        controls={["calendar"]}
-                        select="range"
-                        touchUi={true}
-                        inputComponent="input"
-                        inputProps={{
-                          placeholder: "Created date…",
-                          className: "h-9 w-full text-sm",
-                        }}
-                        value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
-                        onChange={(ev) => {
-                          const [f, t] = ev.value;
-                          setDateFrom(f ? dateToYmd(f) : "");
-                          setDateTo(t ? dateToYmd(t) : "");
-                          setPage(1);
-                        }}
-                      />
+                </div>
+                <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  <Datepicker
+                    controls={["calendar"]}
+                    select="range"
+                    touchUi={true}
+                    inputComponent="input"
+                    inputProps={{
+                      placeholder: "Created date…",
+                      className: "h-9 w-full text-sm",
+                    }}
+                    value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
+                    onChange={(ev) => {
+                      const [f, t] = ev.value;
+                      setDateFrom(f ? dateToYmd(f) : "");
+                      setDateTo(t ? dateToYmd(t) : "");
+                      setPage(1);
+                    }}
+                  />
+                  <Select
+                    value={assignedToFilter}
+                    onValueChange={(v) => {
+                      setAssignedToFilter(v);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="All owners" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All owners</SelectItem>
+                      {users.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={teamQueryFilter}
+                    onValueChange={(v) => {
+                      setTeamQueryFilter(v);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="All teams" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All teams</SelectItem>
+                      {teams.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={regionFilter}
+                    onValueChange={(v) => {
+                      setRegionFilter(v);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="All regions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All regions</SelectItem>
+                      {regions.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={industryFilter}
+                    onValueChange={(v) => {
+                      setIndustryFilter(v);
+                      setPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-full">
+                      <SelectValue placeholder="All industries" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All industries</SelectItem>
+                      {industries.map((ind) => (
+                        <SelectItem key={ind} value={ind!}>
+                          {ind}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <SearchableSelect
+                    value={tagsFilter}
+                    onValueChange={(v) => {
+                      setTagsFilter(v === "__all__" ? "" : v);
+                      setPage(1);
+                    }}
+                    options={[
+                      { value: "__all__", label: "All tags" },
+                      ...allTags.map((t) => ({ value: t, label: t })),
+                    ]}
+                    placeholder="All tags"
+                    searchPlaceholder="Search tags…"
+                    emptyText="No tags found."
+                    triggerClassName="h-9 w-full text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {canExport && (
+                    <Button variant="outline" size="sm" className="h-8 flex-1 px-2.5 text-xs sm:flex-none" onClick={handleExportCsv}>
+                      <FileDown className="mr-1 h-3.5 w-3.5" /> Export
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 flex-1 px-2.5 text-xs sm:flex-none"
+                    disabled={!hasActiveAppliedFilters}
+                    onClick={clearFilters}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            </FilterPanel>
+
+            {listLayout === "stack" && (
+              <motion.div variants={staggerItem} initial="initial" animate="animate" className="card-soft overflow-hidden">
+                {filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                      <Building2 className="h-5 w-5 text-muted-foreground" />
                     </div>
-                    <Select
-                      value={regionFilter}
-                      onValueChange={(v) => {
-                        setRegionFilter(v);
-                        setPage(1);
-                      }}
-                    >
-                      <SelectTrigger className="h-9 w-full text-sm sm:w-36">
-                        <SelectValue placeholder="All regions" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All regions</SelectItem>
-                        {regions.map((r) => (
-                          <SelectItem key={r.id} value={r.id}>
-                            {r.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Select
-                      value={industryFilter}
-                      onValueChange={(v) => {
-                        setIndustryFilter(v);
-                        setPage(1);
-                      }}
-                    >
-                      <SelectTrigger className="h-9 w-full text-sm sm:w-40">
-                        <SelectValue placeholder="All industries" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All industries</SelectItem>
-                        {industries.map((ind) => (
-                          <SelectItem key={ind} value={ind!}>
-                            {ind}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <SearchableSelect
-                      value={tagsFilter}
-                      onValueChange={(v) => {
-                        setTagsFilter(v === "__all__" ? "" : v);
-                        setPage(1);
-                      }}
-                      options={[
-                        { value: "__all__", label: "All tags" },
-                        ...allTags.map((t) => ({ value: t, label: t })),
-                      ]}
-                      placeholder="All tags"
-                      searchPlaceholder="Search tags…"
-                      emptyText="No tags found."
-                      triggerClassName="h-9 text-sm w-full sm:w-40"
-                    />
-                    {canExport && (
-                      <Button variant="outline" size="sm" className="h-9" onClick={handleExportCsv}>
-                        <FileDown className="mr-1.5 h-4 w-4" /> Export
+                    <p className="text-sm font-medium">No customers found</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">Adjust filters or add a customer.</p>
+                    {canCreate && (
+                      <Button size="sm" className="mt-3 h-8 px-2.5 text-xs" onClick={() => setFormOpen(true)}>
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9"
-                      disabled={!hasActiveAppliedFilters}
-                      onClick={clearFilters}
-                    >
-                      Clear
-                    </Button>
                   </div>
-                </div>
-              </FilterPanel>
-
-              {/* TABLE */}
-              {effectiveViewMode === "table" && (
-                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                  {filtered.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-                      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-                        <Building2 className="h-8 w-8 text-muted-foreground" />
-                      </div>
-                      <p className="text-sm font-medium text-foreground">No customers found</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Add your first customer to get started.</p>
-                      {canCreate && (
-                        <Button size="sm" className="mt-4" onClick={() => setFormOpen(true)}>
-                          + Add Customer
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="overflow-x-auto">
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="border-b border-gray-100 bg-gray-50/80 dark:border-gray-800 dark:bg-gray-900">
-                              {["Customer #", "Company", "Contact", "City", "Status", "Revenue", "Actions"].map(
-                                (h) => (
-                                  <th
-                                    key={h}
-                                    className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 first:pl-5 last:pr-5 whitespace-nowrap dark:text-gray-400"
-                                  >
-                                    {h}
-                                  </th>
-                                ),
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {pageItems.map((c) => {
-                              const pc = primaryContact(c);
-                              return (
-                                <tr
-                                  key={c.id}
-                                  role="button"
-                                  tabIndex={0}
-                                  className="cursor-pointer border-b border-gray-100 transition-colors duration-100 hover:bg-gray-50/70 dark:border-gray-800 dark:hover:bg-gray-800/50"
-                                  onClick={() => navigate(`/customers/${c.id}`)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      navigate(`/customers/${c.id}`);
-                                    }
-                                  }}
-                                >
-                                  <td className="px-4 py-3.5 first:pl-5">
-                                    <span className="font-mono text-sm font-medium text-blue-600 hover:text-blue-700">
-                                      {c.customerNumber}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3.5">
-                                    <div>
-                                      <p className="text-sm font-medium leading-snug text-gray-900 dark:text-gray-100">
-                                        {c.companyName || c.customerName}
-                                      </p>
-                                      <p className="mt-0.5 text-xs text-gray-400">
-                                        {c.customerName || c.companyName}
-                                      </p>
-                                      {c.industry && <p className="mt-0.5 text-xs text-gray-400">{c.industry}</p>}
-                                    </div>
-                                  </td>
-                                  <td className="hidden px-4 py-3.5 md:table-cell">
-                                    <p className="text-sm text-gray-700 dark:text-gray-300">{pc?.name ?? "—"}</p>
-                                    {pc?.email && (
-                                      <p className="mt-0.5 text-xs text-gray-400">{pc.email}</p>
-                                    )}
-                                  </td>
-                                  <td className="hidden px-4 py-3.5 lg:table-cell">
-                                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                                      {c.address?.city ?? "—"}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3.5">
-                                    <CustomerStatusBadge status={c.status} />
-                                  </td>
-                                  <td className="px-4 py-3.5">
-                                    <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                      ₹{c.totalRevenue.toLocaleString("en-IN")}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3.5 last:pr-5">
-                                    <div
-                                      className="flex items-center gap-1"
-                                      onClick={(e) => e.stopPropagation()}
-                                      role="presentation"
-                                    >
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 w-7 rounded-md p-0"
-                                        title="View"
-                                        onClick={() => navigate(`/customers/${c.id}`)}
-                                      >
-                                        <Eye className="h-3.5 w-3.5" />
-                                      </Button>
-                                      {canUpdateCustomer(c) && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 w-7 rounded-md p-0"
-                                          title="Edit"
-                                          onClick={() => {
-                                            setEditingCustomer(c);
-                                            setFormOpen(true);
-                                          }}
-                                        >
-                                          <Pencil className="h-3.5 w-3.5" />
-                                        </Button>
-                                      )}
-                                      {canDeleteCustomer(c) && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 w-7 rounded-md p-0 text-destructive"
-                                          title="Delete"
-                                          onClick={() => setDeleteTarget(c)}
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      {filtered.length > TABLE_PAGE_SIZE && (
-                        <DataTablePagination
-                          className="border-t border-gray-100 px-5 py-3 dark:border-gray-800"
-                          page={currentPage}
-                          totalPages={totalPages}
-                          total={filtered.length}
-                          perPage={TABLE_PAGE_SIZE}
-                          onPageChange={setPage}
-                        />
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* CARD GRID */}
-              {effectiveViewMode === "card" && (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.length === 0 ? (
-              <Card className="col-span-full border border-border">
-                <CardContent className="flex flex-col items-center justify-center py-16 px-6">
-                  <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
-                  <p className="text-sm font-medium text-foreground">No customers found</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Add your first customer to get started.
-                  </p>
-                  {canCreate && (
-                    <Button size="sm" className="mt-4" onClick={() => setFormOpen(true)}>
-                      + Add Customer
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ) : (
-              pageItems.map((c) => {
-                const pc = primaryContact(c);
-                const assignedUser = users.find((u) => u.id === c.assignedTo);
-                return (
-                  <Card
-                    key={c.id}
-                    className="flex flex-col overflow-hidden border border-gray-200 bg-card shadow-none transition-shadow hover:shadow-sm dark:border-gray-800"
-                  >
-                    <CardContent className="flex flex-1 flex-col p-4 sm:p-5">
-                      <div className="mb-3 flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">
-                            {c.companyName || c.customerName}
-                          </h3>
-                          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400 truncate">
-                            {c.customerName || c.companyName}
-                          </p>
-                          <p className="mt-0.5 font-mono text-xs text-gray-400">{c.customerNumber}</p>
-                        </div>
-                        <span
-                          className={cn(
-                            "inline-flex flex-shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium capitalize",
-                            STATUS_PILL[c.status] ?? STATUS_PILL.inactive
-                          )}
-                        >
-                          {c.status}
-                        </span>
-                      </div>
-                      <div className="space-y-1.5">
-                        {pc && (
-                          <p className="text-xs text-gray-600 dark:text-gray-400">
-                            {pc.name}
-                            {pc.email ? ` · ${pc.email}` : ""}
-                          </p>
-                        )}
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {c.address?.city ?? "—"} · {c.regionName}
-                        </p>
-                        <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                          {formatINR(c.totalRevenue)}
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          <Badge variant="outline" className="text-[10px]">
-                            Proposals: {c.activeProposalsCount}
-                          </Badge>
-                          <Badge variant="outline" className="text-[10px]">
-                            Deals: {c.activeDealsCount}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
-                        <Avatar className="h-8 w-8 shrink-0">
-                          <AvatarFallback className="text-[10px]">
-                            {assignedUser?.name
-                              ?.split(" ")
-                              .map((n) => n[0])
-                              .join("")
-                              .slice(0, 2) ?? "—"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex min-w-0 flex-1 justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 flex-1 text-xs sm:flex-none"
+                ) : (
+                  <>
+                    <div className="divide-y divide-border">
+                      {pageItems.map((c) => (
+                        <div key={c.id} className="flex items-start gap-2 px-2.5 py-2.5">
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left"
                             onClick={() => navigate(`/customers/${c.id}`)}
                           >
-                            <Eye className="mr-1.5 h-3.5 w-3.5" />
-                            View
-                          </Button>
-                          {canUpdateCustomer(c) && (
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">{c.companyName || c.customerName}</p>
+                                <p className="truncate font-mono text-[11px] text-primary">{c.customerNumber}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {c.address?.city ?? c.industry ?? "—"}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <CustomerStatusBadge status={c.status} />
+                                <p className="mt-1 text-xs font-semibold tabular-nums">{formatINR(c.totalRevenue)}</p>
+                              </div>
+                            </div>
+                          </button>
+                          <div className="flex shrink-0 flex-col gap-0.5">
+                            {canUpdateCustomer(c) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                title="Edit"
+                                onClick={() => {
+                                  setEditingCustomer(c);
+                                  setFormOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                            {canDeleteCustomer(c) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-destructive"
+                                title="Delete"
+                                onClick={() => setDeleteTarget(c)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {filtered.length > pageSize && (
+                      <DataTablePagination
+                        className="border-t border-border px-2.5 py-2"
+                        page={currentPage}
+                        totalPages={totalPages}
+                        total={filtered.length}
+                        perPage={pageSize}
+                        onPageChange={setPage}
+                      />
+                    )}
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {listLayout === "table" && (
+              <motion.div variants={staggerItem} initial="initial" animate="animate" className="card-soft overflow-hidden">
+                {filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                      <Building2 className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm font-medium">No customers found</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">Adjust filters or add a customer.</p>
+                    {canCreate && (
+                      <Button size="sm" className="mt-3 h-8 px-2.5 text-xs" onClick={() => setFormOpen(true)}>
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="scrollbar-soft overflow-x-auto">
+                    <Table responsiveShell={false}>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer #</TableHead>
+                          <TableHead>Company</TableHead>
+                          <TableHead className="hidden md:table-cell">Contact</TableHead>
+                          <TableHead className="hidden lg:table-cell">City</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pageItems.map((c) => {
+                          const pc = primaryContact(c);
+                          return (
+                            <TableRow
+                              key={c.id}
+                              role="button"
+                              tabIndex={0}
+                              className="cursor-pointer"
+                              onClick={() => navigate(`/customers/${c.id}`)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  navigate(`/customers/${c.id}`);
+                                }
+                              }}
+                            >
+                              <TableCell>
+                                <span className="font-mono text-xs font-medium text-primary">{c.customerNumber}</span>
+                              </TableCell>
+                              <TableCell className="max-w-[14rem]">
+                                <p className="truncate font-medium leading-snug">{c.companyName || c.customerName}</p>
+                                <p className="truncate text-[11px] text-muted-foreground">
+                                  {c.industry || c.customerName || c.assignedToName || "—"}
+                                </p>
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell">
+                                <p>{pc?.name ?? "—"}</p>
+                                {pc?.email ? <p className="truncate text-[11px] text-muted-foreground">{pc.email}</p> : null}
+                              </TableCell>
+                              <TableCell className="hidden text-muted-foreground lg:table-cell">
+                                {c.address?.city ?? "—"}
+                              </TableCell>
+                              <TableCell>
+                                <CustomerStatusBadge status={c.status} />
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-right tabular-nums font-medium">
+                                {formatINR(c.totalRevenue)}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div
+                                  className="flex items-center justify-end gap-0.5"
+                                  onClick={(e) => e.stopPropagation()}
+                                  role="presentation"
+                                >
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    title="View"
+                                    onClick={() => navigate(`/customers/${c.id}`)}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                  </Button>
+                                  {canUpdateCustomer(c) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-7 p-0"
+                                      title="Edit"
+                                      onClick={() => {
+                                        setEditingCustomer(c);
+                                        setFormOpen(true);
+                                      }}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                  {canDeleteCustomer(c) && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 w-7 p-0 text-destructive"
+                                      title="Delete"
+                                      onClick={() => setDeleteTarget(c)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                    </div>
+                    {filtered.length > pageSize && (
+                      <DataTablePagination
+                        className="border-t border-border px-2.5 py-2"
+                        page={currentPage}
+                        totalPages={totalPages}
+                        total={filtered.length}
+                        perPage={pageSize}
+                        onPageChange={setPage}
+                      />
+                    )}
+                  </>
+                )}
+              </motion.div>
+            )}
+
+            {listLayout === "card" && (
+              <motion.div
+                variants={staggerContainer}
+                initial="initial"
+                animate="animate"
+                className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 xl:grid-cols-3"
+              >
+                {filtered.length === 0 ? (
+                  <div className="card-soft col-span-full flex flex-col items-center justify-center px-4 py-12 text-center">
+                    <Building2 className="mb-3 h-5 w-5 text-muted-foreground" />
+                    <p className="text-sm font-medium">No customers found</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">Adjust filters or add a customer.</p>
+                    {canCreate && (
+                      <Button size="sm" className="mt-3 h-8 px-2.5 text-xs" onClick={() => setFormOpen(true)}>
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  pageItems.map((c) => {
+                    const pc = primaryContact(c);
+                    const assignedUser = users.find((u) => u.id === c.assignedTo);
+                    return (
+                      <motion.div
+                        key={c.id}
+                        variants={staggerItem}
+                        whileHover={hoverLift}
+                        className="card-soft flex flex-col p-2.5"
+                      >
+                        <div className="mb-2 flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{c.companyName || c.customerName}</p>
+                            <p className="truncate font-mono text-[11px] text-muted-foreground">{c.customerNumber}</p>
+                          </div>
+                          <CustomerStatusBadge status={c.status} />
+                        </div>
+                        <p className="truncate text-[11px] text-muted-foreground">
+                          {pc ? `${pc.name}${pc.email ? ` · ${pc.email}` : ""}` : "No contact"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          {c.address?.city ?? "—"}
+                          {c.regionName ? ` · ${c.regionName}` : ""}
+                        </p>
+                        <p className="mt-1.5 text-sm font-semibold tabular-nums">{formatINR(c.totalRevenue)}</p>
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                            {c.activeProposalsCount} proposals
+                          </Badge>
+                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                            {c.activeDealsCount} deals
+                          </Badge>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2 border-t border-border pt-2">
+                          <Avatar className="h-6 w-6 shrink-0">
+                            <AvatarFallback className="text-[9px]">
+                              {assignedUser?.name
+                                ?.split(" ")
+                                .map((n) => n[0])
+                                .join("")
+                                .slice(0, 2) ?? "—"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex gap-1">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-8 flex-1 text-xs sm:flex-none"
-                              onClick={() => {
-                                setEditingCustomer(c);
-                                setFormOpen(true);
-                              }}
+                              className="h-7 px-2 text-[11px]"
+                              onClick={() => navigate(`/customers/${c.id}`)}
                             >
-                              <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                              Edit
+                              <Eye className="mr-1 h-3 w-3" />
+                              View
                             </Button>
-                          )}
+                            {canUpdateCustomer(c) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-[11px]"
+                                onClick={() => {
+                                  setEditingCustomer(c);
+                                  setFormOpen(true);
+                                }}
+                              >
+                                <Pencil className="mr-1 h-3 w-3" />
+                                Edit
+                              </Button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })
+                      </motion.div>
+                    );
+                  })
+                )}
+              </motion.div>
+            )}
+
+            {listLayout === "card" && filtered.length > pageSize && (
+              <DataTablePagination
+                className="card-soft px-2.5 py-2"
+                page={currentPage}
+                totalPages={totalPages}
+                total={filtered.length}
+                perPage={pageSize}
+                onPageChange={setPage}
+              />
             )}
           </div>
-              )}
-
-              {effectiveViewMode === "card" && filtered.length > CARD_PAGE_SIZE && (
-                <DataTablePagination
-                  className="rounded-xl border border-gray-200 bg-white px-5 py-3 dark:border-gray-800 dark:bg-gray-900"
-                  page={currentPage}
-                  totalPages={totalPages}
-                  total={filtered.length}
-                  perPage={CARD_PAGE_SIZE}
-                  onPageChange={setPage}
-                />
-              )}
-            </div>
         )}
       </div>
 
@@ -962,7 +1216,7 @@ export default function Customers() {
               Go to Customer List
             </AlertDialogCancel>
             <AlertDialogAction
-              className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full sm:w-auto"
               onClick={() => {
                 const cid = createdCustomerId;
                 setCreateSuccessOpen(false);

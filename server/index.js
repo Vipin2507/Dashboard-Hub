@@ -701,6 +701,51 @@ app.get("/api/notifications", (_req, res) => {
   res.json(rows);
 });
 
+app.get("/api/notifications/reads", (req, res) => {
+  const userId = String(req.query.userId || "").trim();
+  if (!userId) return res.status(400).json({ error: "userId is required" });
+  const rows = db
+    .prepare("SELECT notificationId FROM notification_reads WHERE userId = ?")
+    .all(userId);
+  res.json({ ids: rows.map((r) => r.notificationId) });
+});
+
+app.post("/api/notifications/read", (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((id) => String(id)).filter(Boolean) : [];
+  if (!userId || ids.length === 0) {
+    return res.status(400).json({ error: "userId and ids are required" });
+  }
+  const readAt = new Date().toISOString();
+  const stmt = db.prepare(
+    "INSERT OR IGNORE INTO notification_reads (userId, notificationId, readAt) VALUES (?, ?, ?)",
+  );
+  const run = db.transaction((list) => {
+    for (const id of list) stmt.run(userId, id, readAt);
+  });
+  run(ids);
+  res.json({ ok: true, ids });
+});
+
+app.post("/api/notifications/read-all", (req, res) => {
+  const userId = String(req.body?.userId || "").trim();
+  if (!userId) return res.status(400).json({ error: "userId is required" });
+  const readAt = new Date().toISOString();
+  const existing = new Set(
+    db.prepare("SELECT notificationId FROM notification_reads WHERE userId = ?").all(userId).map((r) => r.notificationId),
+  );
+  const all = db.prepare("SELECT id FROM notifications").all();
+  const stmt = db.prepare(
+    "INSERT OR IGNORE INTO notification_reads (userId, notificationId, readAt) VALUES (?, ?, ?)",
+  );
+  const toInsert = all.map((r) => r.id).filter((id) => !existing.has(id));
+  const run = db.transaction((list) => {
+    for (const id of list) stmt.run(userId, id, readAt);
+  });
+  run(toInsert);
+  res.json({ ok: true, count: toInsert.length });
+});
+
 app.post("/api/notifications", (req, res) => {
   const { id, type, to, subject, entityId, at } = req.body || {};
   if (!type || !to || !subject || !entityId || !at) {

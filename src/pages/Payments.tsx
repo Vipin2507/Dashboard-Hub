@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Topbar } from '@/components/Topbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -233,11 +234,17 @@ export default function Payments() {
   const canDelete = can(me.role, 'payments', 'delete');
   const canConfirm = me.role === 'finance' || me.role === 'super_admin';
 
+  const [searchParams] = useSearchParams();
   const remainingQ = useRemainingBalances();
   const overdueQ = useOverduePayments();
   const dueQ = useDuePayments();
   const historyQ = usePaymentHistory();
   const catalogQ = usePaymentCatalog();
+  const paymentTabs = ['overview', 'due', 'overdue', 'history', 'catalog'] as const;
+  const tabFromUrl = searchParams.get('tab');
+  const [paymentTab, setPaymentTab] = useState(() =>
+    paymentTabs.includes(tabFromUrl as (typeof paymentTabs)[number]) ? tabFromUrl! : 'overview',
+  );
 
   const [editing, setEditing] = useState<PaymentPlanCatalog | null>(null);
   const [creating, setCreating] = useState(false);
@@ -314,7 +321,7 @@ export default function Payments() {
           />
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs value={paymentTab} onValueChange={setPaymentTab} className="w-full">
           <TabsList className="h-9 flex-wrap">
             <TabsTrigger value="overview" className="text-xs">
               Overview

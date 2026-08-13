@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  Search,
   Send,
   Settings,
 } from "lucide-react";
@@ -20,13 +21,14 @@ import type { AutomationContext } from "@/lib/automationService";
 import type { Proposal, ProposalLineItem, ProposalVersion } from "@/types";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+import { CountUp } from "@/components/CountUp";
+import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
+import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -68,6 +70,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import { Progress } from "@/components/ui/progress";
+import { useSmUp } from "@/hooks/useSmUp";
 
 export type TrackerRow = {
   id: string;
@@ -100,13 +103,13 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function statusBadgeClass(statusLabel: string) {
+function statusTone(statusLabel: string): StatusTone {
   const s = statusLabel.toLowerCase();
-  if (s.includes("overdue")) return "bg-red-500/15 text-red-800 border-red-200";
-  if (s.includes("expiring")) return "bg-amber-500/15 text-amber-900 border-amber-200";
-  if (s.includes("upcoming")) return "bg-blue-500/15 text-blue-900 border-blue-200";
-  if (s.includes("renewed")) return "bg-emerald-500/15 text-emerald-900 border-emerald-200";
-  return "bg-muted";
+  if (s.includes("overdue")) return "danger";
+  if (s.includes("expiring")) return "warning";
+  if (s.includes("upcoming")) return "info";
+  if (s.includes("renewed")) return "success";
+  return "muted";
 }
 
 function daysProgress(daysLeft: number) {
@@ -116,6 +119,7 @@ function daysProgress(daysLeft: number) {
 }
 
 export function RenewalSubscriptionTracker() {
+  const smUp = useSmUp();
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
   const users = useAppStore((s) => s.users);
@@ -459,123 +463,132 @@ export function RenewalSubscriptionTracker() {
 
   const summary = trackerQuery.data?.summary;
 
+  const trackerKpis: Array<{
+    key: CardFilter;
+    label: string;
+    value: number;
+    sub: string;
+    icon: typeof AlertTriangle;
+    iconColor: string;
+    iconBg: string;
+  }> = [
+    {
+      key: "overdue",
+      label: "Overdue",
+      value: summary?.overdue ?? 0,
+      sub: "Past expiry",
+      icon: AlertTriangle,
+      iconColor: "text-destructive",
+      iconBg: "bg-destructive/15",
+    },
+    {
+      key: "exp30",
+      label: "Expiring 30d",
+      value: summary?.expiring30 ?? 0,
+      sub: "Needs outreach",
+      icon: Bell,
+      iconColor: "text-warning-foreground",
+      iconBg: "bg-warning/15",
+    },
+    {
+      key: "upcoming",
+      label: "Upcoming",
+      value: summary?.upcoming31to90 ?? 0,
+      sub: "31–90 days",
+      icon: CalendarClock,
+      iconColor: "text-primary",
+      iconBg: "bg-primary/10",
+    },
+    {
+      key: "renewed",
+      label: "Renewed",
+      value: summary?.renewedThisMonth ?? 0,
+      sub: "This month",
+      icon: CheckCircle2,
+      iconColor: "text-success",
+      iconBg: "bg-success/15",
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Renewal &amp; subscription tracker</h2>
-          <p className="text-sm text-muted-foreground">
-            Monitor expiries, send reminders, and create renewal proposals. Automated rules run from the dashboard
-            scheduler.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void trackerQuery.refetch()}
-            disabled={trackerQuery.isFetching}
-          >
-            {trackerQuery.isFetching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
+    <div className="space-y-2.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={() => void trackerQuery.refetch()}
+          disabled={trackerQuery.isFetching}
+          title="Refresh"
+        >
+          {trackerQuery.isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+        </Button>
+        {canManageSettings && (
+          <Button type="button" variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setSettingsOpen(true)}>
+            <Settings className="mr-1 h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Settings</span>
           </Button>
-          {canManageSettings && (
-            <Button type="button" variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
-              <Settings className="h-4 w-4 mr-1" />
-              Reminder settings
-            </Button>
-          )}
-          <Button type="button" variant="secondary" size="sm" onClick={() => setBulkConfirmOpen(true)}>
-            <Send className="h-4 w-4 mr-1" />
-            Send all reminders
-          </Button>
-        </div>
+        )}
+        <Button type="button" size="sm" className="h-8 px-2.5 text-xs" onClick={() => setBulkConfirmOpen(true)}>
+          <Send className="mr-1 h-3.5 w-3.5" />
+          Send all
+        </Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => {
-            setCardFilter("overdue");
-            setBarFilter("all");
-          }}
-          className={cn("text-left rounded-lg border transition-colors", cardFilter === "overdue" && "ring-2 ring-primary")}
-        >
-          <Card className="shadow-none border-red-200 bg-red-50/50 dark:bg-red-950/20">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs uppercase text-muted-foreground flex items-center gap-1">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-600" /> Overdue
-              </p>
-              <p className="text-2xl font-bold text-red-700">{summary?.overdue ?? "—"}</p>
-            </CardContent>
-          </Card>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setCardFilter("exp30");
-            setBarFilter("all");
-          }}
-          className={cn("text-left rounded-lg", cardFilter === "exp30" && "ring-2 ring-primary rounded-lg")}
-        >
-          <Card className="shadow-none border-amber-200 bg-amber-50/50">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs uppercase text-muted-foreground flex items-center gap-1">
-                <Bell className="h-3.5 w-3.5 text-amber-600" /> Expiring in 30 days
-              </p>
-              <p className="text-2xl font-bold text-amber-900">{summary?.expiring30 ?? "—"}</p>
-            </CardContent>
-          </Card>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setCardFilter("upcoming");
-            setBarFilter("all");
-          }}
-          className={cn("text-left rounded-lg", cardFilter === "upcoming" && "ring-2 ring-primary rounded-lg")}
-        >
-          <Card className="shadow-none border-blue-200 bg-blue-50/50">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs uppercase text-muted-foreground flex items-center gap-1">
-                <CalendarClock className="h-3.5 w-3.5 text-blue-600" /> Upcoming (31–90d)
-              </p>
-              <p className="text-2xl font-bold text-blue-900">{summary?.upcoming31to90 ?? "—"}</p>
-            </CardContent>
-          </Card>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setCardFilter("renewed");
-            setBarFilter("all");
-          }}
-          className={cn("text-left rounded-lg", cardFilter === "renewed" && "ring-2 ring-primary rounded-lg")}
-        >
-          <Card className="shadow-none border-emerald-200 bg-emerald-50/50">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs uppercase text-muted-foreground flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Renewed this month
-              </p>
-              <p className="text-2xl font-bold text-emerald-900">{summary?.renewedThisMonth ?? "—"}</p>
-            </CardContent>
-          </Card>
-        </button>
-      </div>
+      <motion.div variants={staggerContainer} initial="initial" animate="animate" className="grid grid-cols-2 gap-1.5 sm:gap-2 lg:grid-cols-4">
+        {trackerKpis.map((kpi) => {
+          const Icon = kpi.icon;
+          const active = cardFilter === kpi.key;
+          return (
+            <motion.button
+              key={kpi.key}
+              type="button"
+              variants={staggerItem}
+              whileHover={hoverLift}
+              whileTap={tapPress}
+              onClick={() => {
+                setCardFilter(active ? "all" : kpi.key);
+                setBarFilter("all");
+              }}
+              className={cn(
+                "card-kpi min-h-[3.25rem] w-full text-left hover:border-primary/30 sm:min-h-0",
+                active && "border-primary/40 bg-primary/5",
+              )}
+            >
+              <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md", kpi.iconBg)}>
+                <Icon className={cn("h-3.5 w-3.5", kpi.iconColor)} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kpi.label}</p>
+                <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
+                  {trackerQuery.isLoading ? "—" : <CountUp value={kpi.value} />}
+                </p>
+                <p className="truncate text-[10px] text-muted-foreground">{kpi.sub}</p>
+              </div>
+            </motion.button>
+          );
+        })}
+      </motion.div>
 
-      <div className="flex flex-wrap gap-3 items-center">
-        <Input
-          placeholder="Search customer or plan…"
-          className="max-w-xs"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <Select value={barFilter} onValueChange={(v) => setBarFilter(v as CardFilter)}>
-          <SelectTrigger className="w-[200px]">
+      <div className="card-soft flex flex-col gap-2 p-2.5 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search customer or plan…"
+            className="h-8 pl-8 text-sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <Select
+          value={barFilter}
+          onValueChange={(v) => {
+            setBarFilter(v as CardFilter);
+            setCardFilter("all");
+          }}
+        >
+          <SelectTrigger className="h-8 w-full text-xs sm:w-[180px]">
             <SelectValue placeholder="Filter" />
           </SelectTrigger>
           <SelectContent>
@@ -587,91 +600,129 @@ export function RenewalSubscriptionTracker() {
           </SelectContent>
         </Select>
         {cardFilter !== "all" && (
-          <Button type="button" variant="ghost" size="sm" onClick={() => setCardFilter("all")}>
-            Clear card filter
+          <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => setCardFilter("all")}>
+            Clear
           </Button>
         )}
       </div>
 
-      <ScrollArea className="w-full border rounded-md max-h-[min(70vh,640px)]">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Customer</TableHead>
-              <TableHead>Plan</TableHead>
-              <TableHead>Expiry</TableHead>
-              <TableHead>Days</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Reminders</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {trackerQuery.isLoading && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
-                  Loading…
-                </TableCell>
-              </TableRow>
-            )}
-            {!trackerQuery.isLoading &&
-              filteredRows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell>
-                    <Link to={`/customers/${row.customerId}`} className="font-medium text-primary hover:underline">
+      <div className="card-soft max-h-[min(70vh,640px)] overflow-auto">
+        {trackerQuery.isLoading ? (
+          <p className="flex items-center justify-center gap-2 px-4 py-10 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Loading subscriptions
+          </p>
+        ) : filteredRows.length === 0 ? (
+          <p className="px-4 py-10 text-center text-xs text-muted-foreground">No subscriptions match.</p>
+        ) : !smUp ? (
+          <div className="divide-y divide-border">
+            {filteredRows.map((row) => (
+              <div key={row.id} className="space-y-2 px-2.5 py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <Link to={`/customers/${row.customerId}`} className="truncate text-sm font-medium text-primary hover:underline">
                       {row.customerName}
                     </Link>
-                  </TableCell>
-                  <TableCell className="text-sm">{row.planName}</TableCell>
-                  <TableCell className="text-xs font-mono">{row.expiryDate}</TableCell>
-                  <TableCell className="min-w-[140px]">
-                    <div className="text-xs mb-1">
-                      {row.daysLeft < 0 ? `${row.daysLeft}d` : `${row.daysLeft}d left`}
-                    </div>
-                    <Progress
-                      value={daysProgress(row.daysLeft)}
-                      className={cn(
-                        "h-1.5",
-                        row.daysLeft < 0 && "[&>div]:bg-red-500",
-                        row.daysLeft >= 0 && row.daysLeft <= 30 && "[&>div]:bg-amber-500",
-                        row.daysLeft > 30 && row.daysLeft <= 90 && "[&>div]:bg-blue-500",
-                        row.daysLeft > 90 && "[&>div]:bg-emerald-500",
-                      )}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={cn("text-xs", statusBadgeClass(row.statusLabel))}>
-                      {row.statusLabel}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {row.totalRemindersSent > 0 ? `Yes (${row.totalRemindersSent}×)` : "—"}
-                  </TableCell>
-                  <TableCell className="text-right space-x-1">
-                    <Button type="button" variant="outline" size="sm" onClick={() => setRemindRow(row)}>
-                      Remind
+                    <p className="truncate text-[11px] text-muted-foreground">{row.planName}</p>
+                  </div>
+                  <StatusPill tone={statusTone(row.statusLabel)}>{row.statusLabel}</StatusPill>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums text-muted-foreground">
+                  <span>{row.expiryDate}</span>
+                  <span>{row.daysLeft < 0 ? `${row.daysLeft}d` : `${row.daysLeft}d left`}</span>
+                </div>
+                <Progress
+                  value={daysProgress(row.daysLeft)}
+                  className={cn(
+                    "h-1",
+                    row.daysLeft < 0 && "[&>div]:bg-destructive",
+                    row.daysLeft >= 0 && row.daysLeft <= 30 && "[&>div]:bg-warning",
+                    row.daysLeft > 30 && row.daysLeft <= 90 && "[&>div]:bg-primary",
+                    row.daysLeft > 90 && "[&>div]:bg-success",
+                  )}
+                />
+                <div className="flex flex-wrap gap-1">
+                  <Button type="button" variant="outline" size="sm" className="h-7 flex-1 px-2 text-[11px]" onClick={() => setRemindRow(row)}>
+                    Remind
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" className="h-7 flex-1 px-2 text-[11px]" onClick={() => setProposeRow(row)}>
+                    Propose
+                  </Button>
+                  {(row.bucket === "overdue" || row.bucket === "expiring_30") && (
+                    <Button type="button" size="sm" className="h-7 flex-1 px-2 text-[11px]" onClick={() => setRenewRow(row)}>
+                      Renew
                     </Button>
-                    <Button type="button" variant="secondary" size="sm" onClick={() => setProposeRow(row)}>
-                      Propose
-                    </Button>
-                    {(row.bucket === "overdue" || row.bucket === "expiring_30") && (
-                      <Button type="button" size="sm" onClick={() => setRenewRow(row)}>
-                        Mark renewed
-                      </Button>
-                    )}
-                  </TableCell>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="scrollbar-soft overflow-x-auto">
+            <Table responsiveShell={false}>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Plan</TableHead>
+                  <TableHead>Expiry</TableHead>
+                  <TableHead>Days</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Reminders</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            {!trackerQuery.isLoading && filteredRows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
-                  No subscriptions match.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </ScrollArea>
+              </TableHeader>
+              <TableBody>
+                {filteredRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="max-w-[12rem]">
+                      <Link to={`/customers/${row.customerId}`} className="truncate font-medium text-primary hover:underline">
+                        {row.customerName}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="max-w-[10rem] truncate">{row.planName}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono tabular-nums text-muted-foreground">{row.expiryDate}</TableCell>
+                    <TableCell className="min-w-[100px]">
+                      <div className="mb-1 text-[11px] tabular-nums text-muted-foreground">
+                        {row.daysLeft < 0 ? `${row.daysLeft}d` : `${row.daysLeft}d left`}
+                      </div>
+                      <Progress
+                        value={daysProgress(row.daysLeft)}
+                        className={cn(
+                          "h-1",
+                          row.daysLeft < 0 && "[&>div]:bg-destructive",
+                          row.daysLeft >= 0 && row.daysLeft <= 30 && "[&>div]:bg-warning",
+                          row.daysLeft > 30 && row.daysLeft <= 90 && "[&>div]:bg-primary",
+                          row.daysLeft > 90 && "[&>div]:bg-success",
+                        )}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill tone={statusTone(row.statusLabel)}>{row.statusLabel}</StatusPill>
+                    </TableCell>
+                    <TableCell className="hidden text-muted-foreground lg:table-cell">
+                      {row.totalRemindersSent > 0 ? `${row.totalRemindersSent}×` : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-wrap justify-end gap-1">
+                        <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setRemindRow(row)}>
+                          Remind
+                        </Button>
+                        <Button type="button" variant="secondary" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setProposeRow(row)}>
+                          Propose
+                        </Button>
+                        {(row.bucket === "overdue" || row.bucket === "expiring_30") && (
+                          <Button type="button" size="sm" className="h-7 px-2 text-[11px]" onClick={() => setRenewRow(row)}>
+                            Renew
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
 
       <Dialog open={!!remindRow} onOpenChange={(o) => !o && setRemindRow(null)}>
         <DialogContent>
@@ -682,7 +733,7 @@ export function RenewalSubscriptionTracker() {
             </DialogDescription>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-3">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={remindChannels.whatsapp}
@@ -747,7 +798,7 @@ export function RenewalSubscriptionTracker() {
                 triggerClassName="h-10"
               />
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-3">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={proposeChannels.whatsapp}

@@ -33,11 +33,11 @@ const STATUS_LABELS: Record<DeliveryStatus, string> = {
 };
 
 const STATUS_BADGE: Record<DeliveryStatus, string> = {
-  not_started: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
-  in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200",
-  quality_check: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
-  final_approval: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-200",
-  delivered: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+  not_started: "border-border bg-muted/40 text-muted-foreground",
+  in_progress: "border-primary/30 bg-primary/15 text-primary",
+  quality_check: "border-warning/30 bg-warning/15 text-warning-foreground",
+  final_approval: "border-info/30 bg-info/15 text-info",
+  delivered: "border-success/30 bg-success/15 text-success",
 };
 
 type DealRow = {
@@ -296,8 +296,8 @@ export default function DeliveryPage() {
                 <TableHead className="text-xs">Deal</TableHead>
                 <TableHead className="text-xs">Customer</TableHead>
                 <TableHead className="text-xs">Owner</TableHead>
-                      <TableHead className="text-xs">Delivery</TableHead>
-                      <TableHead className="text-xs">Assignee</TableHead>
+                <TableHead className="text-xs">Delivery</TableHead>
+                <TableHead className="text-xs">Assignee</TableHead>
                 <TableHead className="text-xs">Updated</TableHead>
                 <TableHead className="text-xs text-right">Actions</TableHead>
               </TableRow>
@@ -391,9 +391,9 @@ export default function DeliveryPage() {
                       <SelectContent>
                         <SelectItem value="unassigned">Unassigned</SelectItem>
                         {deliveryManagers.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.name}
-                            </SelectItem>
+                          <SelectItem key={u.id} value={u.id}>
+                            {u.name}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
