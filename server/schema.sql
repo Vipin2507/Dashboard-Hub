@@ -49,6 +49,28 @@ CREATE TABLE IF NOT EXISTS customer_attachments (
 CREATE INDEX IF NOT EXISTS idx_customer_notes_customer ON customer_notes(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_attachments_customer ON customer_attachments(customer_id);
 
+CREATE TABLE IF NOT EXISTS customer_product_lines (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  inventory_item_id TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  item_type TEXT NOT NULL DEFAULT 'product',
+  qty REAL NOT NULL DEFAULT 1,
+  unit_price REAL NOT NULL DEFAULT 0,
+  tax_rate REAL NOT NULL DEFAULT 0,
+  purchased_at TEXT NOT NULL,
+  renewal_date TEXT,
+  expiry_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  deal_id TEXT,
+  usage_details TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_customer_product_lines_customer ON customer_product_lines(customer_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_product_lines_dedupe
+  ON customer_product_lines(customer_id, IFNULL(deal_id, ''), inventory_item_id);
+
 CREATE TABLE IF NOT EXISTS regions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL

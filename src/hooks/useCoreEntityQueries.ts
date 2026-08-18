@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
+import { dealsActorQuery } from "@/lib/dealsApi";
 import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal, Proposal } from "@/types";
@@ -62,6 +63,8 @@ export function useCoreEntityQueries() {
   const regions = useAppStore((s) => s.regions);
   const users = useAppStore((s) => s.users);
   const setCustomers = useAppStore((s) => s.setCustomers);
+  const setDeals = useAppStore((s) => s.setDeals);
+  const setProposals = useAppStore((s) => s.setProposals);
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -74,13 +77,7 @@ export function useCoreEntityQueries() {
   const dealsQuery = useQuery({
     queryKey: QK.deals({ role: me.role }),
     queryFn: async () => {
-      const qs = new URLSearchParams();
-      qs.set("actorRole", me.role);
-      qs.set("actorUserId", me.id);
-      qs.set("actorTeamId", me.teamId);
-      qs.set("actorRegionId", me.regionId);
-      if (role === "super_admin") qs.set("includeDeleted", "1");
-      return api.get<Deal[]>(`/deals?${qs.toString()}`);
+      return api.get<Deal[]>(`/deals?${dealsActorQuery(me)}`);
     },
     staleTime: 15_000,
     refetchInterval: LIVE_ENTITY_POLL_MS,
@@ -93,6 +90,16 @@ export function useCoreEntityQueries() {
     if (!customersQuery.data) return;
     setCustomers(mapCustomersApiRowsToStore(customersQuery.data, { regions, users, me }));
   }, [customersQuery.data, regions, users, me, setCustomers]);
+
+  useEffect(() => {
+    if (!dealsQuery.data) return;
+    setDeals(dealsQuery.data);
+  }, [dealsQuery.data, setDeals]);
+
+  useEffect(() => {
+    if (!proposalsQuery.data) return;
+    setProposals(proposalsQuery.data);
+  }, [proposalsQuery.data, setProposals]);
 
   const paymentsRemainingQuery = useQuery({
     queryKey: QK.paymentRemaining(),

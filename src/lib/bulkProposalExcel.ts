@@ -233,7 +233,7 @@ type ApiCustomer = {
 function mapStageToStatus(raw: string): ProposalStatus {
   const s = raw.trim().toLowerCase();
   if (!s) return "shared";
-  if (s.includes("deal")) return "deal_created";
+  if (s.includes("won") || s.includes("deal")) return "won";
   if (s.includes("reject")) return "rejected";
   if (s.includes("approv") && !s.includes("pending")) return "approved";
   if (s.includes("pending") || s.includes("approval")) return "approval_pending";
@@ -407,7 +407,7 @@ export async function buildProposalsFromExcelRows(
     const createdFromRow = parseExcelDate(data.date) ?? new Date().toISOString();
     const sharedRaw = data.proposalShared.trim();
     const sentAt =
-      status === "sent" || status === "approval_pending" || status === "approved" || status === "deal_created"
+      status === "sent" || status === "approval_pending" || status === "approved" || status === "won"
         ? parseExcelDate(sharedRaw) ?? parseExcelDate(data.date)
         : undefined;
 

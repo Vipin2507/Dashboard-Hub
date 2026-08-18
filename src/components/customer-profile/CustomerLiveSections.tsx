@@ -2,14 +2,18 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
+import { dealsActorQuery } from "@/lib/dealsApi";
 import { formatINR, can } from "@/lib/rbac";
 import { canEditDeal } from "@/lib/dealPermissions";
 import { normalizeDealStatus } from "@/lib/dealStatus";
+import { proposalStatusLabel } from "@/lib/proposalStatus";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal, Proposal } from "@/types";
+import type { CustomerPaymentSummary } from "@/types/payments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusPill } from "@/components/StatusPill";
 import {
   Table,
   TableBody,
@@ -38,12 +42,6 @@ import { DEFAULT_SALES_STAGES, dealStageLabel, normalizeDealStage } from "@/lib/
 
 const DEFAULT_STAGES = [...DEFAULT_SALES_STAGES];
 
-type PaymentSummary = {
-  decision: unknown;
-  plan: unknown;
-  payments: Array<Record<string, unknown>>;
-};
-
 function formatWhen(iso: string) {
   try {
     return formatDistanceToNow(new Date(iso), { addSuffix: true });
@@ -67,11 +65,13 @@ export function CustomerProposalsLiveTable({
   const canReject = can(me.role, "proposals", "reject");
   const canSend = can(me.role, "proposals", "send");
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, isError } = useQuery({
     queryKey: QK.customerProposals(customerId),
     queryFn: () =>
       api.get<Proposal[]>(`/proposals?customerId=${encodeURIComponent(customerId)}`),
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
 
@@ -79,10 +79,14 @@ export function CustomerProposalsLiveTable({
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+      <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading proposals…
       </div>
     );
+  }
+
+  if (isError) {
+    return <p className="py-6 text-sm text-destructive">Could not load proposals.</p>;
   }
 
   return (
@@ -107,7 +111,7 @@ export function CustomerProposalsLiveTable({
               <TableCell className="text-right font-mono text-sm">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</TableCell>
               <TableCell>
                 <Badge variant="secondary" className="text-[10px]">
-                  {p.status.replace(/_/g, " ")}
+                  {proposalStatusLabel(p.status)}
                 </Badge>
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">{p.createdAt.slice(0, 10)}</TableCell>
@@ -171,66 +175,102 @@ export function CustomerPaymentsLiveSection({
   onRecordPayment: () => void;
 }) {
   const me = useAppStore((s) => s.me);
-  const { data: summary, isLoading } = useQuery({
+  const { data: summary, isLoading, isError } = useQuery({
     queryKey: QK.paymentSummary(customerId),
-    queryFn: () => api.get<PaymentSummary>(`/payments/customer/${encodeURIComponent(customerId)}/summary`),
-    staleTime: 30_000,
+    queryFn: () =>
+      api.get<CustomerPaymentSummary>(`/payments/customer/${encodeURIComponent(customerId)}/summary-v2`),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
 
-  const payments = (summary?.payments as Array<Record<string, unknown>>) ?? [];
+  const rows = useMemo(() => {
+    const installments = (summary?.plans ?? []).flatMap((plan) =>
+      (plan.installments ?? []).map((inst) => ({
+        ...inst,
+        planName: plan.plan_name,
+        dealId: plan.deal_id,
+      })),
+    );
+    return installments.sort((a, b) => String(b.due_date ?? "").localeCompare(String(a.due_date ?? "")));
+  }, [summary]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+      <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading payments…
       </div>
     );
   }
 
-  const totalPaid = payments
-    .filter((p) => p.paymentStatus === "confirmed")
-    .reduce((s, p) => s + Number(p.amountPaid ?? 0), 0);
+  if (isError) {
+    return <p className="py-6 text-sm text-destructive">Could not load payments.</p>;
+  }
+
+  const totalPaid = summary?.summary?.totalPaid ?? 0;
+  const totalPending = summary?.summary?.totalPending ?? 0;
 
   return (
-    <div className="space-y-4">
-      {(can(me.role, "customers", "view") && (me.role === "finance" || me.role === "super_admin")) && (
-        <Button size="sm" variant="outline" onClick={onRecordPayment}>
-          Record payment
-        </Button>
-      )}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {(can(me.role, "customers", "view") && (me.role === "finance" || me.role === "super_admin")) && (
+          <Button size="sm" variant="outline" onClick={onRecordPayment}>
+            Record payment
+          </Button>
+        )}
+        <div className="ml-auto flex flex-wrap gap-1.5">
+          <StatusPill tone="success">Paid {formatINR(totalPaid)}</StatusPill>
+          <StatusPill tone={totalPending > 0 ? "warning" : "muted"}>Pending {formatINR(totalPending)}</StatusPill>
+        </div>
+      </div>
       <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="text-xs">Date</TableHead>
+              <TableHead className="text-xs">Due</TableHead>
+              <TableHead className="text-xs">Installment</TableHead>
               <TableHead className="text-xs text-right">Amount</TableHead>
-              <TableHead className="text-xs">Mode</TableHead>
               <TableHead className="text-xs">Status</TableHead>
+              <TableHead className="text-xs">Paid</TableHead>
               <TableHead className="text-xs">Reference</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {payments.map((pay) => (
-              <TableRow key={String(pay.id ?? pay.receiptNumber)}>
-                <TableCell className="text-xs">{String(pay.paymentDate ?? "")}</TableCell>
-                <TableCell className="text-right font-mono text-sm">{formatINR(Number(pay.amountPaid ?? 0))}</TableCell>
-                <TableCell className="text-xs">{String(pay.paymentMode ?? "—")}</TableCell>
-                <TableCell className="text-xs">{String(pay.paymentStatus ?? "—")}</TableCell>
-                <TableCell className="text-xs font-mono">{String(pay.transactionRef ?? "—")}</TableCell>
+            {rows.map((pay) => (
+              <TableRow key={pay.id}>
+                <TableCell className="text-xs">{pay.due_date || "—"}</TableCell>
+                <TableCell className="text-sm">{pay.label || pay.planName}</TableCell>
+                <TableCell className="text-right font-mono text-sm tabular-nums">{formatINR(Number(pay.amount ?? 0))}</TableCell>
+                <TableCell>
+                  <StatusPill
+                    tone={
+                      pay.status === "paid"
+                        ? "success"
+                        : pay.status === "overdue"
+                          ? "danger"
+                          : pay.status === "partial"
+                            ? "warning"
+                            : "muted"
+                    }
+                  >
+                    {pay.status}
+                  </StatusPill>
+                </TableCell>
+                <TableCell className="text-xs">{pay.paid_date || "—"}</TableCell>
+                <TableCell className="font-mono text-xs">{pay.transaction_reference || "—"}</TableCell>
               </TableRow>
             ))}
-            {payments.length === 0 && (
+            {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">
-                  No payments recorded
+                <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                  No payment plan yet. Convert a proposal to a deal with a plan to see installments here.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-      {payments.length > 0 && <p className="text-sm font-medium">Confirmed total: {formatINR(totalPaid)}</p>}
     </div>
   );
 }
@@ -247,15 +287,18 @@ export function CustomerDealsLiveTable({
   const updateStage = useUpdateDealStage();
   const canUpdate = canEditDeal(me.role);
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, isError } = useQuery({
     queryKey: QK.customerDeals(customerId),
-    queryFn: () => api.get<Deal[]>(`/deals?customerId=${encodeURIComponent(customerId)}`),
-    staleTime: 30_000,
+    queryFn: () => api.get<Deal[]>(`/deals?${dealsActorQuery(me, { customerId })}`),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
 
   const filteredDeals = useMemo(() => {
-    if (!dealIdAllowlist || dealIdAllowlist.size === 0) return data;
+    if (!dealIdAllowlist) return data;
+    if (dealIdAllowlist.size === 0) return [];
     return data.filter((d) => dealIdAllowlist.has(d.id));
   }, [data, dealIdAllowlist]);
 
@@ -269,10 +312,14 @@ export function CustomerDealsLiveTable({
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+      <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading deals…
       </div>
     );
+  }
+
+  if (isError) {
+    return <p className="py-6 text-sm text-destructive">Could not load deals.</p>;
   }
 
   return (
@@ -332,7 +379,12 @@ export function CustomerDealsLiveTable({
               </TableCell>
               <TableCell className="text-xs text-muted-foreground">{d.updatedAt?.slice(0, 10) ?? "—"}</TableCell>
               <TableCell>
-                <Button variant="ghost" size="sm" className="h-7" onClick={() => navigate("/deals")}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7"
+                  onClick={() => navigate(`/deals?q=${encodeURIComponent(d.id)}`)}
+                >
                   View
                 </Button>
               </TableCell>
@@ -358,23 +410,30 @@ export function CustomerActivityLiveFeed({
   customerId: string;
   dealIdAllowlist?: Set<string> | null;
 }) {
+  const me = useAppStore((s) => s.me);
   const { data: proposals = [], isLoading: lp } = useQuery({
     queryKey: QK.customerProposals(customerId),
     queryFn: () => api.get<Proposal[]>(`/proposals?customerId=${encodeURIComponent(customerId)}`),
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
   const { data: deals = [], isLoading: ld } = useQuery({
     queryKey: QK.customerDeals(customerId),
-    queryFn: () => api.get<Deal[]>(`/deals?customerId=${encodeURIComponent(customerId)}`),
-    staleTime: 30_000,
+    queryFn: () => api.get<Deal[]>(`/deals?${dealsActorQuery(me, { customerId })}`),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
   const { data: summary, isLoading: ls } = useQuery({
     queryKey: QK.paymentSummary(customerId),
     queryFn: () =>
-      api.get<PaymentSummary>(`/payments/customer/${encodeURIComponent(customerId)}/summary`),
-    staleTime: 30_000,
+      api.get<CustomerPaymentSummary>(`/payments/customer/${encodeURIComponent(customerId)}/summary-v2`),
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
     enabled: !!customerId,
   });
 
@@ -384,12 +443,12 @@ export function CustomerActivityLiveFeed({
       rows.push({
         id: `p-${p.id}`,
         label: `Proposal ${p.proposalNumber}`,
-        sub: `${p.title} — ${p.status.replace(/_/g, " ")}`,
+        sub: `${p.title} — ${proposalStatusLabel(p.status)}`,
         at: p.updatedAt || p.createdAt,
         kind: "proposal",
       });
     }
-    const visibleDeals = !dealIdAllowlist || dealIdAllowlist.size === 0 ? deals : deals.filter((d) => dealIdAllowlist.has(d.id));
+    const visibleDeals = !dealIdAllowlist ? deals : deals.filter((d) => dealIdAllowlist.has(d.id));
     for (const d of visibleDeals) {
       rows.push({
         id: `d-${d.id}`,
@@ -399,13 +458,13 @@ export function CustomerActivityLiveFeed({
         kind: "deal",
       });
     }
-    const pays = (summary?.payments as Array<Record<string, unknown>>) ?? [];
+    const pays = (summary?.plans ?? []).flatMap((plan) => plan.installments ?? []);
     for (const pay of pays) {
       rows.push({
-        id: `pay-${String(pay.id ?? pay.receiptNumber)}`,
+        id: `pay-${pay.id}`,
         label: "Payment",
-        sub: `${formatINR(Number(pay.amountPaid ?? 0))} · ${String(pay.paymentMode ?? "")} · ${String(pay.paymentStatus ?? "")}`,
-        at: String(pay.paymentDate || pay.updatedAt || pay.createdAt || ""),
+        sub: `${formatINR(Number(pay.amount ?? 0))} · ${pay.label ?? ""} · ${pay.status ?? ""}`,
+        at: String(pay.paid_date || pay.due_date || ""),
         kind: "payment",
       });
     }

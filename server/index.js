@@ -284,20 +284,29 @@ function toInventoryResponse(row) {
   };
 }
 
+function canonicalizeProposal(proposal) {
+  if (!proposal || typeof proposal !== "object") return proposal;
+  if (proposal.status === "deal_created") {
+    return { ...proposal, status: "won" };
+  }
+  return proposal;
+}
+
 function toProposalRow(proposal) {
+  const p = canonicalizeProposal(proposal);
   return {
-    id: proposal.id,
-    proposalNumber: proposal.proposalNumber,
-    title: proposal.title,
-    customerId: proposal.customerId,
-    assignedTo: proposal.assignedTo,
-    status: proposal.status || "shared",
-    grandTotal: Number(proposal.grandTotal) || 0,
+    id: p.id,
+    proposalNumber: p.proposalNumber,
+    title: p.title,
+    customerId: p.customerId,
+    assignedTo: p.assignedTo,
+    status: p.status || "shared",
+    grandTotal: Number(p.grandTotal) || 0,
     finalQuoteValue:
-      proposal.finalQuoteValue == null ? null : Number(proposal.finalQuoteValue),
-    createdAt: proposal.createdAt,
-    updatedAt: proposal.updatedAt,
-    data: JSON.stringify(proposal),
+      p.finalQuoteValue == null ? null : Number(p.finalQuoteValue),
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    data: JSON.stringify(p),
   };
 }
 
@@ -889,7 +898,7 @@ app.get("/api/proposals", (req, res) => {
   let items = rows
     .map((r) => {
       try {
-        return JSON.parse(r.data);
+        return canonicalizeProposal(JSON.parse(r.data));
       } catch {
         return null;
       }
@@ -900,13 +909,14 @@ app.get("/api/proposals", (req, res) => {
     items = items.filter((p) => p && p.customerId === customerId);
   }
   if (status) {
-    items = items.filter((p) => p && p.status === status);
+    const want = status === "deal_created" ? "won" : status;
+    items = items.filter((p) => p && p.status === want);
   }
   res.json(items);
 });
 
 app.post("/api/proposals", (req, res) => {
-  const proposal = req.body || {};
+  const proposal = canonicalizeProposal(req.body || {});
   if (!proposal.id || !proposal.proposalNumber || !proposal.title || !proposal.customerId) {
     return res
       .status(400)
@@ -943,9 +953,9 @@ app.post("/api/proposals/bulk", (req, res) => {
     INSERT INTO proposals (id, proposalNumber, title, customerId, assignedTo, status, grandTotal, finalQuoteValue, createdAt, updatedAt, data)
     VALUES (@id, @proposalNumber, @title, @customerId, @assignedTo, @status, @grandTotal, @finalQuoteValue, @createdAt, @updatedAt, @data)
   `);
-  const valid = items.filter(
-    (p) => p && p.id && p.proposalNumber && p.title && p.customerId,
-  );
+  const valid = items
+    .map(canonicalizeProposal)
+    .filter((p) => p && p.id && p.proposalNumber && p.title && p.customerId);
   const run = db.transaction((rows) => {
     for (const p of rows) insert.run(toProposalRow(p));
   });
@@ -958,7 +968,7 @@ app.put("/api/proposals/:id", (req, res) => {
     .prepare("SELECT id FROM proposals WHERE id = ?")
     .get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
-  const proposal = req.body || {};
+  const proposal = canonicalizeProposal(req.body || {});
   if (!proposal.id) proposal.id = req.params.id;
   const row = toProposalRow(proposal);
   db.prepare(`
@@ -2078,7 +2088,7 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
         try {
           const dataObj = JSON.parse(propRow.data);
           if (dataObj && typeof dataObj === "object") {
-            dataObj.status = "deal_created";
+            dataObj.status = "won";
             dataObj.dealId = dealId;
             dataObj.updatedAt = now;
             dataStr = JSON.stringify(dataObj);
@@ -2088,7 +2098,7 @@ app.post("/api/deals/with-payment-plan", (req, res) => {
         }
         db.prepare(
           "UPDATE proposals SET status = ?, updatedAt = ?, data = ? WHERE id = ?",
-        ).run("deal_created", now, dataStr, proposalId);
+        ).run("won", now, dataStr, proposalId);
       }
     }
 

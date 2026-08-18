@@ -45,8 +45,8 @@ import {
   Pie,
   Cell,
 } from 'recharts';
-import { format, formatDistanceToNow } from 'date-fns';
-import { currentMonthDateRange } from '@/lib/dateRange';
+import { formatDistanceToNow } from 'date-fns';
+import { hydrateTimeRange, resolveTimeRangeYmd, timeRangeChip, type TimeRangePreset } from '@/lib/dateRange';
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
@@ -55,13 +55,14 @@ import {
   saveLocalFilters,
 } from '@/lib/filterSessionPersistence';
 import { FilterPanel } from '@/components/FilterPanel';
+import { TimeRangeFilter } from '@/components/TimeRangeFilter';
 import type { ProposalStatus } from '@/types';
+import { isProposalWon, proposalStatusLabel, proposalStatusMatches, normalizeProposalStatus } from '@/lib/proposalStatus';
 import { resolveDealPipelineStatus } from '@/lib/dealStatus';
 import { getDealDateForFilter } from '@/lib/dealDate';
 import { cn } from '@/lib/utils';
 import { useSmUp } from '@/hooks/useSmUp';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
-import { Datepicker, ymdToDate } from '@/components/ui/datepicker';
 import { toast } from '@/components/ui/use-toast';
 import { CountUp } from '@/components/CountUp';
 import { chartTooltipStyle, hoverLift, staggerContainer, staggerItem, tapPress } from '@/lib/motion';
@@ -78,6 +79,9 @@ const CHART_DANGER = 'var(--color-danger)';
 type PersistedDashboardFilters = {
   dateFrom: string;
   dateTo: string;
+  timeRangeFilter?: TimeRangePreset;
+  customFrom?: string;
+  customTo?: string;
   ownerFilter: string;
   teamFilter: string;
   regionFilter: string;
@@ -87,6 +91,9 @@ type PersistedDashboardFilters = {
 const EMPTY_DASHBOARD_FILTERS: PersistedDashboardFilters = {
   dateFrom: '',
   dateTo: '',
+  timeRangeFilter: 'all',
+  customFrom: '',
+  customTo: '',
   ownerFilter: 'all',
   teamFilter: 'all',
   regionFilter: 'all',
@@ -99,21 +106,36 @@ function persistDashboardFilters(value: PersistedDashboardFilters) {
   saveLocalFilters(DASHBOARD_FILTER_KEY, value);
 }
 
+function coerceDashboardFilters(saved: PersistedDashboardFilters): PersistedDashboardFilters {
+  return {
+    ...saved,
+    proposalStatusFilter: saved.proposalStatusFilter === "deal_created" ? "won" : saved.proposalStatusFilter,
+  };
+}
+
 function loadDashboardFilters(): PersistedDashboardFilters | null {
   const local = loadLocalFilters<PersistedDashboardFilters>(DASHBOARD_FILTER_KEY);
-  if (local) return local;
+  if (local) return coerceDashboardFilters(local);
   const session = loadSessionFilters<PersistedDashboardFilters>(DASHBOARD_FILTER_KEY);
   if (session) {
-    persistDashboardFilters(session);
-    return session;
+    const coerced = coerceDashboardFilters(session);
+    persistDashboardFilters(coerced);
+    return coerced;
   }
   return null;
 }
 
-function dateRangeFromPersisted(saved: PersistedDashboardFilters | null): [Date | null, Date | null] {
-  if (!saved) return currentMonthDateRange();
-  if (!saved.dateFrom && !saved.dateTo) return [null, null];
-  return [saved.dateFrom ? ymdToDate(saved.dateFrom) : null, saved.dateTo ? ymdToDate(saved.dateTo) : null];
+function dashboardTimeRangeFromSaved(saved: PersistedDashboardFilters | null): {
+  preset: TimeRangePreset;
+  customFrom: string;
+  customTo: string;
+} {
+  if (!saved) return { preset: 'this_month', customFrom: '', customTo: '' };
+  return hydrateTimeRange({
+    timeRangeFilter: saved.timeRangeFilter,
+    dateFrom: saved.customFrom || saved.dateFrom,
+    dateTo: saved.customTo || saved.dateTo,
+  });
 }
 
 type DashboardKpiCardProps = {
@@ -222,11 +244,11 @@ export default function DashboardPage() {
   const mdUp = useMdUp();
   const revenueBarSize = smUp ? 22 : 16;
   const persistedDashboardFilters = useMemo(() => loadDashboardFilters(), []);
+  const initialDashRange = dashboardTimeRangeFromSaved(persistedDashboardFilters);
 
-  // Applied filters (used by all sections) — default: current calendar month
-  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>(() =>
-    dateRangeFromPersisted(persistedDashboardFilters),
-  );
+  const [timeRangeFilter, setTimeRangeFilter] = useState<TimeRangePreset>(() => initialDashRange.preset);
+  const [customFrom, setCustomFrom] = useState(() => initialDashRange.customFrom);
+  const [customTo, setCustomTo] = useState(() => initialDashRange.customTo);
   const [ownerFilter, setOwnerFilter] = useState(() => persistedDashboardFilters?.ownerFilter ?? 'all');
   const [teamFilter, setTeamFilter] = useState(() => persistedDashboardFilters?.teamFilter ?? 'all');
   const [regionFilter, setRegionFilter] = useState(() => persistedDashboardFilters?.regionFilter ?? 'all');
@@ -234,10 +256,9 @@ export default function DashboardPage() {
     () => persistedDashboardFilters?.proposalStatusFilter ?? 'all',
   );
 
-  // Draft filters (edit here, then click Apply)
-  const [draftDateRange, setDraftDateRange] = useState<[Date | null, Date | null]>(() =>
-    dateRangeFromPersisted(persistedDashboardFilters),
-  );
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState<TimeRangePreset>(() => initialDashRange.preset);
+  const [draftCustomFrom, setDraftCustomFrom] = useState(() => initialDashRange.customFrom);
+  const [draftCustomTo, setDraftCustomTo] = useState(() => initialDashRange.customTo);
   const [draftOwnerFilter, setDraftOwnerFilter] = useState(() => persistedDashboardFilters?.ownerFilter ?? 'all');
   const [draftTeamFilter, setDraftTeamFilter] = useState(() => persistedDashboardFilters?.teamFilter ?? 'all');
   const [draftRegionFilter, setDraftRegionFilter] = useState(() => persistedDashboardFilters?.regionFilter ?? 'all');
@@ -251,12 +272,12 @@ export default function DashboardPage() {
   const [detailTotal, setDetailTotal] = useState(0);
   const [detailLink, setDetailLink] = useState('');
 
-  const dateFrom = dateRange[0] ? format(dateRange[0], 'yyyy-MM-dd') : '';
-  const dateTo = dateRange[1] ? format(dateRange[1], 'yyyy-MM-dd') : '';
+  const { from: dateFrom, to: dateTo } = resolveTimeRangeYmd(timeRangeFilter, customFrom, customTo);
 
   const hasPendingFilterChanges =
-    draftDateRange[0]?.getTime() !== dateRange[0]?.getTime() ||
-    draftDateRange[1]?.getTime() !== dateRange[1]?.getTime() ||
+    draftTimeRangeFilter !== timeRangeFilter ||
+    draftCustomFrom !== customFrom ||
+    draftCustomTo !== customTo ||
     draftOwnerFilter !== ownerFilter ||
     draftTeamFilter !== teamFilter ||
     draftRegionFilter !== regionFilter ||
@@ -267,17 +288,20 @@ export default function DashboardPage() {
     teamFilter !== 'all' ||
     regionFilter !== 'all' ||
     proposalStatusFilter !== 'all' ||
-    dateRange[0] != null ||
-    dateRange[1] != null;
+    timeRangeFilter !== 'all';
 
   const hydrateFromPersisted = (saved: PersistedDashboardFilters | null) => {
-    const range = dateRangeFromPersisted(saved);
+    const range = dashboardTimeRangeFromSaved(saved);
     const owner = saved?.ownerFilter ?? 'all';
     const team = saved?.teamFilter ?? 'all';
     const region = saved?.regionFilter ?? 'all';
-    const status = saved?.proposalStatusFilter ?? 'all';
-    setDateRange(range);
-    setDraftDateRange(range);
+    const status = saved?.proposalStatusFilter === 'deal_created' ? 'won' : (saved?.proposalStatusFilter ?? 'all');
+    setTimeRangeFilter(range.preset);
+    setDraftTimeRangeFilter(range.preset);
+    setCustomFrom(range.customFrom);
+    setDraftCustomFrom(range.customFrom);
+    setCustomTo(range.customTo);
+    setDraftCustomTo(range.customTo);
     setOwnerFilter(owner);
     setDraftOwnerFilter(owner);
     setTeamFilter(team);
@@ -289,15 +313,21 @@ export default function DashboardPage() {
   };
 
   const applyFilters = () => {
+    const resolved = resolveTimeRangeYmd(draftTimeRangeFilter, draftCustomFrom, draftCustomTo);
     const next: PersistedDashboardFilters = {
-      dateFrom: draftDateRange[0] ? format(draftDateRange[0], 'yyyy-MM-dd') : '',
-      dateTo: draftDateRange[1] ? format(draftDateRange[1], 'yyyy-MM-dd') : '',
+      dateFrom: resolved.from,
+      dateTo: resolved.to,
+      timeRangeFilter: draftTimeRangeFilter,
+      customFrom: draftCustomFrom,
+      customTo: draftCustomTo,
       ownerFilter: draftOwnerFilter,
       teamFilter: draftTeamFilter,
       regionFilter: draftRegionFilter,
       proposalStatusFilter: draftProposalStatusFilter,
     };
-    setDateRange(draftDateRange);
+    setTimeRangeFilter(draftTimeRangeFilter);
+    setCustomFrom(draftCustomFrom);
+    setCustomTo(draftCustomTo);
     setOwnerFilter(draftOwnerFilter);
     setTeamFilter(draftTeamFilter);
     setRegionFilter(draftRegionFilter);
@@ -341,7 +371,7 @@ export default function DashboardPage() {
 
   const filteredProposals = useMemo(() => {
     return scopedProposals.filter((p) => {
-      if (proposalStatusFilter !== 'all' && p.status !== proposalStatusFilter) return false;
+      if (proposalStatusFilter !== 'all' && !proposalStatusMatches(p.status, proposalStatusFilter)) return false;
       if (ownerFilter !== 'all' && p.assignedTo !== ownerFilter) return false;
       const meta = ownerMeta.get(p.assignedTo);
       if (teamFilter !== 'all' && meta?.teamId !== teamFilter) return false;
@@ -389,7 +419,7 @@ export default function DashboardPage() {
   const activeProposalsCount = useMemo(
     () =>
       filteredProposals.filter(
-        (p) => inDateRange(p.createdAt) && (p.status === "sent" || p.status === "approval_pending" || p.status === "approved" || p.status === "negotiation" || p.status === "won"),
+        (p) => inDateRange(p.createdAt) && (p.status === "sent" || p.status === "approval_pending" || p.status === "approved" || p.status === "negotiation" || isProposalWon(p.status)),
       ).length,
     [filteredProposals, dateFrom, dateTo],
   );
@@ -496,13 +526,12 @@ export default function DashboardPage() {
     'won',
     'cold',
     'rejected',
-    'deal_created',
   ];
   const pipelineData = useMemo(
     () =>
       pipelineStatuses.map((status) => ({
-        status: status.replace(/_/g, ' '),
-        count: filteredProposals.filter((p) => inDateRange(p.createdAt) && p.status === status).length,
+        status: proposalStatusLabel(status),
+        count: filteredProposals.filter((p) => inDateRange(p.createdAt) && normalizeProposalStatus(p.status) === status).length,
         statusKey: status,
       })),
     [filteredProposals, dateFrom, dateTo]
@@ -517,7 +546,6 @@ export default function DashboardPage() {
     won: CHART_SUCCESS,
     cold: 'hsl(var(--muted-foreground))',
     rejected: CHART_DANGER,
-    deal_created: CHART_PRIMARY,
   };
 
   // Customer Status Donut
@@ -570,7 +598,7 @@ export default function DashboardPage() {
       .map((u) => {
         const proposalCount = filteredProposals.filter((p) => p.assignedTo === u.id).length;
         const approvalPending = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "approval_pending").length;
-        const approved = filteredProposals.filter((p) => p.assignedTo === u.id && (p.status === "approved" || p.status === "won" || p.status === "deal_created")).length;
+        const approved = filteredProposals.filter((p) => p.assignedTo === u.id && (p.status === "approved" || isProposalWon(p.status))).length;
         const negotiation = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "negotiation").length;
         const cold = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "cold").length;
         const dealsWonCount = dealsWon.filter((d) => d.ownerUserId === u.id).length;
@@ -651,7 +679,7 @@ export default function DashboardPage() {
       cells: {
         name: p.proposalNumber || p.title || p.id,
         customer: p.customerName || '—',
-        status: p.status.replace(/_/g, ' '),
+        status: proposalStatusLabel(p.status),
         value: formatINR(p.finalQuoteValue ?? p.grandTotal ?? 0),
       },
     }));
@@ -936,9 +964,9 @@ export default function DashboardPage() {
           headerActions={
             hasActiveAppliedFilters ? (
               <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
-                {dateFrom && dateTo ? (
+                {timeRangeChip(timeRangeFilter, dateFrom, dateTo) ? (
                   <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                    {dateFrom} – {dateTo}
+                    {timeRangeChip(timeRangeFilter, dateFrom, dateTo)}
                   </span>
                 ) : null}
                 {ownerFilter !== 'all' ? (
@@ -958,7 +986,7 @@ export default function DashboardPage() {
                 ) : null}
                 {proposalStatusFilter !== 'all' ? (
                   <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {proposalStatusFilter.replace(/_/g, ' ')}
+                    {proposalStatusLabel(proposalStatusFilter)}
                   </span>
                 ) : null}
               </div>
@@ -969,18 +997,19 @@ export default function DashboardPage() {
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5 xl:items-end">
               <div className="min-w-0 space-y-1 sm:col-span-2 xl:col-span-1">
                 <p className="text-xs text-muted-foreground">Date range</p>
-                <Datepicker
-                  controls={['calendar']}
-                  select="range"
-                  touchUi={true}
-                  inputComponent="input"
-                  inputProps={{
-                    placeholder: 'Select dates…',
-                    className: 'h-9 w-full text-sm',
-                  }}
-                  value={draftDateRange}
-                  onChange={(ev) => setDraftDateRange(ev.value)}
-                />
+                <div className="grid min-w-0 grid-cols-1 gap-2">
+                  <TimeRangeFilter
+                    preset={draftTimeRangeFilter}
+                    customFrom={draftCustomFrom}
+                    customTo={draftCustomTo}
+                    onPresetChange={setDraftTimeRangeFilter}
+                    onCustomChange={(from, to) => {
+                      setDraftCustomFrom(from);
+                      setDraftCustomTo(to);
+                    }}
+                    customPlaceholder="Select dates…"
+                  />
+                </div>
               </div>
 
               <Select value={draftOwnerFilter} onValueChange={setDraftOwnerFilter}>
@@ -1036,7 +1065,7 @@ export default function DashboardPage() {
                   <SelectItem value="all">All statuses</SelectItem>
                   {pipelineStatuses.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s.replace(/_/g, ' ')}
+                      {proposalStatusLabel(s)}
                     </SelectItem>
                   ))}
                 </SelectContent>

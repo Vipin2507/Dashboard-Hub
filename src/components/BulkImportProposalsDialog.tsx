@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import { apiUrl } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
+import { isProposalWon } from "@/lib/proposalStatus";
 import {
   downloadProposalsTemplate,
   parseProposalsWorkbook,
@@ -132,7 +133,7 @@ export function BulkImportProposalsDialog({
         defaultRegionId,
       });
 
-      const wonCount = proposals.filter((p) => p.status === "won").length;
+      const wonCount = proposals.filter((p) => isProposalWon(p.status)).length;
       if (wonCount > 0) {
         toast({
           title: "Check proposal statuses",

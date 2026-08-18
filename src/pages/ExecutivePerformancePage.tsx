@@ -6,6 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   Line,
   LineChart,
   XAxis,
@@ -14,20 +15,22 @@ import {
 import {
   AlertCircle,
   Building2,
+  Clock,
   Download,
   FileText,
   Handshake,
+  IndianRupee,
   Loader2,
   RefreshCw,
-  Target,
+  Send,
+  Trophy,
   TrendingUp,
-  Users,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { FilterPanel } from "@/components/FilterPanel";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import { StatusPill } from "@/components/StatusPill";
 import { CountUp } from "@/components/CountUp";
-import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSmUp } from "@/hooks/useSmUp";
@@ -73,6 +76,7 @@ import { WEEKDAY_LABELS } from "@/lib/executivePerformanceMetrics";
 import { exportExecutivePerformanceXlsx } from "@/lib/executivePerformanceExport";
 import {
   executiveFiltersToSearchParams,
+  normalizeExecutiveFilters,
   readExecutiveFiltersFromParams,
   type ExecutiveUrlFilters,
 } from "@/lib/executivePerformanceUrl";
@@ -85,6 +89,7 @@ import {
 import { useExecutivePerformanceQuery } from "@/hooks/useExecutivePerformanceQuery";
 import { sheetContentDetail } from "@/lib/dialogLayout";
 import { cn } from "@/lib/utils";
+import { timeRangeChip, resolveTimeRangeYmd } from "@/lib/dateRange";
 import type {
   ExecutiveDailyBreakdownRow,
   ExecutiveDetailRecord,
@@ -99,6 +104,10 @@ type ComparisonMetricKey =
   | "wonValue"
   | "dealsWon"
   | "proposalsCreated"
+  | "proposalsSent"
+  | "proposalsPending"
+  | "proposalsWon"
+  | "revenueExclGst"
   | "proposalsApproved"
   | "customersNew"
   | "collectedRevenue"
@@ -111,10 +120,14 @@ const COMPARISON_METRICS: {
   format: "inr" | "count";
   detailType?: ExecutiveDetailType;
 }[] = [
-  { key: "wonValue", label: "Won value", format: "inr", detailType: "deals_won" },
+  { key: "proposalsCreated", label: "Total proposals", format: "count", detailType: "proposals_created" },
+  { key: "proposalsSent", label: "Sent proposals", format: "count", detailType: "proposals_sent" },
+  { key: "proposalsPending", label: "Pending proposals", format: "count", detailType: "proposals_pending" },
+  { key: "proposalsWon", label: "Won", format: "count", detailType: "proposals_won" },
+  { key: "revenueExclGst", label: "Revenue without GST", format: "inr", detailType: "proposals_won" },
+  { key: "wonValue", label: "Won deal value", format: "inr", detailType: "deals_won" },
   { key: "dealsWon", label: "Deals won", format: "count", detailType: "deals_won" },
   { key: "dealsCreated", label: "Deals", format: "count", detailType: "deals_created" },
-  { key: "proposalsCreated", label: "Proposals", format: "count", detailType: "proposals_created" },
   { key: "proposalsApproved", label: "Proposals approved", format: "count", detailType: "proposals_approved" },
   { key: "customersNew", label: "Customers", format: "count", detailType: "customers_new" },
   { key: "collectedRevenue", label: "Collected revenue", format: "inr", detailType: "payments_collected" },
@@ -138,10 +151,10 @@ function loadInitialExecutiveFilters(params: URLSearchParams): AppliedFilters {
   ) {
     return readExecutiveFiltersFromParams(params);
   }
-  return (
-    loadSessionFilters<AppliedFilters>(FILTER_SESSION_KEYS.executivePerformance) ??
-    readExecutiveFiltersFromParams(params)
-  );
+  const session = loadSessionFilters<AppliedFilters>(FILTER_SESSION_KEYS.executivePerformance);
+  return session
+    ? normalizeExecutiveFilters(session)
+    : readExecutiveFiltersFromParams(params);
 }
 
 const CHART_PRIMARY = "var(--color-primary)";
@@ -150,6 +163,22 @@ const CHART_WARNING = "var(--color-warning)";
 const CHART_DANGER = "var(--color-danger)";
 const CHART_DEEP = "var(--color-primary-deep)";
 const CHART_COLORS = [CHART_PRIMARY, CHART_SUCCESS, CHART_WARNING, CHART_DANGER, CHART_DEEP, CHART_PRIMARY];
+
+const CHART_LABEL = { fontSize: 10, fontWeight: 600, fill: "hsl(var(--foreground))" } as const;
+
+function formatChartNumber(v: unknown): string {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n === 0) return "";
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
+  return String(Math.round(n));
+}
+
+function formatChartPercent(v: unknown): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "";
+  return `${Math.round(n)}%`;
+}
 
 const TYPE_META: Record<
   ExecutiveDetailRecord["type"],
@@ -475,7 +504,7 @@ export default function ExecutivePerformancePage() {
   const [detailType, setDetailType] = useState<ExecutiveDetailType | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailPage, setDetailPage] = useState(1);
-  const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetricKey>("wonValue");
+  const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetricKey>("proposalsCreated");
 
   useEffect(() => {
     const next = readExecutiveFiltersFromParams(searchParams);
@@ -515,6 +544,7 @@ export default function ExecutivePerformancePage() {
   );
 
   const hasPending =
+    draft.range !== applied.range ||
     draft.from !== applied.from ||
     draft.to !== applied.to ||
     draft.executiveId !== applied.executiveId ||
@@ -525,8 +555,9 @@ export default function ExecutivePerformancePage() {
     draft.reason !== applied.reason;
 
   const applyFilters = () => {
-    const next = { ...draft };
-    if ((next.from && !next.to) || (!next.from && next.to)) {
+    const resolved = resolveTimeRangeYmd(draft.range, draft.from, draft.to);
+    const next = { ...draft, from: resolved.from, to: resolved.to };
+    if (next.range === "custom" && ((next.from && !next.to) || (!next.from && next.to))) {
       toast({ title: "Select both from and to dates, or clear both for all time", variant: "destructive" });
       return;
     }
@@ -538,6 +569,7 @@ export default function ExecutivePerformancePage() {
 
   const clearFilters = () => {
     const next: AppliedFilters = {
+      range: "all",
       from: "",
       to: "",
       executiveId: "all",
@@ -556,8 +588,7 @@ export default function ExecutivePerformancePage() {
   };
 
   const hasActiveAppliedFilters =
-    applied.from !== "" ||
-    applied.to !== "" ||
+    applied.range !== "all" ||
     applied.executiveId !== "all" ||
     applied.teamId !== "all" ||
     applied.regionId !== "all" ||
@@ -722,9 +753,9 @@ export default function ExecutivePerformancePage() {
           headerActions={
             hasActiveAppliedFilters ? (
               <div className="scrollbar-none flex min-w-0 flex-wrap items-center justify-end gap-1 overflow-x-auto">
-                {applied.from || applied.to ? (
+                {timeRangeChip(applied.range, applied.from, applied.to) ? (
                   <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                    {applied.from && applied.to ? `${applied.from} → ${applied.to}` : "Custom dates"}
+                    {timeRangeChip(applied.range, applied.from, applied.to)}
                   </span>
                 ) : (
                   <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -752,24 +783,19 @@ export default function ExecutivePerformancePage() {
         >
           <div className="flex min-w-0 flex-col gap-2.5">
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              <Datepicker
-                controls={["calendar"]}
-                select="range"
-                touchUi={true}
-                inputComponent="input"
-                inputProps={{
-                  placeholder: !draft.from && !draft.to ? "All time" : "Date range",
-                  className: "h-9 w-full text-sm",
+              <TimeRangeFilter
+                preset={draft.range}
+                customFrom={draft.from}
+                customTo={draft.to}
+                onPresetChange={(preset) => {
+                  setDraft((prev) => {
+                    if (preset === "custom") return { ...prev, range: preset };
+                    const resolved = resolveTimeRangeYmd(preset, prev.from, prev.to);
+                    return { ...prev, range: preset, from: resolved.from, to: resolved.to };
+                  });
                 }}
-                value={[ymdToDate(draft.from), ymdToDate(draft.to)]}
-                onChange={(ev) => {
-                  const [f, t] = ev.value as [Date | null, Date | null];
-                  setDraft((prev) => ({
-                    ...prev,
-                    from: f ? dateToYmd(f) : "",
-                    to: t ? dateToYmd(t) : "",
-                  }));
-                }}
+                onCustomChange={(from, to) => setDraft((prev) => ({ ...prev, range: "custom", from, to }))}
+                customPlaceholder={!draft.from && !draft.to ? "All time" : "Date range"}
               />
 
               <Select
@@ -912,8 +938,8 @@ export default function ExecutivePerformancePage() {
         ) : null}
 
         {query.isLoading ? (
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5 sm:gap-2">
+            {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-[3.25rem] rounded-lg" />
             ))}
           </div>
@@ -936,9 +962,9 @@ export default function ExecutivePerformancePage() {
                 </div>
                 {"winRate" in selectedExec ? (
                   <div className="flex flex-wrap gap-1.5">
-                    <StatusPill tone="info">Win rate {selectedExec.winRate}%</StatusPill>
-                    <StatusPill tone="success">Won {formatINR(selectedExec.wonValue)}</StatusPill>
-                    <StatusPill tone="muted">Pipeline {formatINR(selectedExec.pipelineValue)}</StatusPill>
+                    <StatusPill tone="info">{selectedExec.proposalsCreated ?? 0} proposals</StatusPill>
+                    <StatusPill tone="success">Won {selectedExec.proposalsWon ?? 0}</StatusPill>
+                    <StatusPill tone="muted">{formatINR(selectedExec.revenueExclGst ?? 0)} excl. GST</StatusPill>
                   </div>
                 ) : null}
               </div>
@@ -948,43 +974,52 @@ export default function ExecutivePerformancePage() {
               variants={staggerContainer}
               initial="initial"
               animate="animate"
-              className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2"
+              className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5 sm:gap-2"
             >
               <KpiCard
-                label="Won value"
-                value={formatINR(summary?.wonValue ?? 0)}
-                sub={`${summary?.dealsWon ?? 0} won · avg ${formatINR(summary?.avgWonDealSize ?? 0)}`}
-                icon={TrendingUp}
-                iconColor="text-success"
-                iconBg="bg-success/15"
-                onClick={() => openDetail("deals_won")}
-              />
-              <KpiCard
-                label="Win rate"
-                value={`${summary?.winRate ?? 0}%`}
-                sub={`${summary?.dealsWon ?? 0} won / ${summary?.dealsLost ?? 0} lost`}
-                icon={Target}
+                label="Total proposals"
+                value={String(summary?.proposalsCreated ?? 0)}
+                sub="Created in period"
+                icon={FileText}
                 iconColor="text-primary"
                 iconBg="bg-primary/15"
-                onClick={() => openDetail("deals_lost")}
+                onClick={() => openDetail("proposals_created")}
               />
               <KpiCard
-                label="Collected"
-                value={formatINR(summary?.collectedRevenue ?? 0)}
-                sub={`${summary?.collectedPaymentCount ?? 0} payments`}
-                icon={Handshake}
+                label="Total sent"
+                value={String(summary?.proposalsSent ?? 0)}
+                sub="Sent or shared"
+                icon={Send}
                 iconColor="text-info"
                 iconBg="bg-info/15"
-                onClick={() => openDetail("payments_collected")}
+                onClick={() => openDetail("proposals_sent")}
               />
               <KpiCard
-                label="Pipeline"
-                value={formatINR(summary?.pipelineValue ?? 0)}
-                sub={`${summary?.pipelineCount ?? 0} open · ${summary?.customersNew ?? 0} new`}
-                icon={Users}
-                iconColor="text-warning"
+                label="Pending proposals"
+                value={String(summary?.proposalsPending ?? 0)}
+                sub={summary?.proposalsPending ? "Awaiting approval" : "None waiting"}
+                icon={Clock}
+                iconColor="text-warning-foreground"
                 iconBg="bg-warning/15"
-                onClick={() => openDetail("pipeline")}
+                onClick={() => openDetail("proposals_pending")}
+              />
+              <KpiCard
+                label="Won"
+                value={String(summary?.proposalsWon ?? 0)}
+                sub="In selected period"
+                icon={Trophy}
+                iconColor="text-success"
+                iconBg="bg-success/15"
+                onClick={() => openDetail("proposals_won")}
+              />
+              <KpiCard
+                label="Revenue without GST"
+                value={formatINR(summary?.revenueExclGst ?? 0)}
+                sub="Won excl. GST"
+                icon={IndianRupee}
+                iconColor="text-success"
+                iconBg="bg-success/15"
+                onClick={() => openDetail("proposals_won")}
               />
             </motion.div>
 
@@ -1007,7 +1042,7 @@ export default function ExecutivePerformancePage() {
                     <EmptyChart message="No trend data for this range." />
                   ) : (
                     <ChartContainer config={trendConfig} className="h-40 w-full sm:h-56 lg:h-72">
-                      <LineChart data={data?.trend} margin={{ left: 8, right: 12, top: 8, bottom: 0 }}>
+                      <LineChart data={data?.trend} margin={{ left: 8, right: 16, top: 18, bottom: 0 }}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
                         <XAxis
                           dataKey="date"
@@ -1023,9 +1058,7 @@ export default function ExecutivePerformancePage() {
                           tickLine={false}
                           axisLine={false}
                           width={56}
-                          tickFormatter={(v) =>
-                            v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)
-                          }
+                          tickFormatter={formatChartNumber}
                         />
                         <ChartTooltip content={<ChartTooltipContent />} />
                         <Line
@@ -1034,24 +1067,30 @@ export default function ExecutivePerformancePage() {
                           dataKey="proposalsCreated"
                           stroke="var(--color-proposalsCreated)"
                           strokeWidth={2}
-                          dot={false}
-                        />
+                          dot={{ r: 2 }}
+                        >
+                          <LabelList dataKey="proposalsCreated" position="top" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                        </Line>
                         <Line
                           yAxisId="left"
                           type="monotone"
                           dataKey="dealsWon"
                           stroke="var(--color-dealsWon)"
                           strokeWidth={2}
-                          dot={false}
-                        />
+                          dot={{ r: 2 }}
+                        >
+                          <LabelList dataKey="dealsWon" position="bottom" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                        </Line>
                         <Line
                           yAxisId="right"
                           type="monotone"
                           dataKey="wonValue"
                           stroke="var(--color-wonValue)"
                           strokeWidth={2}
-                          dot={false}
-                        />
+                          dot={{ r: 2 }}
+                        >
+                          <LabelList dataKey="wonValue" position="top" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                        </Line>
                       </LineChart>
                     </ChartContainer>
                   )}
@@ -1073,16 +1112,14 @@ export default function ExecutivePerformancePage() {
                         <BarChart
                           data={wonRankingData}
                           layout="vertical"
-                          margin={{ left: 8, right: 16, top: 4, bottom: 4 }}
+                          margin={{ left: 8, right: 48, top: 4, bottom: 4 }}
                         >
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis
                             type="number"
                             tickLine={false}
                             axisLine={false}
-                            tickFormatter={(v) =>
-                              v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)
-                            }
+                            tickFormatter={formatChartNumber}
                           />
                           <YAxis
                             type="category"
@@ -1106,7 +1143,9 @@ export default function ExecutivePerformancePage() {
                             radius={[0, 6, 6, 0]}
                             cursor="pointer"
                             onClick={() => openDetail("deals_won")}
-                          />
+                          >
+                            <LabelList dataKey="wonValue" position="right" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     )}
@@ -1122,7 +1161,7 @@ export default function ExecutivePerformancePage() {
                       <ChartContainer config={funnelConfig} className="h-48 w-full sm:h-64 lg:h-72">
                         <BarChart
                           data={data?.funnel}
-                          margin={{ left: 8, right: 12, top: 8, bottom: 24 }}
+                          margin={{ left: 8, right: 12, top: 22, bottom: 24 }}
                         >
                           <CartesianGrid vertical={false} strokeDasharray="3 3" />
                           <XAxis
@@ -1150,6 +1189,7 @@ export default function ExecutivePerformancePage() {
                             {(data?.funnel ?? []).map((_, i) => (
                               <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                             ))}
+                            <LabelList dataKey="count" position="top" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
                           </Bar>
                         </BarChart>
                       </ChartContainer>
@@ -1188,21 +1228,13 @@ export default function ExecutivePerformancePage() {
                       <EmptyChart message="No comparison data for this metric." />
                     ) : (
                       <ChartContainer config={comparisonConfig} className="h-48 w-full sm:h-64 lg:h-72">
-                        <BarChart data={rankingData} layout="vertical" margin={{ left: 8, right: 16 }}>
+                        <BarChart data={rankingData} layout="vertical" margin={{ left: 8, right: 48 }}>
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis
                             type="number"
                             tickLine={false}
                             axisLine={false}
-                            tickFormatter={(v) =>
-                              comparisonMetricMeta.format === "inr"
-                                ? v >= 1_000_000
-                                  ? `${(v / 1_000_000).toFixed(1)}M`
-                                  : v >= 1000
-                                    ? `${(v / 1000).toFixed(0)}k`
-                                    : String(v)
-                                : String(v)
-                            }
+                            tickFormatter={formatChartNumber}
                           />
                           <YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} />
                           <ChartTooltip
@@ -1224,7 +1256,9 @@ export default function ExecutivePerformancePage() {
                             onClick={() => {
                               if (comparisonMetricMeta.detailType) openDetail(comparisonMetricMeta.detailType);
                             }}
-                          />
+                          >
+                            <LabelList dataKey="metric" position="right" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     )}
@@ -1238,12 +1272,14 @@ export default function ExecutivePerformancePage() {
                       <EmptyChart message="No closed deals to compare." />
                     ) : (
                       <ChartContainer config={winRateConfig} className="h-48 w-full sm:h-64 lg:h-72">
-                        <BarChart data={winRateData} layout="vertical" margin={{ left: 8, right: 16 }}>
+                        <BarChart data={winRateData} layout="vertical" margin={{ left: 8, right: 40 }}>
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} />
                           <YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} />
                           <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar dataKey="winRate" fill="var(--color-winRate)" radius={[0, 6, 6, 0]} />
+                          <Bar dataKey="winRate" fill="var(--color-winRate)" radius={[0, 6, 6, 0]}>
+                            <LabelList dataKey="winRate" position="right" offset={6} style={CHART_LABEL} formatter={formatChartPercent} />
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     )}
@@ -1254,18 +1290,24 @@ export default function ExecutivePerformancePage() {
                   title="Weekday performance"
                   description="When wins, losses, and proposal creation happen across the week."
                 >
-                  <ChartContainer config={weekdayConfig} className="h-40 w-full sm:h-56">
+                  <ChartContainer config={weekdayConfig} className="h-48 w-full sm:h-64">
                     <BarChart
                       data={data?.weekdayPerformance}
-                      margin={{ left: 8, right: 12, top: 8, bottom: 0 }}
+                      margin={{ left: 8, right: 12, top: 22, bottom: 0 }}
                     >
                       <CartesianGrid vertical={false} strokeDasharray="3 3" />
                       <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11 }} />
                       <YAxis tickLine={false} axisLine={false} width={32} allowDecimals={false} />
                       <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey="proposalsCreated" fill="var(--color-proposalsCreated)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="dealsWon" fill="var(--color-dealsWon)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="dealsLost" fill="var(--color-dealsLost)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="proposalsCreated" fill="var(--color-proposalsCreated)" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="proposalsCreated" position="top" offset={4} style={CHART_LABEL} formatter={formatChartNumber} />
+                      </Bar>
+                      <Bar dataKey="dealsWon" fill="var(--color-dealsWon)" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="dealsWon" position="top" offset={4} style={CHART_LABEL} formatter={formatChartNumber} />
+                      </Bar>
+                      <Bar dataKey="dealsLost" fill="var(--color-dealsLost)" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="dealsLost" position="top" offset={4} style={CHART_LABEL} formatter={formatChartNumber} />
+                      </Bar>
                     </BarChart>
                   </ChartContainer>
                 </ChartCard>
@@ -1372,7 +1414,7 @@ export default function ExecutivePerformancePage() {
                         <BarChart
                           data={(data?.lossReasons ?? []).slice(0, 10)}
                           layout="vertical"
-                          margin={{ left: 8, right: 16 }}
+                          margin={{ left: 8, right: 36 }}
                         >
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
@@ -1391,7 +1433,9 @@ export default function ExecutivePerformancePage() {
                             radius={[0, 6, 6, 0]}
                             cursor="pointer"
                             onClick={() => openDetail("loss_reason")}
-                          />
+                          >
+                            <LabelList dataKey="count" position="right" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     )}
@@ -1408,7 +1452,7 @@ export default function ExecutivePerformancePage() {
                         <BarChart
                           data={(data?.rejectionReasons ?? []).slice(0, 10)}
                           layout="vertical"
-                          margin={{ left: 8, right: 16 }}
+                          margin={{ left: 8, right: 36 }}
                         >
                           <CartesianGrid horizontal={false} strokeDasharray="3 3" />
                           <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
@@ -1427,7 +1471,9 @@ export default function ExecutivePerformancePage() {
                             radius={[0, 6, 6, 0]}
                             cursor="pointer"
                             onClick={() => openDetail("rejection_reason")}
-                          />
+                          >
+                            <LabelList dataKey="count" position="right" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
+                          </Bar>
                         </BarChart>
                       </ChartContainer>
                     )}
@@ -1446,11 +1492,14 @@ export default function ExecutivePerformancePage() {
                       <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("proposals_created")}>
                         Proposals
                       </Button>
-                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("deals_won")}>
-                        Won
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("proposals_sent")}>
+                        Sent
                       </Button>
-                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("deals_lost")}>
-                        Lost
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("proposals_pending")}>
+                        Pending
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openDetail("proposals_won")}>
+                        Won
                       </Button>
                     </div>
                   </div>

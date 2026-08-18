@@ -1,4 +1,4 @@
-import { AIAssistantSidebar } from "@/components/AIAssistantSidebar";
+import { AIAssistantProvider } from "@/components/AIAssistantSidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileShellHeader } from "@/components/MobileShellHeader";
 import { SidebarNavProvider, useSidebarNav } from "@/contexts/SidebarNavContext";
@@ -77,7 +77,6 @@ function AppLayoutShell() {
           </motion.div>
         </main>
       </div>
-      <AIAssistantSidebar />
     </div>
   );
 }
@@ -85,7 +84,9 @@ function AppLayoutShell() {
 export function AppLayout() {
   return (
     <SidebarNavProvider>
-      <AppLayoutShell />
+      <AIAssistantProvider>
+        <AppLayoutShell />
+      </AIAssistantProvider>
     </SidebarNavProvider>
   );
 }

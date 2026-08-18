@@ -5,6 +5,7 @@ import { INVALIDATE } from "@/lib/queryKeys";
 import { resolveCustomerNotifyReachability } from "@/lib/customerNotifyContacts";
 import { triggerAutomation } from "@/lib/automationService";
 import { normalizeDealStatus } from "@/lib/dealStatus";
+import { persistProductLinesFromProposal } from "@/lib/productLineSync";
 import { useAppStore } from "@/store/useAppStore";
 import type { Deal, Proposal } from "@/types";
 
@@ -237,11 +238,17 @@ export function useCreateDealFromProposal() {
       const deal = await api.post<Deal>("/deals", body);
       const proposalUpdated: Proposal = {
         ...proposal,
-        status: "deal_created",
+        status: "won",
         dealId: deal.id,
         updatedAt: new Date().toISOString(),
       };
       await api.put<Proposal>(`/proposals/${proposal.id}`, proposalUpdated);
+      await persistProductLinesFromProposal({
+        customerId: proposal.customerId,
+        dealId: deal.id,
+        proposal,
+        inventoryItems: useAppStore.getState().inventoryItems,
+      }).catch(() => undefined);
       return { deal, proposal: proposalUpdated };
     },
     onSuccess: ({ deal, proposal }) => {

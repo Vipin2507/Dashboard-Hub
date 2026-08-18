@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Topbar } from '@/components/Topbar';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,19 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Datepicker, dateToYmd, ymdToDate } from '@/components/ui/datepicker';
 import { Label } from '@/components/ui/label';
+import { TimeRangeFilter } from '@/components/TimeRangeFilter';
+import {
+  hydrateTimeRange,
+  resolveTimeRangeYmd,
+  timeRangeChip,
+  ymdInInclusiveRange,
+  type TimeRangePreset,
+} from '@/lib/dateRange';
+import {
+  FILTER_SESSION_KEYS,
+  loadSessionFilters,
+  saveSessionFilters,
+} from '@/lib/filterSessionPersistence';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -38,6 +51,16 @@ function formatDate(s?: string | null) {
   } catch {
     return s;
   }
+}
+
+function initialPaymentHistoryRange(): { preset: TimeRangePreset; customFrom: string; customTo: string } {
+  const saved = loadSessionFilters<{ range?: string; from?: string; to?: string }>(FILTER_SESSION_KEYS.paymentsHistory);
+  if (!saved) return { preset: 'this_month', customFrom: '', customTo: '' };
+  return hydrateTimeRange({
+    timeRangeFilter: saved.range,
+    dateFrom: saved.from,
+    dateTo: saved.to,
+  });
 }
 
 function paymentStatusBadge(status?: string) {
@@ -235,11 +258,34 @@ export default function Payments() {
   const canConfirm = me.role === 'finance' || me.role === 'super_admin';
 
   const [searchParams] = useSearchParams();
+  const customerIdFilter = searchParams.get("customerId");
   const remainingQ = useRemainingBalances();
   const overdueQ = useOverduePayments();
   const dueQ = useDuePayments();
-  const historyQ = usePaymentHistory();
+  const historyQ = usePaymentHistory(customerIdFilter ? { customerId: customerIdFilter } : undefined);
   const catalogQ = usePaymentCatalog();
+  const initialHistoryRange = useMemo(() => initialPaymentHistoryRange(), []);
+  const [historyRange, setHistoryRange] = useState<TimeRangePreset>(() => initialHistoryRange.preset);
+  const [historyCustomFrom, setHistoryCustomFrom] = useState(() => initialHistoryRange.customFrom);
+  const [historyCustomTo, setHistoryCustomTo] = useState(() => initialHistoryRange.customTo);
+  const { from: historyFrom, to: historyTo } = resolveTimeRangeYmd(historyRange, historyCustomFrom, historyCustomTo);
+
+  useEffect(() => {
+    saveSessionFilters(FILTER_SESSION_KEYS.paymentsHistory, {
+      range: historyRange,
+      from: historyCustomFrom,
+      to: historyCustomTo,
+    });
+  }, [historyRange, historyCustomFrom, historyCustomTo]);
+
+  const historyRows = useMemo(() => {
+    const rows = historyQ.data ?? [];
+    if (!historyFrom && !historyTo) return rows;
+    return rows.filter((row) => {
+      const ymd = String(row.paid_date || row.due_date || '').slice(0, 10);
+      return ymdInInclusiveRange(ymd, historyFrom, historyTo);
+    });
+  }, [historyQ.data, historyFrom, historyTo]);
   const paymentTabs = ['overview', 'due', 'overdue', 'history', 'catalog'] as const;
   const tabFromUrl = searchParams.get('tab');
   const [paymentTab, setPaymentTab] = useState(() =>
@@ -255,9 +301,15 @@ export default function Payments() {
   const [payRef, setPayRef] = useState('');
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
 
+  const remainingRows = useMemo(() => {
+    const rows = remainingQ.data ?? [];
+    if (!customerIdFilter) return rows;
+    return rows.filter((r: { customer_id?: string }) => String(r.customer_id ?? "") === customerIdFilter);
+  }, [remainingQ.data, customerIdFilter]);
+
   const kpis = useMemo(() => {
-    const remainingRows = remainingQ.data ?? [];
-    const totalPending = remainingRows.reduce((s, r: any) => s + Number(r.remaining_amount ?? 0), 0);
+    const rows = remainingQ.data ?? [];
+    const totalPending = rows.reduce((s, r: any) => s + Number(r.remaining_amount ?? 0), 0);
     const overdueAmount = (overdueQ.data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0);
     const collectedMTD = (historyQ.data ?? [])
       .filter((h) => h.status === 'paid' && h.paid_date && new Date(h.paid_date).getMonth() === new Date().getMonth())
@@ -268,7 +320,7 @@ export default function Payments() {
       overdueAmount,
       dueAmount,
       collectedMTD,
-      activePlans: remainingRows.length,
+      activePlans: rows.length,
       overdueCount: (overdueQ.data ?? []).length,
       dueCount: (dueQ.data ?? []).length,
     };
@@ -352,7 +404,7 @@ export default function Payments() {
                   <p className="text-sm text-destructive">
                     Could not load payment plans. Restart the API server (<code className="text-xs">npm run server</code>) and refresh.
                   </p>
-                ) : (remainingQ.data ?? []).length === 0 ? (
+                ) : remainingRows.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     No active payment plans yet. Create a deal from a proposal with <strong>Payment plan</strong> enabled to see installments here.
                   </p>
@@ -371,7 +423,7 @@ export default function Payments() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(remainingQ.data ?? []).map((r: any) => (
+                        {remainingRows.map((r: any) => (
                           <TableRow key={r.plan_id}>
                             <TableCell className="text-sm font-medium">{r.company_name ?? '—'}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{r.deal_title ?? '—'}</TableCell>
@@ -572,8 +624,44 @@ export default function Payments() {
 
           <TabsContent value="history" className="mt-4">
             <Card className="border border-border shadow-none">
-              <CardHeader>
-                <CardTitle className="text-base">Payment history</CardTitle>
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <CardTitle className="text-base">Payment history</CardTitle>
+                  {timeRangeChip(historyRange, historyFrom, historyTo) ? (
+                    <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      {timeRangeChip(historyRange, historyFrom, historyTo)}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="grid max-w-sm gap-2">
+                  <Label className="text-xs">Paid date</Label>
+                  <TimeRangeFilter
+                    preset={historyRange}
+                    customFrom={historyCustomFrom}
+                    customTo={historyCustomTo}
+                    onPresetChange={setHistoryRange}
+                    onCustomChange={(from, to) => {
+                      setHistoryCustomFrom(from);
+                      setHistoryCustomTo(to);
+                    }}
+                    customPlaceholder="Any range…"
+                  />
+                  {historyRange !== 'all' ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-fit px-2 text-xs"
+                      onClick={() => {
+                        setHistoryRange('all');
+                        setHistoryCustomFrom('');
+                        setHistoryCustomTo('');
+                      }}
+                    >
+                      Clear dates
+                    </Button>
+                  ) : null}
+                </div>
               </CardHeader>
               <CardContent>
                 {historyQ.isLoading ? (
@@ -592,7 +680,7 @@ export default function Payments() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(historyQ.data ?? []).map((row: any) => (
+                        {historyRows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell className="text-sm font-medium">{row.company_name ?? '—'}</TableCell>
                             <TableCell className="text-xs text-muted-foreground">{row.deal_title ?? '—'}</TableCell>
@@ -602,6 +690,13 @@ export default function Payments() {
                             <TableCell className="text-xs">{row.status}</TableCell>
                           </TableRow>
                         ))}
+                        {historyRows.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                              No payments in this period
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>

@@ -1,9 +1,12 @@
-import { Fragment, useEffect, useMemo, useState, type ComponentType } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiUrl } from "@/lib/api";
-import { QK, LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
+import { QK, LIVE_ENTITY_POLL_MS, INVALIDATE } from "@/lib/queryKeys";
 import { patchCustomerRowInStore, persistCustomerUpdate } from "@/lib/customerPersistence";
+import { persistCustomerProductLines } from "@/lib/productLineSync";
+import { dealsActorQuery } from "@/lib/dealsApi";
+import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
 import {
   CustomerProposalsLiveTable,
   CustomerDealsLiveTable,
@@ -12,6 +15,7 @@ import {
 } from "@/components/customer-profile/CustomerLiveSections";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
+import { isProposalWon } from "@/lib/proposalStatus";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import { Topbar } from "@/components/Topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +60,7 @@ import {
   Dialog,
   DialogBody,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -86,16 +91,19 @@ import {
   CalendarClock,
   AlertCircle,
   Bot,
+  Loader2,
 } from "lucide-react";
-import type { Customer, CustomerStatus, CustomerSupportTicket, Proposal } from "@/types";
+import type { Customer, CustomerProductLine, CustomerStatus, CustomerSupportTicket, Deal, InventoryItem, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import { toast } from "@/components/ui/use-toast";
+import { StatusPill } from "@/components/StatusPill";
+import { dialogSmMaxMd } from "@/lib/dialogLayout";
+import { getCustomerBrief, type CustomerBrief } from "@/lib/aiMemoryService";
 import { useCustomerPaymentSummary } from "@/hooks/usePayments";
-import { useCustomerExtrasQuery } from "@/hooks/useCustomerExtrasQuery";
+import { useCustomerExtrasQuery, useCustomerProductLinesQuery } from "@/hooks/useCustomerExtrasQuery";
 import { triggerAutomation } from "@/lib/automationService";
-import { getCustomerBrief } from "@/lib/aiMemoryService";
 import { GenerateEstimateDialog } from "@/components/GenerateEstimateDialog";
 
 const STATUS_PILL: Record<string, string> = {
@@ -492,6 +500,7 @@ function formatDate(s: string) {
 export default function CustomerProfile() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const me = useAppStore((s) => s.me);
   const customers = useAppStore((s) => s.customers);
@@ -499,21 +508,26 @@ export default function CustomerProfile() {
   const deals = useAppStore((s) => s.deals);
   const users = useAppStore((s) => s.users);
   const regions = useAppStore((s) => s.regions);
+  const inventoryItems = useAppStore((s) => s.inventoryItems);
+  const setInventoryItems = useAppStore((s) => s.setInventoryItems);
+  const customersQuery = useCustomersListQuery();
   const scope = getScope(me.role, "customers");
   const visibleCustomers = visibleWithScope(scope, me, customers);
   const rawCustomer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
-  const extrasQuery = useCustomerExtrasQuery(rawCustomer?.id);
+  const extrasQuery = useCustomerExtrasQuery(rawCustomer?.id ?? id);
+  const productLinesQuery = useCustomerProductLinesQuery(rawCustomer?.id ?? id);
   const customer = useMemo(() => {
     if (!rawCustomer) return null;
     const base = ensureCustomerArrays(rawCustomer);
     const extras = extrasQuery.data;
-    if (!extras) return base;
+    const lines = productLinesQuery.data;
     return ensureCustomerArrays({
       ...base,
-      notes: extras.notes,
-      attachments: extras.attachments,
+      notes: extras?.notes ?? base.notes,
+      attachments: extras?.attachments ?? base.attachments,
+      productLines: lines ?? base.productLines,
     });
-  }, [rawCustomer, extrasQuery.data]);
+  }, [rawCustomer, extrasQuery.data, productLinesQuery.data]);
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -522,8 +536,6 @@ export default function CustomerProfile() {
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addTicketOpen, setAddTicketOpen] = useState(false);
-  const [recordPaymentOpen, setRecordPaymentOpen] = useState(false);
-  const [createInvoiceOpen, setCreateInvoiceOpen] = useState(false);
   const [addProductLineOpen, setAddProductLineOpen] = useState(false);
   const [logActivityOpen, setLogActivityOpen] = useState(false);
   const [showEstimateDialog, setShowEstimateDialog] = useState(false);
@@ -532,10 +544,28 @@ export default function CustomerProfile() {
   const [expandedTicketId, setExpandedTicketId] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [briefOpen, setBriefOpen] = useState(false);
-  const [briefLines, setBriefLines] = useState<string[]>([]);
-  const [activeTab, setActiveTab] = useState("overview");
+  const [brief, setBrief] = useState<CustomerBrief | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const tabFromUrl = searchParams.get("tab") || "overview";
+  const activeTab = PROFILE_TABS.some((t) => t.key === tabFromUrl) ? tabFromUrl : "overview";
+  const setActiveTab = (key: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === "overview") next.delete("tab");
+    else next.set("tab", key);
+    setSearchParams(next, { replace: true });
+  };
   const [productLineFilter, setProductLineFilter] = useState<string>("all");
-  const [draftProductLineFilter, setDraftProductLineFilter] = useState<string>("all");
+  const [plForm, setPlForm] = useState({
+    inventoryItemId: "",
+    qty: "1",
+    unitPrice: "",
+    purchasedAt: new Date().toISOString().slice(0, 10),
+    renewalDate: "",
+    expiryDate: "",
+    status: "active" as CustomerProductLine["status"],
+    dealId: "",
+    usageDetails: "",
+  });
   const [newContactForm, setNewContactForm] = useState({
     name: "",
     email: "",
@@ -554,12 +584,6 @@ export default function CustomerProfile() {
     description: "",
     entityType: "",
   });
-
-  useEffect(() => {
-    setDraftProductLineFilter(productLineFilter);
-  }, [productLineFilter]);
-
-  const hasPendingProductLineFilter = draftProductLineFilter !== productLineFilter;
 
   const canUpdate = can(me.role, "customers", "update");
   const canDelete = can(me.role, "customers", "delete");
@@ -583,22 +607,76 @@ export default function CustomerProfile() {
     refetchOnMount: "always",
   });
 
+  const { data: liveDeals = [], isSuccess: liveDealsReady } = useQuery({
+    queryKey: QK.customerDeals(customer?.id ?? ""),
+    queryFn: () => api.get<Deal[]>(`/deals?${dealsActorQuery(me, { customerId: customer!.id })}`),
+    enabled: !!customer?.id,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
+  });
+
+  const { data: paymentSummary } = useCustomerPaymentSummary(customer?.id ?? "");
+
+  const inventoryQuery = useQuery({
+    queryKey: ["inventory"],
+    queryFn: () => api.get<InventoryItem[]>("/inventory"),
+    enabled: addProductLineOpen,
+    staleTime: 15_000,
+  });
+
+  useEffect(() => {
+    if (inventoryQuery.data) setInventoryItems(inventoryQuery.data);
+  }, [inventoryQuery.data, setInventoryItems]);
+
   const openTicketsCount =
     (customer?.supportTickets ?? []).filter((t) => t.status === "open" || t.status === "in_progress").length;
 
   const dealScope = getScope(me.role, "deals");
   const visibleDeals = visibleWithScope(dealScope, me, deals);
   const customerDeals = customer
-    ? visibleDeals.filter((d) => d.customerId === customer.id && !d.deletedAt)
+    ? liveDealsReady
+      ? liveDeals.filter((d) => !d.deletedAt)
+      : visibleDeals.filter((d) => d.customerId === customer.id && !d.deletedAt)
     : [];
   const wonDeal =
     customerDeals.find((d) => d.dealStatus === "Closed/Won") ??
     customerDeals.find((d) => String(d.stage || "").toLowerCase() === "won") ??
     null;
 
+  const customerId = customer?.id;
+  const wonDealId = wonDeal?.id;
+  const wonDealName = wonDeal?.name ?? "";
+
+  const openBriefing = useCallback(async () => {
+    if (!customerId) return;
+    setBriefOpen(true);
+    setBriefLoading(true);
+    try {
+      const next = await getCustomerBrief({
+        customerId,
+        wonDeal: wonDealId ? { id: wonDealId, name: wonDealName } : null,
+      });
+      setBrief(next);
+    } catch {
+      setBrief(null);
+    } finally {
+      setBriefLoading(false);
+    }
+  }, [customerId, wonDealId, wonDealName]);
+
   useEffect(() => {
-    if (!customer) return;
-    const key = `AIBriefSeen:v1:${me.id}:${customer.id}`;
+    if (!id || !productLinesQuery.data) return;
+    useAppStore.setState((s) => ({
+      customers: s.customers.map((c) =>
+        c.id === id ? { ...c, productLines: productLinesQuery.data ?? c.productLines } : c,
+      ),
+    }));
+  }, [id, productLinesQuery.data]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    const key = `AIBriefSeen:v1:${me.id}:${customerId}`;
     let seen = false;
     try {
       seen = localStorage.getItem(key) === "1";
@@ -607,41 +685,26 @@ export default function CustomerProfile() {
     }
     if (seen) return;
     void (async () => {
-      const brief = await getCustomerBrief({
-        customerId: customer.id,
-        wonDeal: wonDeal ? { id: wonDeal.id, name: wonDeal.name } : null,
-      }).catch(() => null);
-      if (!brief) return;
-      const lines: string[] = [];
-      if (brief.lastInteraction) {
-        lines.push(
-          `Last: ${new Date(brief.lastInteraction.at).toLocaleString("en-IN")} — ${brief.lastInteraction.summary}`,
-        );
-      }
-      if (brief.delivery?.status) lines.push(`Delivery: ${brief.delivery.dealTitle} — ${brief.delivery.status}`);
-      if (brief.payments) {
-        lines.push(
-          `Payments: collected ₹${brief.payments.collected.toLocaleString("en-IN")}, pending ₹${brief.payments.pending.toLocaleString("en-IN")}`,
-        );
-        if (brief.payments.overdueCount > 0) {
-          lines.push(
-            `Overdue: ${brief.payments.overdueCount} installments (₹${brief.payments.overdueAmount.toLocaleString("en-IN")})`,
-          );
-        }
-      }
-      brief.nextSteps.forEach((s) => lines.push(`Next: ${s}`));
-      brief.risks.forEach((s) => lines.push(`Risk: ${s}`));
-      setBriefLines(lines);
-      setBriefOpen(true);
+      await openBriefing();
       try {
         localStorage.setItem(key, "1");
       } catch {
         /* ignore */
       }
     })();
-  }, [customer?.id, me.id, wonDeal?.id]);
+  }, [customerId, me.id, openBriefing]);
 
   if (!customer) {
+    if (customersQuery.isPending) {
+      return (
+        <>
+          <Topbar title="Customer" subtitle="Loading" />
+          <div className="flex items-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading customer…
+          </div>
+        </>
+      );
+    }
     return (
       <>
         <Topbar title="Customer" subtitle="Not found or you don't have access" />
@@ -692,6 +755,12 @@ export default function CustomerProfile() {
             .filter((x): x is string => !!x && String(x).trim() !== ""),
         );
 
+  const collectedRevenue = paymentSummary?.summary?.totalPaid ?? customer.totalRevenue;
+  const activeProposalCount = liveProposals.filter(
+    (p) => p.status !== "rejected" && !isProposalWon(p.status),
+  ).length;
+  const activeDealCount = customerDeals.filter((d) => d.dealStatus !== "Closed/Lost").length;
+
   return (
     <>
       <Topbar
@@ -708,6 +777,16 @@ export default function CustomerProfile() {
             >
               <ArrowLeft className="mr-1.5 h-4 w-4 shrink-0" />
               Customers
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0"
+              onClick={() => void openBriefing()}
+            >
+              <Bot className="mr-1.5 h-4 w-4 shrink-0" />
+              Briefing
             </Button>
             <Button
               className="h-9 shrink-0 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
@@ -753,12 +832,12 @@ export default function CustomerProfile() {
               {(
                 [
                   {
-                    label: "Total Revenue",
-                    value: `₹${customer.totalRevenue.toLocaleString("en-IN")}`,
-                    cls: "text-emerald-600 font-semibold",
+                    label: "Collected",
+                    value: formatINR(collectedRevenue),
+                    cls: "font-semibold tabular-nums text-success",
                   },
-                  { label: "Active Proposals", value: String(customer.activeProposalsCount), cls: "" },
-                  { label: "Active Deals", value: String(customer.activeDealsCount), cls: "" },
+                  { label: "Active Proposals", value: String(activeProposalCount), cls: "tabular-nums" },
+                  { label: "Deals", value: String(activeDealCount), cls: "tabular-nums" },
                   {
                     label: "Open Tickets",
                     value: String(openTicketsCount),
@@ -808,6 +887,15 @@ export default function CustomerProfile() {
                 <FileText className="mr-1.5 h-3.5 w-3.5" />
                 Estimate
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 flex-1 rounded-lg text-xs"
+                onClick={() => void openBriefing()}
+              >
+                <Bot className="mr-1.5 h-3.5 w-3.5" />
+                Briefing
+              </Button>
             </div>
             <div className="flex gap-2">
               <Button
@@ -833,41 +921,54 @@ export default function CustomerProfile() {
 
           <div className="min-w-0 flex-1 space-y-4">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex w-full flex-col">
-              <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                <div className="scrollbar-none flex overflow-x-auto border-b border-gray-100 px-1 dark:border-gray-800">
+              <div className="card-soft overflow-hidden">
+                <div className="scrollbar-none flex overflow-x-auto border-b border-border px-1">
                   {PROFILE_TABS.map((tab) => {
                     const Icon = tab.icon;
+                    const count =
+                      tab.key === "productline"
+                        ? customer.productLines.length
+                        : tab.key === "transactions"
+                          ? liveProposals.length + customerDeals.length
+                          : tab.key === "tickets"
+                            ? openTicketsCount
+                            : null;
                     return (
                       <button
                         key={tab.key}
                         type="button"
                         onClick={() => setActiveTab(tab.key)}
                         className={cn(
-                          "-mb-px flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                          "-mb-px flex flex-shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-xs font-medium transition-colors sm:px-4 sm:text-sm",
                           activeTab === tab.key
-                            ? "border-blue-600 text-blue-600"
-                            : "border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200",
+                            ? "border-primary text-primary"
+                            : "border-transparent text-muted-foreground hover:text-foreground",
                         )}
-
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
                         {tab.label}
+                        {count != null && count > 0 && (
+                          <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                            {count}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
-                <div className="p-5">
-                  {uniqueProductLineOptions.length > 0 && (
-                    <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="p-4 sm:p-5">
+                  {uniqueProductLineOptions.length > 0 &&
+                    (activeTab === "transactions" || activeTab === "productline") && (
+                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Filter</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Product line filter applies to deals, invoices, activity, and product line table where applicable.
+                        <p className="text-sm font-medium">Product line</p>
+                        <p className="text-xs text-muted-foreground">
+                          Filters deals, invoices, activity, and the product table.
                         </p>
                       </div>
                       <div className="w-full sm:w-72">
                         <Label className="sr-only">Product line</Label>
-                        <Select value={draftProductLineFilter} onValueChange={setDraftProductLineFilter}>
+                        <Select value={productLineFilter} onValueChange={setProductLineFilter}>
                           <SelectTrigger className="h-9 w-full">
                             <SelectValue placeholder="All product lines" />
                           </SelectTrigger>
@@ -880,25 +981,6 @@ export default function CustomerProfile() {
                             ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9"
-                          disabled={!hasPendingProductLineFilter}
-                          onClick={() => setDraftProductLineFilter("all")}
-                        >
-                          Clear
-                        </Button>
-                        <Button
-                          type="button"
-                          className="h-9 bg-blue-600 hover:bg-blue-700 text-white"
-                          disabled={!hasPendingProductLineFilter}
-                          onClick={() => setProductLineFilter(draftProductLineFilter)}
-                        >
-                          Apply
-                        </Button>
                       </div>
                     </div>
                   )}
@@ -1035,7 +1117,10 @@ export default function CustomerProfile() {
                 <AccordionItem value="payments" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Payments</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    <CustomerPaymentsLiveSection customerId={customer.id} onRecordPayment={() => setRecordPaymentOpen(true)} />
+                    <CustomerPaymentsLiveSection
+                      customerId={customer.id}
+                      onRecordPayment={() => navigate(`/payments?customerId=${encodeURIComponent(customer.id)}`)}
+                    />
                   </AccordionContent>
                 </AccordionItem>
 
@@ -1043,7 +1128,12 @@ export default function CustomerProfile() {
                   <AccordionTrigger className="py-4 hover:no-underline">Invoices</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
                     {(me.role === "finance" || me.role === "super_admin") && (
-                      <Button size="sm" variant="outline" className="mb-4" onClick={() => setCreateInvoiceOpen(true)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mb-4"
+                        onClick={() => navigate(`/payments?customerId=${encodeURIComponent(customer.id)}`)}
+                      >
                         <Plus className="w-4 h-4 mr-1" /> Create Invoice
                       </Button>
                     )}
@@ -1134,7 +1224,22 @@ export default function CustomerProfile() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredProductLines.map((pl) => {
+                  {productLinesQuery.isLoading && filteredProductLines.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Loading product lines…
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredProductLines.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
+                        No product lines. Convert a proposal to a deal, or add one here.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredProductLines.map((pl) => {
                     const renewalDate = pl.renewalDate ? new Date(pl.renewalDate) : null;
                     const expiryDate = pl.expiryDate ? new Date(pl.expiryDate) : null;
                     const now = new Date();
@@ -1184,13 +1289,7 @@ export default function CustomerProfile() {
                         <TableCell className="text-xs text-muted-foreground">{pl.usageDetails ?? "—"}</TableCell>
                       </TableRow>
                     );
-                  })}
-                  {filteredProductLines.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={10} className="text-center text-sm text-muted-foreground py-8">
-                        No product lines
-                      </TableCell>
-                    </TableRow>
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -2016,39 +2115,214 @@ export default function CustomerProfile() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Record Payment</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Deal, Amount, Paid On, Mode, Reference, Notes.</p>
+      <Dialog
+        open={addProductLineOpen}
+        onOpenChange={(open) => {
+          setAddProductLineOpen(open);
+          if (open) {
+            setPlForm({
+              inventoryItemId: "",
+              qty: "1",
+              unitPrice: "",
+              purchasedAt: new Date().toISOString().slice(0, 10),
+              renewalDate: "",
+              expiryDate: "",
+              status: "active",
+              dealId: customerDeals[0]?.id ?? "",
+              usageDetails: "",
+            });
+          }
+        }}
+      >
+        <DialogContent className={dialogSmMaxMd}>
+          <DialogHeader>
+            <DialogTitle>Add Product Line</DialogTitle>
+            <DialogDescription className="text-xs">
+              Saved to this customer and shown on the Product Line tab.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Inventory item</Label>
+              <Select
+                value={plForm.inventoryItemId}
+                onValueChange={(inventoryItemId) => {
+                  const inv = (inventoryQuery.data ?? inventoryItems).find((i) => i.id === inventoryItemId);
+                  setPlForm((f) => ({
+                    ...f,
+                    inventoryItemId,
+                    unitPrice: inv ? String(inv.sellingPrice) : f.unitPrice,
+                  }));
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder={inventoryQuery.isLoading ? "Loading…" : "Select item"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(inventoryQuery.data ?? inventoryItems)
+                    .filter((i) => i.isActive)
+                    .map((i) => (
+                      <SelectItem key={i.id} value={i.id}>
+                        {i.name} · {i.sku}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="pl-qty">Qty</Label>
+                <Input
+                  id="pl-qty"
+                  className="h-9"
+                  value={plForm.qty}
+                  onChange={(e) => setPlForm((f) => ({ ...f, qty: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pl-price">Unit price</Label>
+                <Input
+                  id="pl-price"
+                  className="h-9"
+                  value={plForm.unitPrice}
+                  onChange={(e) => setPlForm((f) => ({ ...f, unitPrice: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="pl-purchased">Purchased</Label>
+                <Input
+                  id="pl-purchased"
+                  type="date"
+                  className="h-9"
+                  value={plForm.purchasedAt}
+                  onChange={(e) => setPlForm((f) => ({ ...f, purchasedAt: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select
+                  value={plForm.status}
+                  onValueChange={(status) =>
+                    setPlForm((f) => ({ ...f, status: status as CustomerProductLine["status"] }))
+                  }
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="pl-renewal">Renewal</Label>
+                <Input
+                  id="pl-renewal"
+                  type="date"
+                  className="h-9"
+                  value={plForm.renewalDate}
+                  onChange={(e) => setPlForm((f) => ({ ...f, renewalDate: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="pl-expiry">Expiry</Label>
+                <Input
+                  id="pl-expiry"
+                  type="date"
+                  className="h-9"
+                  value={plForm.expiryDate}
+                  onChange={(e) => setPlForm((f) => ({ ...f, expiryDate: e.target.value }))}
+                />
+              </div>
+            </div>
+            {customerDeals.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Linked deal</Label>
+                <Select
+                  value={plForm.dealId || "__none"}
+                  onValueChange={(dealId) => setPlForm((f) => ({ ...f, dealId: dealId === "__none" ? "" : dealId }))}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Optional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none">None</SelectItem>
+                    {customerDeals.map((d) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="pl-usage">Usage notes</Label>
+              <Input
+                id="pl-usage"
+                className="h-9"
+                value={plForm.usageDetails}
+                onChange={(e) => setPlForm((f) => ({ ...f, usageDetails: e.target.value }))}
+                placeholder="Optional"
+              />
+            </div>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRecordPaymentOpen(false)}>Cancel</Button>
-            <Button onClick={() => setRecordPaymentOpen(false)}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={createInvoiceOpen} onOpenChange={setCreateInvoiceOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Create Invoice</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Deal, Amount, Tax, Due Date.</p>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateInvoiceOpen(false)}>Cancel</Button>
-            <Button onClick={() => setCreateInvoiceOpen(false)}>Create</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={addProductLineOpen} onOpenChange={setAddProductLineOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Add Product Line</DialogTitle></DialogHeader>
-          <DialogBody>
-          <p className="text-sm text-muted-foreground">Select from Inventory, Qty, Unit Price, Dates, Usage, Status.</p>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddProductLineOpen(false)}>Cancel</Button>
-            <Button onClick={() => setAddProductLineOpen(false)}>Add</Button>
+            <Button type="button" variant="outline" onClick={() => setAddProductLineOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={async () => {
+                const inv = (inventoryQuery.data ?? inventoryItems).find((i) => i.id === plForm.inventoryItemId);
+                if (!inv) {
+                  toast({ title: "Select an inventory item", variant: "destructive" });
+                  return;
+                }
+                const qty = Number(plForm.qty);
+                const unitPrice = Number(plForm.unitPrice);
+                if (!Number.isFinite(qty) || qty <= 0) {
+                  toast({ title: "Enter a valid quantity", variant: "destructive" });
+                  return;
+                }
+                try {
+                  await persistCustomerProductLines(customer.id, [
+                    {
+                      inventoryItemId: inv.id,
+                      itemName: inv.name,
+                      sku: inv.sku,
+                      itemType: inv.itemType,
+                      qty,
+                      unitPrice: Number.isFinite(unitPrice) ? unitPrice : inv.sellingPrice,
+                      taxRate: inv.taxRate,
+                      purchasedAt: plForm.purchasedAt,
+                      renewalDate: plForm.renewalDate || null,
+                      expiryDate: plForm.expiryDate || null,
+                      status: plForm.status,
+                      dealId: plForm.dealId || undefined,
+                      usageDetails: plForm.usageDetails.trim() || null,
+                    },
+                  ]);
+                  INVALIDATE.customer(queryClient, customer.id);
+                  await queryClient.invalidateQueries({ queryKey: QK.customerProductLines(customer.id) });
+                  toast({ title: "Product line added" });
+                  setAddProductLineOpen(false);
+                } catch (e) {
+                  toast({
+                    title: e instanceof Error ? e.message : "Could not save product line",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              Add
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2124,28 +2398,140 @@ export default function CustomerProfile() {
       </Dialog>
 
       <Dialog open={briefOpen} onOpenChange={setBriefOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className={dialogSmMaxMd}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#4B2E83]/10 text-[#4B2E83]">
+            <DialogTitle className="flex items-center gap-2.5 text-sm sm:text-sm">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary/15 text-primary">
                 <Bot className="h-4 w-4" />
               </span>
               AI Briefing
             </DialogTitle>
+            <DialogDescription className="text-xs">
+              {customer.companyName || customer.customerName}
+              {customer.customerNumber ? ` · ${customer.customerNumber}` : ""}
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            {briefLines.length ? (
-              <ul className="space-y-1 text-sm">
-                {briefLines.map((l, idx) => (
-                  <li key={idx} className="text-gray-800 dark:text-gray-200">
-                    - {l}
-                  </li>
-                ))}
-              </ul>
+          <DialogBody className="space-y-3">
+            {briefLoading ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">Loading briefing…</p>
+            ) : !brief ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">No briefing available.</p>
             ) : (
-              <p className="text-sm text-muted-foreground">No briefing available.</p>
+              <>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="card-kpi min-h-[3.25rem]">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Collected</p>
+                      <p className="text-sm font-semibold tabular-nums leading-tight">
+                        {brief.payments ? formatINR(brief.payments.collected) : "—"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="card-kpi min-h-[3.25rem]">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Pending</p>
+                      <p className="text-sm font-semibold tabular-nums leading-tight">
+                        {brief.payments ? formatINR(brief.payments.pending) : "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <section className="card-soft overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      Last interaction
+                    </p>
+                    <StatusPill tone={brief.lastInteraction ? "info" : "muted"}>
+                      {brief.lastInteraction ? "Logged" : "None"}
+                    </StatusPill>
+                  </div>
+                  {brief.lastInteraction ? (
+                    <div className="space-y-1 px-3 py-2.5">
+                      <p className="text-[11px] text-muted-foreground">
+                        {new Date(brief.lastInteraction.at).toLocaleString("en-IN")}
+                      </p>
+                      <p className="text-sm leading-snug">{brief.lastInteraction.summary}</p>
+                    </div>
+                  ) : (
+                    <p className="px-3 py-5 text-center text-[11px] text-muted-foreground">
+                      No interaction logged yet.
+                    </p>
+                  )}
+                </section>
+
+                <section className="card-soft overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Delivery</p>
+                    <StatusPill
+                      tone={
+                        !brief.delivery?.status
+                          ? "muted"
+                          : String(brief.delivery.status).toLowerCase().includes("deliver")
+                            ? "success"
+                            : "info"
+                      }
+                    >
+                      {brief.delivery?.status || "None"}
+                    </StatusPill>
+                  </div>
+                  {brief.delivery ? (
+                    <p className="truncate px-3 py-2.5 text-sm font-medium">{brief.delivery.dealTitle}</p>
+                  ) : (
+                    <p className="px-3 py-5 text-center text-[11px] text-muted-foreground">No won deal delivery.</p>
+                  )}
+                </section>
+
+                {brief.payments && brief.payments.overdueCount > 0 && (
+                  <section className="card-soft overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Overdue
+                      </p>
+                      <StatusPill tone="danger">{brief.payments.overdueCount} installments</StatusPill>
+                    </div>
+                    <p className="px-3 py-2.5 text-sm font-semibold tabular-nums">
+                      {formatINR(brief.payments.overdueAmount)}
+                    </p>
+                  </section>
+                )}
+
+                <section className="card-soft overflow-hidden">
+                  <div className="border-b border-border px-3 py-2">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Next steps</p>
+                  </div>
+                  <ul className="divide-y divide-border">
+                    {brief.nextSteps.map((step) => (
+                      <li key={step} className="px-3 py-2 text-sm leading-snug">
+                        {step}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+
+                {brief.risks.length > 0 && (
+                  <section className="card-soft overflow-hidden">
+                    <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Risks</p>
+                      <StatusPill tone="warning">{brief.risks.length}</StatusPill>
+                    </div>
+                    <ul className="divide-y divide-border">
+                      {brief.risks.map((risk) => (
+                        <li key={risk} className="px-3 py-2 text-sm leading-snug">
+                          {risk}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </>
             )}
-          </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" size="sm" onClick={() => setBriefOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

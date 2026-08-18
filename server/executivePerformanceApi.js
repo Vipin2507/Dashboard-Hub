@@ -112,10 +112,69 @@ function parseWeekday(raw) {
   return n;
 }
 
+function isProposalWonStatus(status) {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "won" || s === "deal_created";
+}
+
+function isProposalPendingStatus(status) {
+  return String(status || "").trim() === "approval_pending";
+}
+
+function isProposalSentStatus(status) {
+  const s = String(status || "").trim();
+  return s === "sent" || s === "shared";
+}
+
+function proposalAmountWithoutTax(row, data) {
+  const src = data && typeof data === "object" ? data : {};
+  const sub = Number(src.subtotal ?? 0);
+  const setup = Number(src.setupDeploymentCharges ?? 0);
+  const tax = Number(src.totalTax ?? 0);
+  const grand = Number(src.grandTotal ?? row.grandTotal ?? 0);
+  const quote = Number(src.finalQuoteValue ?? row.finalQuoteValue ?? 0);
+  if (sub > 0) return Math.round((sub + setup) * 100) / 100;
+  const items = Array.isArray(src.lineItems) ? src.lineItems : [];
+  if (items.length) {
+    const itemSub = items.reduce((s, li) => s + (Number(li.lineTotal) || 0), 0);
+    if (itemSub > 0) return Math.round((itemSub + setup) * 100) / 100;
+  }
+  const base = quote > 0 ? quote : grand;
+  if (base > 0 && tax > 0) return Math.round(Math.max(0, base - tax) * 100) / 100;
+  return Math.round((base || 0) * 100) / 100;
+}
+
+function dealAmountWithoutTax(d) {
+  const without = Number(d.amountWithoutTax ?? 0);
+  if (without > 0) return without;
+  const tax = Number(d.taxAmount ?? 0);
+  const total = Number(d.totalAmount ?? d.value ?? 0);
+  if (total > 0 && tax > 0) return Math.round(Math.max(0, total - tax) * 100) / 100;
+  return Math.round((total || Number(d.value) || 0) * 100) / 100;
+}
+
+function resolveProposalStatus(row, data) {
+  const col = String(row.status || "").trim();
+  const json = String(data?.status || "").trim();
+  if (isProposalWonStatus(col) || isProposalWonStatus(json)) {
+    return isProposalWonStatus(col) ? col : json;
+  }
+  return col || json;
+}
+
+function proposalWonYmd(row, data) {
+  return timestampToYmd(
+    data?.wonAt || data?.dealCreatedAt || row.updatedAt || data?.updatedAt || row.createdAt,
+  );
+}
+
 function emptyExecStats() {
   return {
     proposalsCreated: 0,
     proposalsSent: 0,
+    proposalsPending: 0,
+    proposalsWon: 0,
+    revenueExclGst: 0,
     proposalsApproved: 0,
     proposalsRejected: 0,
     dealsCreated: 0,
@@ -419,6 +478,8 @@ export function registerExecutivePerformanceApi(app, db) {
       const rejectionReasons = new Map();
       /** @type {Array<any>} */
       const detailPool = [];
+      /** Deals already counted from a won proposal in this period (avoid double revenue). */
+      const countedWonDealIds = new Set();
 
       let approxCustomer = false;
       let unlinkedPayments = 0;
@@ -442,13 +503,25 @@ export function registerExecutivePerformanceApi(app, db) {
             ? timestampToYmd(data?.rejectedAt) || timestampToYmd(row.updatedAt)
             : null;
         const value = Number(data?.finalQuoteValue ?? row.finalQuoteValue ?? row.grandTotal) || 0;
+        const exclGst = proposalAmountWithoutTax(row, data);
         const rejectionReason = data?.rejectionReason || "";
+        const status = resolveProposalStatus(row, data);
+        const dealId = data?.dealId || null;
 
         const stats = byExec.get(assignedTo);
 
         if (inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday)) {
           if (!reasonType || (reasonType === "rejection" && (!reason || normalizeReason(rejectionReason) === reason))) {
             stats.proposalsCreated += 1;
+            const kinds = ["proposals_created"];
+            if (isProposalSentStatus(status)) {
+              stats.proposalsSent += 1;
+              kinds.push("proposals_sent");
+            }
+            if (isProposalPendingStatus(status)) {
+              stats.proposalsPending += 1;
+              kinds.push("proposals_pending");
+            }
             const tp = trendMap.get(createdYmd);
             if (tp) tp.proposalsCreated += 1;
             const wd = weekdayFromYmd(createdYmd);
@@ -456,13 +529,13 @@ export function registerExecutivePerformanceApi(app, db) {
             detailPool.push({
               id: row.id,
               type: "proposal",
-              detailKinds: ["proposals_created"],
+              detailKinds: kinds,
               title: row.title || row.proposalNumber || row.id,
               subtitle: row.proposalNumber || undefined,
               executiveId: assignedTo,
               executiveName: userById[assignedTo]?.name,
-              amount: value,
-              status: row.status,
+              amount: exclGst || value,
+              status,
               reason: rejectionReason || undefined,
               at: row.createdAt,
               href: `/proposals?q=${encodeURIComponent(row.proposalNumber || row.id)}`,
@@ -471,22 +544,47 @@ export function registerExecutivePerformanceApi(app, db) {
           }
         }
 
+        if (isProposalWonStatus(status)) {
+          const wonYmd = proposalWonYmd(row, data);
+          if (inRange(wonYmd, from, to) && matchesWeekday(wonYmd, weekday) && !reasonType) {
+            stats.proposalsWon += 1;
+            if (dealId) countedWonDealIds.add(String(dealId));
+            else stats.revenueExclGst += exclGst;
+            detailPool.push({
+              id: `${row.id}:won`,
+              type: "proposal",
+              detailKinds: ["proposals_won"],
+              title: row.title || row.proposalNumber || row.id,
+              subtitle: "Won",
+              executiveId: assignedTo,
+              executiveName: userById[assignedTo]?.name,
+              amount: exclGst || value,
+              status,
+              at: data?.wonAt || data?.dealCreatedAt || row.updatedAt || row.createdAt,
+              href: `/proposals?q=${encodeURIComponent(row.proposalNumber || row.id)}`,
+              coverage: "exact",
+            });
+          }
+        }
+
         if (inRange(sentYmd, from, to) && matchesWeekday(sentYmd, weekday)) {
-          stats.proposalsSent += 1;
-          detailPool.push({
-            id: `${row.id}:sent`,
-            type: "proposal",
-            detailKinds: ["proposals_sent"],
-            title: row.title || row.proposalNumber || row.id,
-            subtitle: "Sent",
-            executiveId: assignedTo,
-            executiveName: userById[assignedTo]?.name,
-            amount: value,
-            status: row.status,
-            at: data?.sentAt || row.updatedAt,
-            href: `/proposals?q=${encodeURIComponent(row.proposalNumber || row.id)}`,
-            coverage: "exact",
-          });
+          const createdInView = inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday);
+          if (!createdInView) {
+            detailPool.push({
+              id: `${row.id}:sent`,
+              type: "proposal",
+              detailKinds: ["proposals_sent"],
+              title: row.title || row.proposalNumber || row.id,
+              subtitle: "Sent",
+              executiveId: assignedTo,
+              executiveName: userById[assignedTo]?.name,
+              amount: exclGst || value,
+              status: row.status,
+              at: data?.sentAt || row.updatedAt,
+              href: `/proposals?q=${encodeURIComponent(row.proposalNumber || row.id)}`,
+              coverage: "exact",
+            });
+          }
         }
 
         if (inRange(approvedYmd, from, to) && matchesWeekday(approvedYmd, weekday)) {
@@ -603,6 +701,12 @@ export function registerExecutivePerformanceApi(app, db) {
           if (reasonType === "loss" || reasonType === "rejection") continue;
           stats.dealsWon += 1;
           stats.wonValue += value;
+          const excl = dealAmountWithoutTax(d);
+          stats.revenueExclGst += excl;
+          if (!countedWonDealIds.has(String(d.id))) {
+            stats.proposalsWon += 1;
+            countedWonDealIds.add(String(d.id));
+          }
           const tp = trendMap.get(ev.at);
           if (tp) {
             tp.dealsWon += 1;
@@ -616,12 +720,12 @@ export function registerExecutivePerformanceApi(app, db) {
           detailPool.push({
             id: `${d.id}:won`,
             type: "deal",
-            detailKinds: ["deals_won"],
+            detailKinds: ["deals_won", "proposals_won"],
             title: d.name || d.id,
             subtitle: "Closed/Won",
             executiveId: d.ownerUserId,
             executiveName: userById[d.ownerUserId]?.name,
-            amount: value,
+            amount: excl,
             status: "Closed/Won",
             at: getDealDateValue(d) || ev.at,
             href: `/deals?q=${encodeURIComponent(d.id)}`,
@@ -782,6 +886,10 @@ export function registerExecutivePerformanceApi(app, db) {
             regionId: u?.regionId || "",
             regionName: regionName[u?.regionId] || "",
             proposalsCreated: stats.proposalsCreated,
+            proposalsSent: stats.proposalsSent,
+            proposalsPending: stats.proposalsPending,
+            proposalsWon: stats.proposalsWon,
+            revenueExclGst: stats.revenueExclGst,
             proposalsApproved: stats.proposalsApproved,
             proposalsRejected: stats.proposalsRejected,
             dealsCreated: stats.dealsCreated,
@@ -800,6 +908,10 @@ export function registerExecutivePerformanceApi(app, db) {
           if (executiveId) return true;
           return (
             row.proposalsCreated ||
+            row.proposalsSent ||
+            row.proposalsPending ||
+            row.proposalsWon ||
+            row.revenueExclGst ||
             row.dealsCreated ||
             row.dealsWon ||
             row.dealsLost ||
@@ -811,10 +923,10 @@ export function registerExecutivePerformanceApi(app, db) {
         .sort((a, b) => b.wonValue - a.wonValue || b.dealsWon - a.dealsWon || a.name.localeCompare(b.name));
 
       const funnel = [
-        { key: "proposals_created", label: "Proposals created", count: summary.proposalsCreated, value: 0 },
-        { key: "proposals_sent", label: "Proposals sent", count: summary.proposalsSent, value: 0 },
-        { key: "proposals_approved", label: "Proposals approved", count: summary.proposalsApproved, value: 0 },
-        { key: "deals_created", label: "Deals", count: summary.dealsCreated, value: 0 },
+        { key: "proposals_created", label: "Total proposals", count: summary.proposalsCreated, value: 0 },
+        { key: "proposals_sent", label: "Sent proposals", count: summary.proposalsSent, value: 0 },
+        { key: "proposals_pending", label: "Pending proposals", count: summary.proposalsPending, value: 0 },
+        { key: "proposals_won", label: "Won", count: summary.proposalsWon, value: summary.revenueExclGst },
         { key: "deals_won", label: "Deals won", count: summary.dealsWon, value: summary.wonValue },
       ];
 
@@ -858,8 +970,8 @@ export function registerExecutivePerformanceApi(app, db) {
           `${unlinkedPayments} paid installment(s) could not be linked to a deal owner.`,
         );
       }
-      coverageNotes.push("Won value is deal value at close; collected revenue is paid installments.");
-      coverageNotes.push("Pipeline value is the current open book for the selected executives.");
+      coverageNotes.push("Won and revenue without GST use win date: proposal converted/updated date, or Closed/Won deal date.");
+      coverageNotes.push("Total / sent / pending still use proposal created date in the selected range.");
 
       // Sparse long trends: if > 92 days, roll up by week in response? Keep daily — UI can handle.
       // For very long ranges (>180 days), sample weekly to keep payload light.

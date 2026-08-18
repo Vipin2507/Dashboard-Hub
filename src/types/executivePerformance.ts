@@ -20,6 +20,8 @@ export type ExecutivePerformanceFilters = {
 export type ExecutiveDetailType =
   | "proposals_created"
   | "proposals_sent"
+  | "proposals_pending"
+  | "proposals_won"
   | "proposals_approved"
   | "proposals_rejected"
   | "deals_created"
@@ -40,6 +42,9 @@ export type MetricCoverage =
 export type ExecutivePerformanceSummary = {
   proposalsCreated: number;
   proposalsSent: number;
+  proposalsPending: number;
+  proposalsWon: number;
+  revenueExclGst: number;
   proposalsApproved: number;
   proposalsRejected: number;
   dealsCreated: number;
@@ -71,6 +76,10 @@ export type ExecutiveRow = {
   regionId: string;
   regionName: string;
   proposalsCreated: number;
+  proposalsSent: number;
+  proposalsPending: number;
+  proposalsWon: number;
+  revenueExclGst: number;
   proposalsApproved: number;
   proposalsRejected: number;
   dealsCreated: number;

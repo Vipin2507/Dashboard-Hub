@@ -13,6 +13,129 @@ function mapNoteRow(row) {
   };
 }
 
+function mapProductLineRow(row) {
+  return {
+    id: row.id,
+    inventoryItemId: row.inventory_item_id,
+    itemName: row.item_name,
+    sku: row.sku ?? "",
+    itemType: row.item_type ?? "product",
+    qty: Number(row.qty) || 0,
+    unitPrice: Number(row.unit_price) || 0,
+    taxRate: Number(row.tax_rate) || 0,
+    purchasedAt: row.purchased_at,
+    renewalDate: row.renewal_date ?? undefined,
+    expiryDate: row.expiry_date ?? undefined,
+    status: row.status ?? "active",
+    dealId: row.deal_id ?? "",
+    usageDetails: row.usage_details ?? undefined,
+  };
+}
+
+function insertProductLine(db, customerId, input) {
+  const inventoryItemId = String(input.inventoryItemId ?? input.inventory_item_id ?? "").trim();
+  const itemName = String(input.itemName ?? input.item_name ?? "").trim();
+  if (!inventoryItemId || !itemName) return null;
+
+  const dealId = String(input.dealId ?? input.deal_id ?? "");
+  const existing = db
+    .prepare(
+      `SELECT id FROM customer_product_lines
+       WHERE customer_id = ? AND IFNULL(deal_id, '') = ? AND inventory_item_id = ?`,
+    )
+    .get(customerId, dealId, inventoryItemId);
+  if (existing) {
+    return db.prepare("SELECT * FROM customer_product_lines WHERE id = ?").get(existing.id);
+  }
+
+  const purchasedAt = String(input.purchasedAt ?? input.purchased_at ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const itemType = String(input.itemType ?? input.item_type ?? "product");
+  let renewalDate = input.renewalDate ?? input.renewal_date ?? null;
+  let expiryDate = input.expiryDate ?? input.expiry_date ?? null;
+  if (!renewalDate && itemType === "subscription") {
+    const d = new Date(`${purchasedAt}T00:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      d.setFullYear(d.getFullYear() + 1);
+      renewalDate = d.toISOString().slice(0, 10);
+      if (!expiryDate) expiryDate = renewalDate;
+    }
+  }
+
+  const row = {
+    id: "cpl-" + makeId(),
+    customer_id: customerId,
+    inventory_item_id: inventoryItemId,
+    item_name: itemName,
+    sku: String(input.sku ?? ""),
+    item_type: itemType,
+    qty: Number(input.qty) || 1,
+    unit_price: Number(input.unitPrice ?? input.unit_price) || 0,
+    tax_rate: Number(input.taxRate ?? input.tax_rate) || 0,
+    purchased_at: purchasedAt,
+    renewal_date: renewalDate ? String(renewalDate) : null,
+    expiry_date: expiryDate ? String(expiryDate) : null,
+    status: String(input.status ?? "active"),
+    deal_id: dealId || null,
+    usage_details: input.usageDetails ?? input.usage_details ? String(input.usageDetails ?? input.usage_details) : null,
+    created_at: new Date().toISOString(),
+  };
+
+  try {
+    db.prepare(`
+    INSERT INTO customer_product_lines (
+      id, customer_id, inventory_item_id, item_name, sku, item_type, qty, unit_price, tax_rate,
+      purchased_at, renewal_date, expiry_date, status, deal_id, usage_details, created_at
+    ) VALUES (
+      @id, @customer_id, @inventory_item_id, @item_name, @sku, @item_type, @qty, @unit_price, @tax_rate,
+      @purchased_at, @renewal_date, @expiry_date, @status, @deal_id, @usage_details, @created_at
+    )
+  `).run(row);
+    return row;
+  } catch {
+    const again = db
+      .prepare(
+        `SELECT * FROM customer_product_lines
+         WHERE customer_id = ? AND IFNULL(deal_id, '') = ? AND inventory_item_id = ?`,
+      )
+      .get(customerId, dealId, inventoryItemId);
+    return again ?? row;
+  }
+}
+
+function backfillProductLinesFromProposals(db, customerId) {
+  const rows = db.prepare("SELECT data FROM proposals WHERE customerId = ?").all(customerId);
+  for (const r of rows) {
+    let proposal = null;
+    try {
+      proposal = JSON.parse(r.data);
+    } catch {
+      proposal = null;
+    }
+    if (!proposal?.dealId || !Array.isArray(proposal.lineItems)) continue;
+    for (const li of proposal.lineItems) {
+      insertProductLine(db, customerId, {
+        inventoryItemId: li.inventoryItemId,
+        itemName: li.name,
+        sku: li.sku,
+        itemType: li.itemType,
+        qty: li.qty,
+        unitPrice: li.unitPrice,
+        taxRate: li.taxRate,
+        dealId: proposal.dealId,
+        purchasedAt: String(proposal.updatedAt || proposal.createdAt || "").slice(0, 10) || undefined,
+      });
+    }
+  }
+}
+
+function listProductLines(db, customerId) {
+  backfillProductLinesFromProposals(db, customerId);
+  return db
+    .prepare("SELECT * FROM customer_product_lines WHERE customer_id = ? ORDER BY purchased_at DESC, created_at DESC")
+    .all(customerId)
+    .map(mapProductLineRow);
+}
+
 function mapAttachmentRow(row) {
   return {
     id: row.id,
@@ -49,6 +172,28 @@ export function migrateCustomerExtrasSchema(db) {
       uploaded_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_customer_attachments_customer ON customer_attachments(customer_id);
+
+    CREATE TABLE IF NOT EXISTS customer_product_lines (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      inventory_item_id TEXT NOT NULL,
+      item_name TEXT NOT NULL,
+      sku TEXT NOT NULL DEFAULT '',
+      item_type TEXT NOT NULL DEFAULT 'product',
+      qty REAL NOT NULL DEFAULT 1,
+      unit_price REAL NOT NULL DEFAULT 0,
+      tax_rate REAL NOT NULL DEFAULT 0,
+      purchased_at TEXT NOT NULL,
+      renewal_date TEXT,
+      expiry_date TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      deal_id TEXT,
+      usage_details TEXT,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_customer_product_lines_customer ON customer_product_lines(customer_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_product_lines_dedupe
+      ON customer_product_lines(customer_id, IFNULL(deal_id, ''), inventory_item_id);
   `);
 }
 
@@ -206,5 +351,49 @@ export function registerCustomerExtrasApi(app, db, helpers = {}) {
     res.setHeader("Content-Type", row.file_type || "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${row.file_name}"`);
     res.send(buffer);
+  });
+
+  app.get("/api/customers/:id/product-lines", (req, res) => {
+    const customerId = req.params.id;
+    const customer = db.prepare("SELECT id FROM customers WHERE id = ?").get(customerId);
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    res.json(listProductLines(db, customerId));
+  });
+
+  app.post("/api/customers/:id/product-lines", (req, res) => {
+    const customerId = req.params.id;
+    const customer = db.prepare("SELECT id FROM customers WHERE id = ?").get(customerId);
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    const row = insertProductLine(db, customerId, req.body || {});
+    if (!row) return res.status(400).json({ error: "inventoryItemId and itemName are required" });
+    broadcast?.({ type: "change", entity: "customers", action: "product_line_created", id: customerId });
+    res.status(201).json(mapProductLineRow(row));
+  });
+
+  app.post("/api/customers/:id/product-lines/bulk", (req, res) => {
+    const customerId = req.params.id;
+    const customer = db.prepare("SELECT id FROM customers WHERE id = ?").get(customerId);
+    if (!customer) return res.status(404).json({ error: "Customer not found" });
+    const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const inserted = [];
+    for (const line of lines) {
+      const row = insertProductLine(db, customerId, line);
+      if (row) inserted.push(mapProductLineRow(row));
+    }
+    if (inserted.length) {
+      broadcast?.({ type: "change", entity: "customers", action: "product_lines_synced", id: customerId });
+    }
+    res.status(201).json(inserted);
+  });
+
+  app.delete("/api/customers/:id/product-lines/:lineId", (req, res) => {
+    const { id: customerId, lineId } = req.params;
+    const existing = db
+      .prepare("SELECT id FROM customer_product_lines WHERE id = ? AND customer_id = ?")
+      .get(lineId, customerId);
+    if (!existing) return res.status(404).json({ error: "Product line not found" });
+    db.prepare("DELETE FROM customer_product_lines WHERE id = ?").run(lineId);
+    broadcast?.({ type: "change", entity: "customers", action: "product_line_deleted", id: customerId });
+    res.status(204).end();
   });
 }

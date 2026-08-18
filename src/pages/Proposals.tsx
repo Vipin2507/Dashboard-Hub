@@ -16,9 +16,12 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { makeProposalNumber } from "@/lib/proposalNumber";
-import { currentMonthYmd } from "@/lib/dateRange";
+import { FilterPanel } from "@/components/FilterPanel";
+import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
+import { isProposalWon, proposalStatusLabel, proposalStatusMatches } from "@/lib/proposalStatus";
+import { isoToLocalYmd, ymdInInclusiveRange, hydrateTimeRange, parseTimeRangeFromSearchParams, resolveTimeRangeYmd, timeRangeChip, type TimeRangePreset } from "@/lib/dateRange";
+import { computeProposalKpis, type ProposalKpiData } from "@/lib/proposalKpis";
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
@@ -26,7 +29,7 @@ import {
   loadSessionFilters,
   saveSessionFilters,
 } from "@/lib/filterSessionPersistence";
-import { FilterPanel } from "@/components/FilterPanel";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import { StatusPill, type StatusTone } from "@/components/StatusPill";
 import { CountUp } from "@/components/CountUp";
 import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
@@ -116,15 +119,18 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "won", label: "Won" },
   { value: "cold", label: "Cold" },
   { value: "rejected", label: "Rejected" },
-  { value: "deal_created", label: "Deal Created" },
 ];
 
 function proposalStatusTone(status: ProposalStatus): StatusTone {
-  if (status === "won" || status === "approved" || status === "deal_created") return "success";
+  if (isProposalWon(status) || status === "approved") return "success";
   if (status === "sent" || status === "shared" || status === "negotiation") return "info";
   if (status === "approval_pending") return "warning";
   if (status === "rejected") return "danger";
   return "muted";
+}
+
+function proposalValueExclGst(p: Proposal) {
+  return dealAmountsFromProposal(p).amountWithoutTax;
 }
 
 type SortKey = "date" | "value" | "customer";
@@ -140,7 +146,6 @@ const PROPOSAL_STATUS_VALUES: (ProposalStatus | "all")[] = [
   "won",
   "cold",
   "rejected",
-  "deal_created",
 ];
 
 function formatProposalDate(iso: string | undefined) {
@@ -152,14 +157,9 @@ function formatProposalDate(iso: string | undefined) {
   }
 }
 
-function pctChange(current: number, previous: number): number {
-  if (previous === 0) return current === 0 ? 0 : 100;
-  return Math.round(((current - previous) / previous) * 100);
-}
-
 function validUntilExpired(iso: string | undefined, status: ProposalStatus): boolean {
   if (!iso) return false;
-  if (status === "approved" || status === "deal_created" || status === "won" || status === "cold") return false;
+  if (status === "approved" || isProposalWon(status) || status === "cold") return false;
   try {
     return new Date(iso) < new Date();
   } catch {
@@ -167,26 +167,12 @@ function validUntilExpired(iso: string | undefined, status: ProposalStatus): boo
   }
 }
 
-type ProposalKPIData = {
-  total: number;
-  pending: number;
-  wonMonth: number;
-  totalValue: number;
-  trendTotal: number;
-  trendWon: number;
-};
-
-function trendSub(trend: number): string {
-  if (trend === 0) return "Flat vs last month";
-  return `${trend > 0 ? "+" : ""}${trend}% vs last month`;
-}
-
 function ProposalKPICards({
   data,
   active,
   onSelect,
 }: {
-  data: ProposalKPIData;
+  data: ProposalKpiData;
   active: "all" | "pending" | "won" | null;
   onSelect: (key: "all" | "pending" | "won") => void;
 }) {
@@ -194,7 +180,7 @@ function ProposalKPICards({
     key: "all" | "pending" | "won" | null;
     label: string;
     value: string;
-    sub: string;
+    sub?: string;
     icon: LucideIcon;
     iconBg: string;
     iconColor: string;
@@ -204,7 +190,6 @@ function ProposalKPICards({
       key: "all",
       label: "Total",
       value: String(data.total),
-      sub: trendSub(data.trendTotal),
       icon: FileText,
       iconBg: "bg-primary/10",
       iconColor: "text-primary",
@@ -221,9 +206,8 @@ function ProposalKPICards({
     },
     {
       key: "won",
-      label: "Won this month",
-      value: String(data.wonMonth),
-      sub: trendSub(data.trendWon),
+      label: "Won",
+      value: String(data.won),
       icon: Trophy,
       iconBg: "bg-success/15",
       iconColor: "text-success",
@@ -232,7 +216,7 @@ function ProposalKPICards({
       key: null,
       label: "Pipeline value",
       value: formatINR(data.totalValue),
-      sub: "In current filters",
+      sub: "Open excl. GST",
       icon: IndianRupee,
       iconBg: "bg-primary/10",
       iconColor: "text-primary",
@@ -254,7 +238,7 @@ function ProposalKPICards({
               <p className="truncate text-base font-semibold tabular-nums leading-tight sm:text-lg">
                 {isPlainInt ? <CountUp value={Number(card.value)} /> : card.value}
               </p>
-              <p className="truncate text-[10px] text-muted-foreground">{card.sub}</p>
+              {card.sub ? <p className="truncate text-[10px] text-muted-foreground">{card.sub}</p> : null}
             </div>
             {card.badge ? <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning" /> : null}
           </>
@@ -290,7 +274,7 @@ function ProposalKPICards({
 function ProposalStatusBadge({ status }: { status: ProposalStatus }) {
   return (
     <StatusPill tone={proposalStatusTone(status)} className="capitalize">
-      {status.replace(/_/g, " ")}
+      {proposalStatusLabel(status)}
     </StatusPill>
   );
 }
@@ -301,11 +285,30 @@ type PersistedProposalsFilters = {
   suspectWonOnly: boolean;
   dateFrom: string;
   dateTo: string;
+  timeRangeFilter?: TimeRangePreset;
+  customFrom?: string;
+  customTo?: string;
   assignedToFilter: string;
   sortBy: SortKey;
   teamQueryFilter: string;
   regionQueryFilter: string;
 };
+
+function initialProposalTimeRange(
+  searchParams: URLSearchParams,
+  persisted: PersistedProposalsFilters | null | undefined,
+): { preset: TimeRangePreset; customFrom: string; customTo: string } {
+  const fromUrl = parseTimeRangeFromSearchParams(searchParams);
+  if (fromUrl) return fromUrl;
+  if (persisted) {
+    return hydrateTimeRange({
+      timeRangeFilter: persisted.timeRangeFilter,
+      dateFrom: persisted.customFrom || persisted.dateFrom,
+      dateTo: persisted.customTo || persisted.dateTo,
+    });
+  }
+  return { preset: "this_month", customFrom: "", customTo: "" };
+}
 
 export default function Proposals() {
   const queryClient = useQueryClient();
@@ -330,25 +333,25 @@ export default function Proposals() {
     return loadSessionFilters<PersistedProposalsFilters>(FILTER_SESSION_KEYS.proposals);
   }, [searchParams]);
 
-  const defaultMonth = currentMonthYmd();
+  const initialTimeRange = useMemo(
+    () => initialProposalTimeRange(searchParams, persistedProposalsFilters),
+    [persistedProposalsFilters, searchParams],
+  );
 
   const [search, setSearch] = useState(() => persistedProposalsFilters?.search ?? "");
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | "all">(() => {
     const status = searchParams.get("status");
+    if (status === "deal_created") return "won";
     if (status && PROPOSAL_STATUS_VALUES.includes(status as ProposalStatus | "all")) {
       return status as ProposalStatus | "all";
     }
-    return persistedProposalsFilters?.statusFilter ?? "all";
+    const persisted = persistedProposalsFilters?.statusFilter ?? "all";
+    return persisted === "deal_created" ? "won" : persisted;
   });
   const [suspectWonOnly, setSuspectWonOnly] = useState(() => persistedProposalsFilters?.suspectWonOnly ?? false);
-  const [dateFrom, setDateFrom] = useState(() => {
-    if (searchParams.get("range") === "all") return "";
-    return searchParams.get("from") || persistedProposalsFilters?.dateFrom || defaultMonth.from;
-  });
-  const [dateTo, setDateTo] = useState(() => {
-    if (searchParams.get("range") === "all") return "";
-    return searchParams.get("to") || persistedProposalsFilters?.dateTo || defaultMonth.to;
-  });
+  const [timeRangeFilter, setTimeRangeFilter] = useState<TimeRangePreset>(() => initialTimeRange.preset);
+  const [customFrom, setCustomFrom] = useState(() => initialTimeRange.customFrom);
+  const [customTo, setCustomTo] = useState(() => initialTimeRange.customTo);
   const [assignedToFilter, setAssignedToFilter] = useState<string>(
     () => searchParams.get("owner") || persistedProposalsFilters?.assignedToFilter || "all",
   );
@@ -367,22 +370,19 @@ export default function Proposals() {
   const [draftSearch, setDraftSearch] = useState(() => persistedProposalsFilters?.search ?? "");
   const [draftStatusFilter, setDraftStatusFilter] = useState<ProposalStatus | "all">(() => {
     const status = searchParams.get("status");
+    if (status === "deal_created") return "won";
     if (status && PROPOSAL_STATUS_VALUES.includes(status as ProposalStatus | "all")) {
       return status as ProposalStatus | "all";
     }
-    return persistedProposalsFilters?.statusFilter ?? "all";
+    const persisted = persistedProposalsFilters?.statusFilter ?? "all";
+    return persisted === "deal_created" ? "won" : persisted;
   });
   const [draftSuspectWonOnly, setDraftSuspectWonOnly] = useState(
     () => persistedProposalsFilters?.suspectWonOnly ?? false,
   );
-  const [draftDateFrom, setDraftDateFrom] = useState(() => {
-    if (searchParams.get("range") === "all") return "";
-    return searchParams.get("from") || persistedProposalsFilters?.dateFrom || defaultMonth.from;
-  });
-  const [draftDateTo, setDraftDateTo] = useState(() => {
-    if (searchParams.get("range") === "all") return "";
-    return searchParams.get("to") || persistedProposalsFilters?.dateTo || defaultMonth.to;
-  });
+  const [draftTimeRangeFilter, setDraftTimeRangeFilter] = useState<TimeRangePreset>(() => initialTimeRange.preset);
+  const [draftCustomFrom, setDraftCustomFrom] = useState(() => initialTimeRange.customFrom);
+  const [draftCustomTo, setDraftCustomTo] = useState(() => initialTimeRange.customTo);
   const [draftAssignedToFilter, setDraftAssignedToFilter] = useState<string>(
     () => searchParams.get("owner") || persistedProposalsFilters?.assignedToFilter || "all",
   );
@@ -391,9 +391,6 @@ export default function Proposals() {
   const ownerFromUrl = searchParams.get("owner");
   const teamFromUrl = searchParams.get("team");
   const regionFromUrl = searchParams.get("region");
-  const fromFromUrl = searchParams.get("from");
-  const toFromUrl = searchParams.get("to");
-  const rangeFromUrl = searchParams.get("range");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -425,24 +422,28 @@ export default function Proposals() {
   const [sharePdfMessage, setSharePdfMessage] = useState("");
   const [sharePdfLoading, setSharePdfLoading] = useState(false);
 
+  const { from: dateFrom, to: dateTo } = resolveTimeRangeYmd(timeRangeFilter, customFrom, customTo);
+
   useEffect(() => {
     setDraftSearch(search);
     setDraftStatusFilter(statusFilter);
     setDraftSuspectWonOnly(suspectWonOnly);
-    setDraftDateFrom(dateFrom);
-    setDraftDateTo(dateTo);
+    setDraftTimeRangeFilter(timeRangeFilter);
+    setDraftCustomFrom(customFrom);
+    setDraftCustomTo(customTo);
     setDraftAssignedToFilter(assignedToFilter);
     setDraftSortBy(sortBy);
     setDraftTeamQueryFilter(teamQueryFilter);
     setDraftRegionQueryFilter(regionQueryFilter);
-  }, [search, statusFilter, suspectWonOnly, dateFrom, dateTo, assignedToFilter, sortBy, teamQueryFilter, regionQueryFilter]);
+  }, [search, statusFilter, suspectWonOnly, timeRangeFilter, customFrom, customTo, assignedToFilter, sortBy, teamQueryFilter, regionQueryFilter]);
 
   const hasPendingFilterChanges =
     draftSearch !== search ||
     draftStatusFilter !== statusFilter ||
     draftSuspectWonOnly !== suspectWonOnly ||
-    draftDateFrom !== dateFrom ||
-    draftDateTo !== dateTo ||
+    draftTimeRangeFilter !== timeRangeFilter ||
+    draftCustomFrom !== customFrom ||
+    draftCustomTo !== customTo ||
     draftAssignedToFilter !== assignedToFilter ||
     draftSortBy !== sortBy ||
     draftTeamQueryFilter !== teamQueryFilter ||
@@ -452,19 +453,24 @@ export default function Proposals() {
     setSearch(draftSearch);
     setStatusFilter(draftStatusFilter);
     setSuspectWonOnly(draftSuspectWonOnly);
-    setDateFrom(draftDateFrom);
-    setDateTo(draftDateTo);
+    setTimeRangeFilter(draftTimeRangeFilter);
+    setCustomFrom(draftCustomFrom);
+    setCustomTo(draftCustomTo);
     setAssignedToFilter(draftAssignedToFilter);
     setSortBy(draftSortBy);
     setTeamQueryFilter(draftTeamQueryFilter);
     setRegionQueryFilter(draftRegionQueryFilter);
     setPage(1);
+    const resolved = resolveTimeRangeYmd(draftTimeRangeFilter, draftCustomFrom, draftCustomTo);
     saveSessionFilters(FILTER_SESSION_KEYS.proposals, {
       search: draftSearch,
       statusFilter: draftStatusFilter,
       suspectWonOnly: draftSuspectWonOnly,
-      dateFrom: draftDateFrom,
-      dateTo: draftDateTo,
+      dateFrom: resolved.from,
+      dateTo: resolved.to,
+      timeRangeFilter: draftTimeRangeFilter,
+      customFrom: draftCustomFrom,
+      customTo: draftCustomTo,
       assignedToFilter: draftAssignedToFilter,
       sortBy: draftSortBy,
       teamQueryFilter: draftTeamQueryFilter,
@@ -476,8 +482,9 @@ export default function Proposals() {
     setDraftSearch("");
     setDraftStatusFilter("all");
     setDraftSuspectWonOnly(false);
-    setDraftDateFrom("");
-    setDraftDateTo("");
+    setDraftTimeRangeFilter("all");
+    setDraftCustomFrom("");
+    setDraftCustomTo("");
     setDraftAssignedToFilter("all");
     setDraftSortBy("date");
     setDraftTeamQueryFilter("all");
@@ -485,8 +492,9 @@ export default function Proposals() {
     setSearch("");
     setStatusFilter("all");
     setSuspectWonOnly(false);
-    setDateFrom("");
-    setDateTo("");
+    setTimeRangeFilter("all");
+    setCustomFrom("");
+    setCustomTo("");
     setAssignedToFilter("all");
     setSortBy("date");
     setTeamQueryFilter("all");
@@ -499,8 +507,7 @@ export default function Proposals() {
     search !== "" ||
     statusFilter !== "all" ||
     suspectWonOnly ||
-    dateFrom !== "" ||
-    dateTo !== "" ||
+    timeRangeFilter !== "all" ||
     assignedToFilter !== "all" ||
     sortBy !== "date" ||
     teamQueryFilter !== "all" ||
@@ -577,7 +584,7 @@ export default function Proposals() {
   };
 
   const nextStatuses = (status: ProposalStatus) => {
-    if (status === "won") return [] as ProposalStatus[];
+    if (isProposalWon(status)) return [] as ProposalStatus[];
     if (status === "shared") return ["sent", "cold", "rejected"] as ProposalStatus[];
     if (status === "sent") return ["approved", "negotiation", "cold", "rejected"] as ProposalStatus[];
     if (status === "approved") return ["won", "negotiation", "rejected"] as ProposalStatus[];
@@ -643,7 +650,9 @@ export default function Proposals() {
     if (detailFromQuery) setDetailId(detailFromQuery);
   }, [detailFromQuery]);
   useEffect(() => {
-    if (statusFromUrl && PROPOSAL_STATUS_VALUES.includes(statusFromUrl as ProposalStatus | "all")) {
+    if (statusFromUrl === "deal_created") {
+      setStatusFilter("won");
+    } else if (statusFromUrl && PROPOSAL_STATUS_VALUES.includes(statusFromUrl as ProposalStatus | "all")) {
       setStatusFilter(statusFromUrl as ProposalStatus | "all");
     }
   }, [statusFromUrl]);
@@ -651,24 +660,17 @@ export default function Proposals() {
     if (ownerFromUrl) setAssignedToFilter(ownerFromUrl);
     if (teamFromUrl) setTeamQueryFilter(teamFromUrl);
     if (regionFromUrl) setRegionQueryFilter(regionFromUrl);
-    if (rangeFromUrl === "all") {
-      setDateFrom("");
-      setDateTo("");
-      setDraftDateFrom("");
-      setDraftDateTo("");
-    } else {
-      if (fromFromUrl) {
-        setDateFrom(fromFromUrl);
-        setDraftDateFrom(fromFromUrl);
-      }
-      if (toFromUrl) {
-        setDateTo(toFromUrl);
-        setDraftDateTo(toFromUrl);
-      }
-    }
-  }, [ownerFromUrl, teamFromUrl, regionFromUrl, fromFromUrl, toFromUrl, rangeFromUrl]);
+    const parsed = parseTimeRangeFromSearchParams(searchParams);
+    if (!parsed) return;
+    setTimeRangeFilter(parsed.preset);
+    setCustomFrom(parsed.customFrom);
+    setCustomTo(parsed.customTo);
+    setDraftTimeRangeFilter(parsed.preset);
+    setDraftCustomFrom(parsed.customFrom);
+    setDraftCustomTo(parsed.customTo);
+  }, [ownerFromUrl, teamFromUrl, regionFromUrl, searchParams]);
 
-  const filtered = useMemo(() => {
+  const scopedForKpi = useMemo(() => {
     let list = visible;
     const q = search.trim().toLowerCase();
     if (q) {
@@ -679,26 +681,32 @@ export default function Proposals() {
           p.customerName.toLowerCase().includes(q)
       );
     }
-    if (statusFilter !== "all") list = list.filter((p) => p.status === statusFilter);
+    if (assignedToFilter !== "all") list = list.filter((p) => p.assignedTo === assignedToFilter);
+    if (teamQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.teamId === teamQueryFilter);
+    if (regionQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.regionId === regionQueryFilter);
+    return list;
+  }, [visible, search, assignedToFilter, teamQueryFilter, regionQueryFilter, users]);
+
+  const filtered = useMemo(() => {
+    let list = scopedForKpi;
+    if (statusFilter !== "all") list = list.filter((p) => proposalStatusMatches(p.status, statusFilter));
     if (suspectWonOnly) {
       list = list.filter((p) => {
-        if (p.status !== "won") return false;
+        if (!isProposalWon(p.status)) return false;
         const created = new Date(p.createdAt).getTime();
         const updated = new Date(p.updatedAt || p.createdAt).getTime();
         if (!Number.isFinite(created) || !Number.isFinite(updated)) return false;
         return Math.abs(updated - created) <= 60_000;
       });
     }
-    if (dateFrom) list = list.filter((p) => p.createdAt >= dateFrom + "T00:00:00");
-    if (dateTo) list = list.filter((p) => p.createdAt <= dateTo + "T23:59:59");
-    if (assignedToFilter !== "all") list = list.filter((p) => p.assignedTo === assignedToFilter);
-    if (teamQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.teamId === teamQueryFilter);
-    if (regionQueryFilter !== "all") list = list.filter((p) => users.find((u) => u.id === p.assignedTo)?.regionId === regionQueryFilter);
+    if (dateFrom || dateTo) {
+      list = list.filter((p) => ymdInInclusiveRange(isoToLocalYmd(p.createdAt), dateFrom, dateTo));
+    }
     if (sortBy === "date") list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    else if (sortBy === "value") list = [...list].sort((a, b) => (b.finalQuoteValue ?? b.grandTotal) - (a.finalQuoteValue ?? a.grandTotal));
+    else if (sortBy === "value") list = [...list].sort((a, b) => proposalValueExclGst(b) - proposalValueExclGst(a));
     else if (sortBy === "customer") list = [...list].sort((a, b) => a.customerName.localeCompare(b.customerName));
     return list;
-  }, [visible, search, statusFilter, suspectWonOnly, dateFrom, dateTo, assignedToFilter, teamQueryFilter, regionQueryFilter, sortBy, users]);
+  }, [scopedForKpi, statusFilter, suspectWonOnly, dateFrom, dateTo, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -712,39 +720,20 @@ export default function Proposals() {
     }
   }, [pageSize]);
 
-  const kpiMetrics = useMemo((): ProposalKPIData => {
-    const now = new Date();
-    const startThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endToday = now;
-    const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-
-    const inRange = (iso: string, start: Date, end: Date) => {
-      const d = new Date(iso);
-      return d >= start && d <= end;
-    };
-
-    const createdThisMonth = filtered.filter((p) => inRange(p.createdAt, startThisMonth, endToday)).length;
-    const createdLastMonth = filtered.filter((p) => inRange(p.createdAt, startLastMonth, endLastMonth)).length;
-
-    const wonThisMonth = filtered.filter(
-      (p) => p.status === "won" && p.updatedAt && inRange(p.updatedAt, startThisMonth, endToday),
-    ).length;
-    const wonLastMonth = filtered.filter(
-      (p) => p.status === "won" && p.updatedAt && inRange(p.updatedAt, startLastMonth, endLastMonth),
-    ).length;
-
-    const totalValue = filtered.reduce((s, p) => s + (p.finalQuoteValue ?? p.grandTotal), 0);
-
-    return {
-      total: filtered.length,
-      pending: filtered.filter((p) => p.status === "approval_pending").length,
-      wonMonth: wonThisMonth,
-      totalValue,
-      trendTotal: pctChange(createdThisMonth, createdLastMonth),
-      trendWon: pctChange(wonThisMonth, wonLastMonth),
-    };
-  }, [filtered]);
+  const kpiMetrics = useMemo(
+    () =>
+      computeProposalKpis(
+        scopedForKpi.map((p) => ({
+          status: p.status,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+          valueExclGst: proposalValueExclGst(p),
+        })),
+        dateFrom,
+        dateTo,
+      ),
+    [scopedForKpi, dateFrom, dateTo],
+  );
 
   const handleExportCsv = () => {
     const headers = [
@@ -790,7 +779,7 @@ export default function Proposals() {
         city,
         p.assignedToName,
         companyName,
-        p.status.replace(/_/g, " "),
+        proposalStatusLabel(p.status),
         proposalShared,
         licenseInfo,
         p.finalQuoteValue ?? p.grandTotal,
@@ -826,7 +815,7 @@ export default function Proposals() {
     if (!canUpdate) return false;
     if (scope === "SELF" && p.assignedTo !== me.id) return false;
     if (p.dealId) return false;
-    return ["sent", "approved", "negotiation", "won"].includes(p.status);
+    return ["sent", "approved", "negotiation"].includes(p.status) || isProposalWon(p.status);
   };
 
   const markNegotiation = (id: string) => {
@@ -853,26 +842,20 @@ export default function Proposals() {
   };
 
   const applyKpiFilter = (key: "all" | "pending" | "won") => {
-    const month = currentMonthYmd();
     const nextStatus: ProposalStatus | "all" =
       key === "pending" ? "approval_pending" : key === "won" ? "won" : "all";
-    const nextFrom = key === "won" ? month.from : dateFrom;
-    const nextTo = key === "won" ? month.to : dateTo;
     setDraftStatusFilter(nextStatus);
     setStatusFilter(nextStatus);
-    if (key === "won") {
-      setDraftDateFrom(nextFrom);
-      setDraftDateTo(nextTo);
-      setDateFrom(nextFrom);
-      setDateTo(nextTo);
-    }
     setPage(1);
     saveSessionFilters(FILTER_SESSION_KEYS.proposals, {
       search,
       statusFilter: nextStatus,
       suspectWonOnly,
-      dateFrom: nextFrom,
-      dateTo: nextTo,
+      dateFrom,
+      dateTo,
+      timeRangeFilter,
+      customFrom,
+      customTo,
       assignedToFilter,
       sortBy,
       teamQueryFilter,
@@ -889,7 +872,7 @@ export default function Proposals() {
           ? "all"
           : null;
 
-  const dateChip = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : null;
+  const dateChip = timeRangeChip(timeRangeFilter, dateFrom, dateTo);
 
   const proposalActions = (p: Proposal) => (
     <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
@@ -946,7 +929,7 @@ export default function Proposals() {
               Mark as won
             </DropdownMenuItem>
           )}
-          {p.status === "won" && !p.dealId && (canApprove || me.role === "super_admin") && (
+          {isProposalWon(p.status) && !p.dealId && (canApprove || me.role === "super_admin") && (
             <DropdownMenuItem className="cursor-pointer" onClick={() => setCreateDealId(p.id)}>
               <Handshake className="mr-2 h-4 w-4" />
               Create deal
@@ -1083,7 +1066,7 @@ export default function Proposals() {
             </>
           )}
 
-          {canMenu.assignDelivery && p.status === "won" && (
+          {canMenu.assignDelivery && isProposalWon(p.status) && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -1286,21 +1269,16 @@ export default function Proposals() {
                   ))}
                 </SelectContent>
               </Select>
-              <Datepicker
-                controls={["calendar"]}
-                select="range"
-                touchUi={true}
-                inputComponent="input"
-                inputProps={{
-                  placeholder: "Created date…",
-                  className: "h-9 w-full text-sm",
+              <TimeRangeFilter
+                preset={draftTimeRangeFilter}
+                customFrom={draftCustomFrom}
+                customTo={draftCustomTo}
+                onPresetChange={setDraftTimeRangeFilter}
+                onCustomChange={(from, to) => {
+                  setDraftCustomFrom(from);
+                  setDraftCustomTo(to);
                 }}
-                value={[ymdToDate(draftDateFrom), ymdToDate(draftDateTo)]}
-                onChange={(ev) => {
-                  const [f, t] = ev.value;
-                  setDraftDateFrom(f ? dateToYmd(f) : "");
-                  setDraftDateTo(t ? dateToYmd(t) : "");
-                }}
+                customPlaceholder="Created date…"
               />
               <Select value={draftSortBy} onValueChange={(v) => setDraftSortBy(v as SortKey)}>
                 <SelectTrigger className="h-9 w-full">
@@ -1365,7 +1343,7 @@ export default function Proposals() {
                           <p className="truncate text-[11px] text-muted-foreground">{p.title}</p>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             <ProposalStatusBadge status={p.status} />
-                            <span className="text-xs font-semibold tabular-nums">{formatINR(p.finalQuoteValue ?? p.grandTotal)}</span>
+                            <span className="text-xs font-semibold tabular-nums">{formatINR(proposalValueExclGst(p))}</span>
                           </div>
                         </button>
                         {proposalActions(p)}
@@ -1380,7 +1358,7 @@ export default function Proposals() {
                       <TableRow>
                         <TableHead>Proposal</TableHead>
                         <TableHead>Company</TableHead>
-                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead className="text-right">Value excl. GST</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="hidden lg:table-cell">Created</TableHead>
                         <TableHead className="hidden md:table-cell">Valid until</TableHead>
@@ -1413,7 +1391,7 @@ export default function Proposals() {
                               <p className="truncate text-[11px] text-muted-foreground">{p.assignedToName}</p>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                              {formatINR(p.finalQuoteValue ?? p.grandTotal)}
+                              {formatINR(proposalValueExclGst(p))}
                             </TableCell>
                             <TableCell>
                               <ProposalStatusBadge status={p.status} />

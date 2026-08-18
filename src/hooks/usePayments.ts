@@ -42,7 +42,9 @@ export function useCustomerPaymentSummary(customerId: string) {
     queryKey: ['payments', 'customer', customerId],
     queryFn: () => apiGet<CustomerPaymentSummary>(`/api/payments/customer/${customerId}/summary-v2`),
     enabled: !!customerId,
-    staleTime: 30_000,
+    staleTime: 15_000,
+    refetchInterval: LIVE_ENTITY_POLL_MS,
+    refetchOnMount: "always",
   });
 }
 

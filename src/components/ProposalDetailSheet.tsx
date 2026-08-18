@@ -22,6 +22,7 @@ import type { Proposal, ProposalStatus } from "@/types";
 import { formatINR } from "@/lib/rbac";
 import { can } from "@/lib/rbac";
 import { useAppStore } from "@/store/useAppStore";
+import { isProposalWon, proposalStatusLabel, normalizeProposalStatus } from "@/lib/proposalStatus";
 
 const STATUS_BADGE: Record<ProposalStatus, string> = {
   draft: "bg-muted text-muted-foreground",
@@ -33,7 +34,7 @@ const STATUS_BADGE: Record<ProposalStatus, string> = {
   won: "bg-emerald-500/15 text-emerald-700",
   cold: "bg-slate-500/15 text-slate-700",
   rejected: "bg-red-500/15 text-red-700",
-  deal_created: "bg-purple-500/15 text-purple-700",
+  deal_created: "bg-emerald-500/15 text-emerald-700",
 };
 
 interface ProposalDetailSheetProps {
@@ -151,7 +152,7 @@ export function ProposalDetailSheet({
                   <Handshake className="w-4 h-4" />
                 </Button>
               )}
-              {canOutcome && proposal.status !== "won" && (
+              {canOutcome && !isProposalWon(proposal.status) && (
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600" onClick={onMarkWon} title="Mark Won">
                   <Trophy className="w-4 h-4" />
                 </Button>
@@ -175,8 +176,8 @@ export function ProposalDetailSheet({
 
           <TabsContent value="overview" className="space-y-4 mt-4">
             <div className="flex flex-wrap gap-2">
-              <Badge className={STATUS_BADGE[proposal.status]}>
-                <span className="whitespace-nowrap">{proposal.status.replace(/_/g, " ")}</span>
+              <Badge className={STATUS_BADGE[normalizeProposalStatus(proposal.status)]}>
+                <span className="whitespace-nowrap">{proposalStatusLabel(proposal.status)}</span>
               </Badge>
               <span className="text-xs text-muted-foreground">Created {new Date(proposal.createdAt).toLocaleDateString()}</span>
               <span className="text-xs text-muted-foreground">Valid until {proposal.validUntil}</span>
@@ -207,12 +208,14 @@ export function ProposalDetailSheet({
           </TabsContent>
 
           <TabsContent value="lineitems" className="mt-4">
+            <div className="overflow-x-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-xs">Item</TableHead>
                   <TableHead className="text-xs">Item code</TableHead>
                   <TableHead className="text-xs">Qty</TableHead>
+                  <TableHead className="text-xs">Service duration</TableHead>
                   <TableHead className="text-xs text-right">Unit Price</TableHead>
                   <TableHead className="text-xs">Disc %</TableHead>
                   <TableHead className="text-xs text-right">Line Total</TableHead>
@@ -226,6 +229,7 @@ export function ProposalDetailSheet({
                     <TableCell className="text-sm">{li.name}</TableCell>
                     <TableCell className="font-mono text-xs">{li.sku}</TableCell>
                     <TableCell>{li.qty}</TableCell>
+                    <TableCell className="text-xs">{li.serviceLabel?.trim() || "12 Months"}</TableCell>
                     <TableCell className="text-right font-mono">{formatINR(li.unitPrice)}</TableCell>
                     <TableCell>{li.discount}%</TableCell>
                     <TableCell className="text-right font-mono">{formatINR(li.lineTotal)}</TableCell>
@@ -235,6 +239,7 @@ export function ProposalDetailSheet({
                 ))}
               </TableBody>
             </Table>
+            </div>
             <div className="mt-4 p-3 rounded-md bg-muted/50 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-mono">{formatINR(proposal.subtotal)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Total Discount</span><span className="font-mono">-{formatINR(proposal.totalDiscount)}</span></div>

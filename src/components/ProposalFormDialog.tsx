@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCustomersListQuery } from "@/hooks/useCustomersListQuery";
-import { mapApiCustomerRowToCustomer } from "@/lib/customerApiToUi";
+import { mapCustomersApiRowsToStore } from "@/lib/customerPersistence";
+import { normalizeProposalStatus } from "@/lib/proposalStatus";
 import { QK } from "@/lib/queryKeys";
 import {
   Dialog,
@@ -91,7 +92,7 @@ export function ProposalFormDialog({
 
   useEffect(() => {
     if (!open || !customersQuery.data) return;
-    setCustomers(customersQuery.data.map((row) => mapApiCustomerRowToCustomer(row, { regions, users, me })));
+    setCustomers(mapCustomersApiRowsToStore(customersQuery.data, { regions, users, me }));
   }, [open, customersQuery.data, regions, users, me.id, setCustomers]);
 
   /** Wait for server persistence before refetching — avoids list overwriting the new row with stale GET. */
@@ -473,7 +474,7 @@ export function ProposalFormDialog({
       setIsTitleAuto(false);
       setTitleAutoCreatedAt(null);
       setCustomerId(editingProposal.customerId);
-      setStatus(editingProposal.status ?? "shared");
+      setStatus(normalizeProposalStatus(editingProposal.status ?? "shared"));
       setAssignedTo(editingProposal.assignedTo);
       setValidUntil(editingProposal.validUntil);
       setCustomerNotes(editingProposal.customerNotes ?? "");
@@ -600,7 +601,6 @@ export function ProposalFormDialog({
                     { value: "won", label: "Won" },
                     { value: "rejected", label: "Rejected" },
                     { value: "cold", label: "Cold" },
-                    { value: "deal_created", label: "Deal Created" },
                   ]}
                   placeholder="Shared"
                   triggerClassName="h-9 text-sm"

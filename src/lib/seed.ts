@@ -540,7 +540,7 @@ export const seedProposals: Proposal[] = [
     assignedToName: 'Amit (Sales Rep)',
     regionId: 'r2',
     teamId: 't1',
-    status: 'deal_created',
+    status: 'won',
     validUntil: '2026-04-25',
     lineItems: [
       makeLineItem('li8', 'inv1', 'Buildesk CRM Pro', 'CRM-PRO-001', 20, 14500, 18, 3),

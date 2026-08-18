@@ -11,6 +11,7 @@ import type {
   AutomationTrigger,
 } from "@/types";
 import type { Proposal } from "@/types";
+import { isProposalWon } from "@/lib/proposalStatus";
 
 const RULE_STATE_KEY = "buildesk_automation_rule_state_v1";
 const TEMPLATE_REFRESH_TTL_MS = 15_000;
@@ -1070,7 +1071,7 @@ export function checkAndTriggerProposalFollowUps(): void {
       const rep = users.find((u) => u.id === proposal.assignedTo);
 
       // Cold/Won/Deal-created proposals should not receive follow-ups.
-      if (proposal.status === "cold" || proposal.status === "won" || proposal.status === "deal_created") return;
+      if (proposal.status === "cold" || isProposalWon(proposal.status)) return;
 
       followUpTemplates.forEach((tpl) => {
         const delay = tpl.delayHours ?? 0;

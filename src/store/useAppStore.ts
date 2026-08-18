@@ -1060,7 +1060,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const proposal = get().proposals.find(p => p.id === id);
     set(s => ({
       proposals: s.proposals.map(p =>
-        p.id === id ? { ...p, status: 'deal_created' as const, dealId, updatedAt: new Date().toISOString() } : p
+        p.id === id ? { ...p, status: 'won' as const, dealId, updatedAt: new Date().toISOString() } : p
       ),
     }));
     const proposalPersist = get().proposals.find(p => p.id === id);

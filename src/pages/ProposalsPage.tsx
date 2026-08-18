@@ -18,12 +18,14 @@ import { toast } from '@/components/ui/use-toast';
 import { PRODUCT_CATEGORIES, SUBSCRIPTION_TYPES, PROPOSAL_FORMATS } from '@/lib/masterData';
 import type { ProposalLineItem } from '@/types';
 import { makeProposalNumber } from '@/lib/proposalNumber';
+import { proposalStatusLabel } from '@/lib/proposalStatus';
 
 const STATUS_DOT: Record<string, string> = {
   PROPOSAL_DRAFT: 'bg-muted-foreground',
   PROPOSAL_SHARED: 'bg-success',
   PROPOSAL_APPROVED: 'bg-success',
-  DEAL_CREATED: 'bg-primary',
+  won: 'bg-success',
+  deal_created: 'bg-success',
 };
 
 export default function ProposalsPage() {
@@ -277,7 +279,7 @@ export default function ProposalsPage() {
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <span className={`w-2 h-2 rounded-full ${p.pendingApproval ? 'bg-warning' : STATUS_DOT[p.status] ?? 'bg-muted-foreground'}`} />
-                            <span className="text-xs">{p.status.replace(/_/g, ' ')}</span>
+                            <span className="text-xs">{proposalStatusLabel(p.status)}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{o?.name}</TableCell>
@@ -303,10 +305,10 @@ export default function ProposalsPage() {
                 <div>
                   <h3 className="font-mono-id font-bold text-base">{selected.proposalNo}</h3>
                   <div className="flex flex-wrap gap-1.5 mt-2">
-                    <Badge variant="outline" className="text-[10px]">{selected.status.replace(/_/g, ' ')}</Badge>
+                    <Badge variant="outline" className="text-[10px]">{proposalStatusLabel(selected.status)}</Badge>
                     <Badge variant="outline" className="text-[10px]">{scope}</Badge>
                     <Badge variant="outline" className="text-[10px]">{team?.name}</Badge>
-                    {dealCreated && <Badge className="text-[10px] bg-accent text-accent-foreground"><Lock className="w-3 h-3 mr-1" />Deal Created</Badge>}
+                    {dealCreated && <Badge className="text-[10px] bg-accent text-accent-foreground"><Lock className="w-3 h-3 mr-1" />Has deal</Badge>}
                   </div>
                 </div>
 
@@ -328,6 +330,7 @@ export default function ProposalsPage() {
                           <TableRow>
                             <TableHead className="text-[10px] p-1">Item</TableHead>
                             <TableHead className="text-[10px] p-1">Qty</TableHead>
+                            <TableHead className="text-[10px] p-1">Duration</TableHead>
                             <TableHead className="text-[10px] p-1 text-right">Total</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -336,6 +339,7 @@ export default function ProposalsPage() {
                             <TableRow key={`${li.inventoryItemId}-${i}`}>
                               <TableCell className="text-xs p-1">{li.name} ({li.sku})</TableCell>
                               <TableCell className="text-xs p-1">{li.qty}</TableCell>
+                              <TableCell className="text-xs p-1">{li.serviceLabel?.trim() || "12 Months"}</TableCell>
                               <TableCell className="text-xs p-1 text-right font-mono">{formatINR(li.lineTotal + li.taxAmount)}</TableCell>
                             </TableRow>
                           ))}

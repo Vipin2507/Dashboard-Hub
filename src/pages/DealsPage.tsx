@@ -89,6 +89,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
+import { isoToLocalYmd, isTimeRangePreset, resolveTimeRangeYmd, TIME_RANGE_OPTIONS, ymdInInclusiveRange, type TimeRangePreset } from "@/lib/dateRange";
 import { FilterPanel } from "@/components/FilterPanel";
 import { StatusPill, type StatusTone } from "@/components/StatusPill";
 import { CountUp } from "@/components/CountUp";
@@ -1317,30 +1318,12 @@ export default function DealsPage() {
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const now = new Date();
-
-    let rangeStart: Date | null = null;
-    let rangeEnd: Date | null = null;
-
-    if (timeRangeFilter === "this_week") {
-      rangeStart = new Date(now);
-      rangeStart.setDate(now.getDate() - now.getDay());
-      rangeStart.setHours(0, 0, 0, 0);
-    } else if (timeRangeFilter === "this_month") {
-      rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    } else if (timeRangeFilter === "this_year") {
-      rangeStart = new Date(now.getFullYear(), 0, 1);
-    } else if (timeRangeFilter === "previous_year") {
-      rangeStart = new Date(now.getFullYear() - 1, 0, 1);
-      rangeEnd = new Date(now.getFullYear(), 0, 1);
-    } else if (timeRangeFilter === "custom") {
-      rangeStart = customDateRange[0];
-      if (customDateRange[1]) {
-        rangeEnd = new Date(customDateRange[1]);
-        rangeEnd.setDate(rangeEnd.getDate() + 1);
-        rangeEnd.setHours(0, 0, 0, 0);
-      }
-    }
+    const preset: TimeRangePreset = isTimeRangePreset(timeRangeFilter) ? timeRangeFilter : "this_month";
+    const { from, to } = resolveTimeRangeYmd(
+      preset,
+      customDateRange[0] ? dateToYmd(customDateRange[0]) : "",
+      customDateRange[1] ? dateToYmd(customDateRange[1]) : "",
+    );
 
     return scopedActiveDeals.filter((d) => {
       if (q) {
@@ -1363,13 +1346,10 @@ export default function DealsPage() {
       if (teamFilter !== "all" && d.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && d.regionId !== regionFilter) return false;
 
-      if (timeRangeFilter !== "all") {
+      if (preset !== "all") {
         const t = getDealDateForFilter(d);
         if (!t) return false;
-        const dt = new Date(t.includes("T") ? t : `${t.slice(0, 10)}T00:00:00`);
-        if (Number.isNaN(dt.getTime())) return false;
-        if (rangeStart && dt < rangeStart) return false;
-        if (rangeEnd && dt >= rangeEnd) return false;
+        if (!ymdInInclusiveRange(isoToLocalYmd(t), from, to)) return false;
       }
       return true;
     });
@@ -2159,12 +2139,11 @@ export default function DealsPage() {
                   <SelectValue placeholder="All time" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All time</SelectItem>
-                  <SelectItem value="this_week">This week</SelectItem>
-                  <SelectItem value="this_month">This month</SelectItem>
-                  <SelectItem value="this_year">This year</SelectItem>
-                  <SelectItem value="previous_year">Previous year</SelectItem>
-                  <SelectItem value="custom">Custom range</SelectItem>
+                  {TIME_RANGE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 

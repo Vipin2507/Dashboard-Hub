@@ -1,3 +1,4 @@
+import { AIAssistantToggle } from "@/components/AIAssistantSidebar";
 import { BrandMark } from "@/components/BrandMark";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -30,6 +31,7 @@ export function MobileShellHeader() {
       <div className="min-w-0 flex-1 lg:hidden" aria-hidden />
       <div className="ml-auto flex shrink-0 items-center gap-0.5">
         <ThemeToggle />
+        <AIAssistantToggle />
         <NotificationBell />
         <UserMenu compact />
       </div>

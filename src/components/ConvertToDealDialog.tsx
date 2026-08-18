@@ -20,6 +20,7 @@ import {
   type DealEstimateBillingState,
 } from "@/lib/dealEstimateBilling";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
+import { persistProductLinesFromProposal } from "@/lib/productLineSync";
 import { DealEstimateBillingSection } from "@/components/DealEstimateBillingSection";
 import { useAppStore } from "@/store/useAppStore";
 import { api } from "@/lib/api";
@@ -419,11 +420,18 @@ export function ConvertToDealDialog({
       const deal = await api.post<Deal>("/deals", body);
       const proposalUpdated: Proposal = {
         ...proposal,
-        status: "deal_created",
+        status: "won",
         dealId: deal.id,
         updatedAt: new Date().toISOString(),
       };
       await api.put<Proposal>(`/proposals/${proposal.id}`, proposalUpdated);
+
+      await persistProductLinesFromProposal({
+        customerId,
+        dealId: deal.id,
+        proposal,
+        inventoryItems,
+      }).catch(() => undefined);
 
       INVALIDATE.deal(qc, deal.id, customerId);
       INVALIDATE.proposal(qc, proposal.id, customerId);
@@ -554,6 +562,13 @@ export function ConvertToDealDialog({
           await new Promise((r) => setTimeout(r, 800));
         }
       }
+
+      await persistProductLinesFromProposal({
+        customerId,
+        dealId: deal.id,
+        proposal,
+        inventoryItems,
+      }).catch(() => undefined);
 
       INVALIDATE.deal(qc, deal.id, customerId);
       INVALIDATE.proposal(qc, proposal.id, customerId);

@@ -19,8 +19,16 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "@/components/ui/use-toast";
-import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
-import { currentMonthYmd } from "@/lib/dateRange";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
+import {
+  hydrateTimeRange,
+  isoToLocalYmd,
+  parseTimeRangeFromSearchParams,
+  resolveTimeRangeYmd,
+  timeRangeChip,
+  ymdInInclusiveRange,
+  type TimeRangePreset,
+} from "@/lib/dateRange";
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
@@ -168,10 +176,12 @@ type PersistedCustomerFilters = {
   tagsFilter: string;
   dateFrom: string;
   dateTo: string;
+  timeRangeFilter?: TimeRangePreset;
+  customFrom?: string;
+  customTo?: string;
 };
 
 function defaultCustomerFilters(): PersistedCustomerFilters {
-  const month = currentMonthYmd();
   return {
     search: "",
     statusFilter: "all",
@@ -180,8 +190,9 @@ function defaultCustomerFilters(): PersistedCustomerFilters {
     teamQueryFilter: "all",
     industryFilter: "all",
     tagsFilter: "",
-    dateFrom: month.from,
-    dateTo: month.to,
+    dateFrom: "",
+    dateTo: "",
+    timeRangeFilter: "this_month",
   };
 }
 
@@ -202,13 +213,11 @@ function filtersFromSearchParams(params: URLSearchParams): Partial<PersistedCust
   if (owner) next.assignedToFilter = owner;
   if (team) next.teamQueryFilter = team;
   if (region) next.regionFilter = region;
-  if (range === "all") {
-    next.dateFrom = "";
-    next.dateTo = "";
-  } else {
-    if (from) next.dateFrom = from;
-    if (to) next.dateTo = to;
+  if (range === "all" || range === "this_week" || range === "this_month" || range === "this_year" || range === "previous_year" || range === "custom") {
+    next.timeRangeFilter = range;
   }
+  if (from) next.dateFrom = from;
+  if (to) next.dateTo = to;
   return next;
 }
 
@@ -280,8 +289,14 @@ export default function Customers() {
   const [teamQueryFilter, setTeamQueryFilter] = useState<string>(() => initialCustomerFilters.teamQueryFilter);
   const [industryFilter, setIndustryFilter] = useState<string>(() => initialCustomerFilters.industryFilter);
   const [tagsFilter, setTagsFilter] = useState<string>(() => initialCustomerFilters.tagsFilter);
-  const [dateFrom, setDateFrom] = useState<string>(() => initialCustomerFilters.dateFrom);
-  const [dateTo, setDateTo] = useState<string>(() => initialCustomerFilters.dateTo);
+  const initialCustomerTimeRange = hydrateTimeRange({
+    timeRangeFilter: initialCustomerFilters.timeRangeFilter,
+    dateFrom: initialCustomerFilters.customFrom || initialCustomerFilters.dateFrom,
+    dateTo: initialCustomerFilters.customTo || initialCustomerFilters.dateTo,
+  });
+  const [timeRangeFilter, setTimeRangeFilter] = useState<TimeRangePreset>(() => initialCustomerTimeRange.preset);
+  const [customFrom, setCustomFrom] = useState(() => initialCustomerTimeRange.customFrom);
+  const [customTo, setCustomTo] = useState(() => initialCustomerTimeRange.customTo);
   const [viewMode, setViewMode] = useState<"table" | "card">("table");
   const [page, setPage] = useState(1);
   const [formOpen, setFormOpen] = useState(false);
@@ -304,24 +319,22 @@ export default function Customers() {
     const owner = searchParams.get("owner");
     const team = searchParams.get("team");
     const region = searchParams.get("region");
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
-    const range = searchParams.get("range");
     const tab = searchParams.get("tab");
     if (q != null) setSearch(q);
     if (status && STATUS_OPTIONS.some((s) => s.value === status)) setStatusFilter(status as CustomerStatus | "all");
     if (owner) setAssignedToFilter(owner);
     if (team) setTeamQueryFilter(team);
     if (region) setRegionFilter(region);
-    if (range === "all") {
-      setDateFrom("");
-      setDateTo("");
-    } else {
-      if (from) setDateFrom(from);
-      if (to) setDateTo(to);
+    const parsed = parseTimeRangeFromSearchParams(searchParams);
+    if (parsed) {
+      setTimeRangeFilter(parsed.preset);
+      setCustomFrom(parsed.customFrom);
+      setCustomTo(parsed.customTo);
     }
     if (tab === "renewals" || tab === "directory") setCustomerModuleTab(tab);
   }, [searchParams]);
+
+  const { from: dateFrom, to: dateTo } = resolveTimeRangeYmd(timeRangeFilter, customFrom, customTo);
 
   useEffect(() => {
     saveSessionFilters(FILTER_SESSION_KEYS.customers, {
@@ -334,8 +347,11 @@ export default function Customers() {
       tagsFilter,
       dateFrom,
       dateTo,
+      timeRangeFilter,
+      customFrom,
+      customTo,
     });
-  }, [search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, industryFilter, tagsFilter, dateFrom, dateTo]);
+  }, [search, statusFilter, regionFilter, assignedToFilter, teamQueryFilter, industryFilter, tagsFilter, dateFrom, dateTo, timeRangeFilter, customFrom, customTo]);
 
   const hasActiveAppliedFilters =
     search !== "" ||
@@ -345,8 +361,7 @@ export default function Customers() {
     teamQueryFilter !== "all" ||
     industryFilter !== "all" ||
     tagsFilter !== "" ||
-    dateFrom !== "" ||
-    dateTo !== "";
+    timeRangeFilter !== "all";
 
   const clearFilters = () => {
     setSearch("");
@@ -356,8 +371,9 @@ export default function Customers() {
     setTeamQueryFilter("all");
     setIndustryFilter("all");
     setTagsFilter("");
-    setDateFrom("");
-    setDateTo("");
+    setTimeRangeFilter("all");
+    setCustomFrom("");
+    setCustomTo("");
     setPage(1);
     clearSessionFilters(FILTER_SESSION_KEYS.customers);
   };
@@ -393,8 +409,9 @@ export default function Customers() {
     if (regionFilter !== "all") list = list.filter((c) => c.regionId === regionFilter);
     if (assignedToFilter !== "all") list = list.filter((c) => c.assignedTo === assignedToFilter);
     if (teamQueryFilter !== "all") list = list.filter((c) => c.teamId === teamQueryFilter);
-    if (dateFrom) list = list.filter((c) => c.createdAt.slice(0, 10) >= dateFrom);
-    if (dateTo) list = list.filter((c) => c.createdAt.slice(0, 10) <= dateTo);
+    if (dateFrom || dateTo) {
+      list = list.filter((c) => ymdInInclusiveRange(isoToLocalYmd(c.createdAt), dateFrom, dateTo));
+    }
     if (industryFilter !== "all") list = list.filter((c) => c.industry === industryFilter);
     if (tagsFilter) {
       const tag = tagsFilter.trim().toLowerCase();
@@ -482,8 +499,7 @@ export default function Customers() {
 
   const primaryContact = (c: Customer) => c.contacts.find((x) => x.isPrimary) ?? c.contacts[0];
 
-  const month = currentMonthYmd();
-  const dateChip = dateFrom && dateTo ? `${dateFrom} – ${dateTo}` : null;
+  const dateChip = timeRangeChip(timeRangeFilter, dateFrom, dateTo);
 
   return (
     <>
@@ -625,10 +641,11 @@ export default function Customers() {
                 icon={UserPlus}
                 iconColor="text-info"
                 iconBg="bg-info/15"
-                active={dateFrom === month.from && dateTo === month.to}
+                active={timeRangeFilter === "this_month"}
                 onClick={() => {
-                  setDateFrom(month.from);
-                  setDateTo(month.to);
+                  setTimeRangeFilter("this_month");
+                  setCustomFrom("");
+                  setCustomTo("");
                   setPage(1);
                 }}
               />
@@ -716,22 +733,20 @@ export default function Customers() {
                   </div>
                 </div>
                 <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  <Datepicker
-                    controls={["calendar"]}
-                    select="range"
-                    touchUi={true}
-                    inputComponent="input"
-                    inputProps={{
-                      placeholder: "Created date…",
-                      className: "h-9 w-full text-sm",
-                    }}
-                    value={[ymdToDate(dateFrom), ymdToDate(dateTo)]}
-                    onChange={(ev) => {
-                      const [f, t] = ev.value;
-                      setDateFrom(f ? dateToYmd(f) : "");
-                      setDateTo(t ? dateToYmd(t) : "");
+                  <TimeRangeFilter
+                    preset={timeRangeFilter}
+                    customFrom={customFrom}
+                    customTo={customTo}
+                    onPresetChange={(preset) => {
+                      setTimeRangeFilter(preset);
                       setPage(1);
                     }}
+                    onCustomChange={(from, to) => {
+                      setCustomFrom(from);
+                      setCustomTo(to);
+                      setPage(1);
+                    }}
+                    customPlaceholder="Created date…"
                   />
                   <Select
                     value={assignedToFilter}

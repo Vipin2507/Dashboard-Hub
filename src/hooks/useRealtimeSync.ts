@@ -67,7 +67,10 @@ export function useRealtimeSync(): SyncState {
         // Keep it broad: invalidate lists so all pages refresh.
         if (entity === "customers") qc.invalidateQueries({ queryKey: ["customers"] });
         if (entity === "proposals") qc.invalidateQueries({ queryKey: ["proposals"] });
-        if (entity === "deals") qc.invalidateQueries({ queryKey: ["deals"] });
+        if (entity === "deals") {
+          qc.invalidateQueries({ queryKey: ["deals"] });
+          qc.invalidateQueries({ queryKey: ["customers"] });
+        }
         if (entity === "payments") qc.invalidateQueries({ queryKey: ["payments"] });
         if (entity === "inventory") qc.invalidateQueries({ queryKey: ["inventory"] });
         if (entity === "notifications") qc.invalidateQueries({ queryKey: QK.notifications() });

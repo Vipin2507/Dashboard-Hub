@@ -6,6 +6,7 @@ import { type CustomersApiListRow } from "@/hooks/useCustomersListQuery";
 import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope } from "@/lib/rbac";
 import { resolveDealPipelineStatus } from "@/lib/dealStatus";
+import { isProposalWon } from "@/lib/proposalStatus";
 import type { Customer, Deal, Proposal, Scope } from "@/types";
 
 /** @deprecated use CustomersApiListRow from useCustomersListQuery */
@@ -137,7 +138,7 @@ export function useDashboardData() {
     }).length;
 
     const activeProposals = proposalList.filter((p) =>
-      ["sent", "shared", "approval_pending", "approved", "negotiation", "won"].includes(p.status),
+      ["sent", "shared", "approval_pending", "approved", "negotiation"].includes(p.status) || isProposalWon(p.status),
     ).length;
     const pendingApprovals = proposalList.filter((p) => p.status === "approval_pending").length;
     const totalProposalValue = proposalList.reduce((s, p) => s + (p.grandTotal ?? 0), 0);

@@ -113,6 +113,46 @@ function migrateDealSchema() {
 }
 migrateDealSchema();
 
+/** `deal_created` on a proposal is the same as won. */
+function migrateProposalDealCreatedToWon() {
+  let rows = [];
+  try {
+    rows = db.prepare("SELECT id, status, data FROM proposals").all();
+  } catch {
+    return;
+  }
+  const targets = rows.filter((r) => {
+    if (r.status === "deal_created") return true;
+    try {
+      const obj = JSON.parse(r.data);
+      return obj && obj.status === "deal_created";
+    } catch {
+      return false;
+    }
+  });
+  if (!targets.length) return;
+  const upd = db.prepare("UPDATE proposals SET status = 'won', data = ? WHERE id = ?");
+  const tx = db.transaction((items) => {
+    for (const r of items) {
+      let dataStr = r.data;
+      try {
+        const obj = JSON.parse(r.data);
+        if (obj && typeof obj === "object") {
+          obj.status = "won";
+          dataStr = JSON.stringify(obj);
+        }
+      } catch {
+        /* keep blob */
+      }
+      upd.run(dataStr, r.id);
+    }
+  });
+  tx(targets);
+  // eslint-disable-next-line no-console
+  console.log(`[buildesk] migrated ${targets.length} proposal(s) deal_created → won`);
+}
+migrateProposalDealCreatedToWon();
+
 function migrateEstimateSequence() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS estimate_sequence (

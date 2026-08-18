@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogBody,
@@ -14,7 +14,8 @@ import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
 import { Label } from "@/components/ui/label";
 import { formatINR } from "@/lib/rbac";
 import { api } from "@/lib/api";
-import { QK } from "@/lib/queryKeys";
+import { INVALIDATE, QK } from "@/lib/queryKeys";
+import { persistProductLinesFromProposal } from "@/lib/productLineSync";
 import type { CustomerProductLine, Deal, Proposal } from "@/types";
 import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,6 +45,7 @@ interface CreateDealDialogProps {
 }
 
 export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps) {
+  const qc = useQueryClient();
   const customers = useAppStore((s) => s.customers);
   const inventoryItems = useAppStore((s) => s.inventoryItems);
   const users = useAppStore((s) => s.users);
@@ -373,11 +375,21 @@ export function CreateDealDialog({ proposalId, onClose }: CreateDealDialogProps)
 
       const proposalUpdated: Proposal = {
         ...proposal,
-        status: "deal_created",
+        status: "won",
         dealId: dealCreate.id,
         updatedAt: new Date().toISOString(),
       };
       await api.put<Proposal>(`/proposals/${proposal.id}`, proposalUpdated);
+
+      await persistProductLinesFromProposal({
+        customerId: proposal.customerId,
+        dealId: dealCreate.id,
+        proposal,
+        inventoryItems,
+      }).catch(() => undefined);
+
+      INVALIDATE.deal(qc, dealCreate.id, proposal.customerId);
+      INVALIDATE.proposal(qc, proposal.id, proposal.customerId);
 
       await generateEstimatePdf(dealCreate);
       toast.success("Deal created & Estimate PDF generated successfully");

@@ -23,6 +23,7 @@ export const QK = {
   customerDeals: (id: string) => ["customers", id, "deals"] as const,
   customerPayments: (id: string) => ["customers", id, "payments"] as const,
   customerActivity: (id: string) => ["customers", id, "activity"] as const,
+  customerProductLines: (id: string) => ["customers", id, "product-lines"] as const,
 
   // Proposals
   proposals: (params?: object) => ["proposals", params] as const,
@@ -100,6 +101,7 @@ export const INVALIDATE = {
     if (customerId) {
       qc.invalidateQueries({ queryKey: QK.customerDeals(customerId) });
       qc.invalidateQueries({ queryKey: QK.customerPayments(customerId) });
+      qc.invalidateQueries({ queryKey: QK.customerProductLines(customerId) });
       qc.invalidateQueries({ queryKey: QK.customer(customerId) });
     }
     qc.invalidateQueries({ queryKey: QK.notifications() });

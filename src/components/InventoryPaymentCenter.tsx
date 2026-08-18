@@ -35,7 +35,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/use-toast";
 import { Datepicker, dateToYmd, ymdToDate } from "@/components/ui/datepicker";
-import { currentMonthYmd } from "@/lib/dateRange";
+import { hydrateTimeRange, resolveTimeRangeYmd, type TimeRangePreset } from "@/lib/dateRange";
+import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import {
   FILTER_SESSION_KEYS,
   clearSessionFilters,
@@ -186,6 +187,7 @@ function paymentHealth(plan: CustomerPaymentPlan | null, category: string | unde
 }
 
 type HistoryFilters = {
+  range: TimeRangePreset;
   from: string;
   to: string;
   mode: string;
@@ -194,10 +196,10 @@ type HistoryFilters = {
 };
 
 function defaultHistoryFilters(): HistoryFilters {
-  const month = currentMonthYmd();
   return {
-    from: month.from,
-    to: month.to,
+    range: "this_month",
+    from: "",
+    to: "",
     mode: "all",
     cycle: "all",
     status: "all",
@@ -205,7 +207,22 @@ function defaultHistoryFilters(): HistoryFilters {
 }
 
 function loadHistoryFilters(): HistoryFilters {
-  return loadSessionFilters<HistoryFilters>(FILTER_SESSION_KEYS.paymentsHistory) ?? defaultHistoryFilters();
+  const saved = loadSessionFilters<Partial<HistoryFilters>>(FILTER_SESSION_KEYS.paymentsHistory);
+  const hydrated = hydrateTimeRange({
+    timeRangeFilter: saved?.range ?? defaultHistoryFilters().range,
+    dateFrom: saved?.from,
+    dateTo: saved?.to,
+  });
+  return {
+    ...defaultHistoryFilters(),
+    ...saved,
+    range: hydrated.preset,
+    from: hydrated.customFrom,
+    to: hydrated.customTo,
+    mode: saved?.mode ?? "all",
+    cycle: saved?.cycle ?? "all",
+    status: saved?.status ?? "all",
+  };
 }
 
 export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerId?: string } = {}) {
@@ -280,10 +297,11 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
   const historyQ = useQuery({
     queryKey: ["payments-history", historyFilters, customerId],
     queryFn: async () => {
+      const range = resolveTimeRangeYmd(historyFilters.range, historyFilters.from, historyFilters.to);
       const q = new URLSearchParams();
       if (customerId) q.set("customerId", customerId);
-      if (historyFilters.from) q.set("from", historyFilters.from);
-      if (historyFilters.to) q.set("to", historyFilters.to);
+      if (range.from) q.set("from", range.from);
+      if (range.to) q.set("to", range.to);
       if (historyFilters.mode !== "all") q.set("mode", historyFilters.mode);
       if (historyFilters.cycle !== "all") q.set("cycle", historyFilters.cycle);
       if (historyFilters.status !== "all") q.set("status", historyFilters.status);
@@ -314,14 +332,14 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
   }, [historyFilters]);
 
   const hasActiveHistoryFilters =
-    historyFilters.from !== "" ||
-    historyFilters.to !== "" ||
+    historyFilters.range !== "all" ||
     historyFilters.mode !== "all" ||
     historyFilters.cycle !== "all" ||
     historyFilters.status !== "all";
 
   const clearHistoryFilters = () => {
     setHistoryFilters({
+      range: "all",
       from: "",
       to: "",
       mode: "all",
@@ -906,22 +924,22 @@ export function InventoryPaymentCenter({ initialCustomerId }: { initialCustomerI
             <div className="flex flex-wrap gap-2 items-end">
               <div className="min-w-[200px] space-y-1">
                 <Label className="text-xs">Payment date</Label>
-                <Datepicker
-                  controls={["calendar"]}
-                  select="range"
-                  touchUi={true}
-                  inputComponent="input"
-                  inputProps={{ placeholder: "Any range…", className: "h-9 w-full min-w-[200px]" }}
-                  value={[ymdToDate(historyFilters.from), ymdToDate(historyFilters.to)]}
-                  onChange={(ev) => {
-                    const [f, t] = ev.value;
-                    setHistoryFilters((h) => ({
-                      ...h,
-                      from: f ? dateToYmd(f) : "",
-                      to: t ? dateToYmd(t) : "",
-                    }));
-                  }}
-                />
+                <div className="grid min-w-[200px] gap-2">
+                  <TimeRangeFilter
+                    preset={historyFilters.range}
+                    customFrom={historyFilters.from}
+                    customTo={historyFilters.to}
+                    onPresetChange={(range) => {
+                      setHistoryFilters((h) => {
+                        if (range === "custom") return { ...h, range };
+                        const resolved = resolveTimeRangeYmd(range, h.from, h.to);
+                        return { ...h, range, from: resolved.from, to: resolved.to };
+                      });
+                    }}
+                    onCustomChange={(from, to) => setHistoryFilters((h) => ({ ...h, range: "custom", from, to }))}
+                    customPlaceholder="Any range…"
+                  />
+                </div>
               </div>
               <div>
                 <Label className="text-xs">Mode</Label>

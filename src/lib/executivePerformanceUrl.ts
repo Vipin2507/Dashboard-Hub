@@ -1,6 +1,13 @@
-import { currentMonthYmd } from "@/lib/dateRange";
+import {
+  hydrateTimeRange,
+  isTimeRangePreset,
+  parseTimeRangeFromSearchParams,
+  resolveTimeRangeYmd,
+  type TimeRangePreset,
+} from "@/lib/dateRange";
 
 export type ExecutiveUrlFilters = {
+  range: TimeRangePreset;
   from: string;
   to: string;
   executiveId: string;
@@ -11,19 +18,40 @@ export type ExecutiveUrlFilters = {
   reason: string;
 };
 
-export function readExecutiveFiltersFromParams(params: URLSearchParams): ExecutiveUrlFilters {
-  const month = currentMonthYmd();
-  const allTime = params.get("range") === "all";
+export function normalizeExecutiveFilters(raw: Partial<ExecutiveUrlFilters>): ExecutiveUrlFilters {
+  const hydrated = hydrateTimeRange({
+    timeRangeFilter: raw.range,
+    dateFrom: raw.from ?? "",
+    dateTo: raw.to ?? "",
+  });
+  const resolved = resolveTimeRangeYmd(hydrated.preset, hydrated.customFrom, hydrated.customTo);
   return {
-    from: allTime ? "" : params.get("from") || month.from,
-    to: allTime ? "" : params.get("to") || month.to,
+    range: hydrated.preset,
+    from: resolved.from,
+    to: resolved.to,
+    executiveId: raw.executiveId || "all",
+    teamId: raw.teamId || "all",
+    regionId: raw.regionId || "all",
+    weekday: raw.weekday || "all",
+    reasonType: raw.reasonType || "all",
+    reason: raw.reason || "all",
+  };
+}
+
+export function readExecutiveFiltersFromParams(params: URLSearchParams): ExecutiveUrlFilters {
+  const parsed = parseTimeRangeFromSearchParams(params);
+  const rangePart = parsed ?? { preset: "this_month" as TimeRangePreset, customFrom: "", customTo: "" };
+  return normalizeExecutiveFilters({
+    range: rangePart.preset,
+    from: rangePart.preset === "custom" ? rangePart.customFrom : "",
+    to: rangePart.preset === "custom" ? rangePart.customTo : "",
     executiveId: params.get("executive") || "all",
     teamId: params.get("team") || "all",
     regionId: params.get("region") || "all",
     weekday: params.get("weekday") || "all",
     reasonType: params.get("reasonType") || "all",
     reason: params.get("reason") || "all",
-  };
+  });
 }
 
 export function executiveFiltersToSearchParams(
@@ -31,11 +59,14 @@ export function executiveFiltersToSearchParams(
   tab: string,
 ): URLSearchParams {
   const p = new URLSearchParams();
-  if (f.from && f.to) {
-    p.set("from", f.from);
-    p.set("to", f.to);
-  } else {
+  const range = isTimeRangePreset(f.range) ? f.range : !f.from && !f.to ? "all" : "custom";
+  if (range === "all") {
     p.set("range", "all");
+  } else if (range === "custom") {
+    if (f.from) p.set("from", f.from);
+    if (f.to) p.set("to", f.to);
+  } else {
+    p.set("range", range);
   }
   if (f.executiveId !== "all") p.set("executive", f.executiveId);
   if (f.teamId !== "all") p.set("team", f.teamId);
