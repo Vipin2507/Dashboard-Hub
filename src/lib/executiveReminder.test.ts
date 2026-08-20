@@ -63,13 +63,15 @@ describe("executiveReminder", () => {
           assignedTo: "u1",
           createdAt: "2026-08-10T10:00:00",
           proposalNumber: "PROP-0637",
+          title: "PROP-0637 || Acme_CRM",
         }),
       ],
       senderName: "Admin",
     });
     expect(draft.emailSubject).toContain("1 open proposal");
     expect(draft.emailBody).toContain("Hi Riya");
-    expect(draft.emailBody).toContain("PROP-0637");
+    expect(draft.emailBody).toContain("PROP-0637 || Acme_CRM");
+    expect(draft.emailBody).not.toContain("excl. GST | Created");
     expect(draft.whatsappMessage).toContain("*1* open proposal");
   });
 

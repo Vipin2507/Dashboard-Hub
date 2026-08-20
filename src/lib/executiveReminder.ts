@@ -55,18 +55,8 @@ export function formatReminderPeriodLabel(from: string, to: string): string {
 }
 
 function formatProposalLine(p: Proposal, index: number): string {
-  const value = formatINR(proposalReminderValue(p));
-  const company = (p.customerCompanyName || p.customerName || "Customer").trim();
-  const created = p.createdAt
-    ? new Date(p.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-    : "—";
-  const items = (p.lineItems ?? [])
-    .map((li) => (li.name || "").trim())
-    .filter(Boolean)
-    .slice(0, 2)
-    .join(", ");
-  const itemPart = items ? ` | ${items}${(p.lineItems?.length ?? 0) > 2 ? "…" : ""}` : "";
-  return `${index}. ${p.proposalNumber} — ${company} | ${value} excl. GST | Created ${created}${itemPart}`;
+  const title = (p.title || p.proposalNumber || p.id).trim();
+  return `${index}. ${title}`;
 }
 
 const DEFAULT_EMAIL_SUBJECT =
