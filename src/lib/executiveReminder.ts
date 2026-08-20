@@ -2,8 +2,15 @@ import { isoToLocalYmd, ymdInInclusiveRange } from "@/lib/dateRange";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
 import { formatINR } from "@/lib/rbac";
 import { isProposalWon, proposalStatusLabel } from "@/lib/proposalStatus";
-import { resolveAutomationTemplateText, type AutomationContext } from "@/lib/automationService";
-import type { AutomationTemplate, Proposal, User } from "@/types";
+import {
+  resolveAutomationTemplateText,
+  resolveMergedEmailCc,
+  type AutomationContext,
+} from "@/lib/automationService";
+import { fetchWahaSendText, fetchN8nWebhook } from "@/lib/automationEndpoints";
+import { apiUrl } from "@/lib/api";
+import { useAppStore } from "@/store/useAppStore";
+import type { AutomationLog, AutomationTemplate, Proposal, User } from "@/types";
 
 /** Pipeline proposals that still need conversion to a deal. */
 export function isUnconvertedProposal(p: Proposal): boolean {
@@ -186,4 +193,219 @@ export function buildWhatsAppUrl(phone: string, message: string): string {
   const to = normalizeWhatsAppPhone(phone);
   const q = new URLSearchParams({ text: message });
   return to ? `https://wa.me/${to}?${q.toString()}` : `https://wa.me/?${q.toString()}`;
+}
+
+/** Send reminder text via WAHA (same path as Automation WhatsApp templates). */
+export async function sendExecutiveReminderWhatsApp(opts: {
+  phone: string;
+  message: string;
+  executiveName: string;
+  executiveId?: string;
+  templateId?: string;
+  templateName?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const phone = normalizeWhatsAppPhone(opts.phone);
+  if (!phone) {
+    return { ok: false, error: "Missing or invalid WhatsApp number" };
+  }
+
+  const { automationSettings, appendAutomationLog, setAutomationLogs } = useAppStore.getState();
+  const settings = automationSettings;
+  const logId = crypto.randomUUID();
+  const logEntry: AutomationLog = {
+    id: logId,
+    templateId: opts.templateId || "executive-reminder-manual",
+    templateName: opts.templateName || "Executive Reminder — Open Proposals (WhatsApp)",
+    trigger: "executive_open_proposals_reminder",
+    channel: "whatsapp",
+    recipient: phone,
+    recipientName: opts.executiveName,
+    entityType: "proposal",
+    entityId: opts.executiveId || "",
+    entityName: opts.executiveName,
+    status: "pending",
+    sentAt: new Date().toISOString(),
+  };
+  appendAutomationLog(logEntry);
+
+  const patchLog = (updates: Partial<AutomationLog>) => {
+    const current = useAppStore.getState().automationLogs;
+    const updated = current.map((l) => (l.id === logId ? { ...l, ...updates } : l));
+    setAutomationLogs(updated);
+    const target = updated.find((l) => l.id === logId);
+    if (target) {
+      void fetch(apiUrl(`/api/automation/logs/${logId}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(target),
+      }).catch(() => undefined);
+    }
+  };
+
+  try {
+    const useHttpsProxy =
+      typeof window !== "undefined" && window.location.protocol === "https:" && !import.meta.env.DEV;
+    if (!useHttpsProxy && !import.meta.env.DEV && !settings.wahaApiUrl?.trim()) {
+      const error = "WAHA API URL is not set — open Automation → Settings and save your WAHA base URL.";
+      patchLog({ status: "failed", errorMessage: error });
+      return { ok: false, error };
+    }
+
+    const res = await fetchWahaSendText(settings, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Api-Key": settings.wahaApiKey,
+      },
+      body: JSON.stringify({
+        session: settings.wahaSession,
+        chatId: `${phone}@c.us`,
+        text: opts.message,
+      }),
+    });
+
+    if (!res.ok) {
+      const errBody = (await res.text().catch(() => "")).slice(0, 400);
+      const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
+      const error = `${res.status} ${res.statusText}${errShort ? ` — ${errShort}` : ""}`;
+      patchLog({ status: "failed", errorMessage: error });
+      return { ok: false, error };
+    }
+
+    patchLog({ status: "sent", errorMessage: undefined });
+    return { ok: true };
+  } catch (err) {
+    const error = String(err);
+    patchLog({ status: "failed", errorMessage: error });
+    return { ok: false, error };
+  }
+}
+
+/** Send reminder email via n8n `buildesk-email` (same path as Automation email templates). */
+export async function sendExecutiveReminderEmail(opts: {
+  email: string;
+  subject: string;
+  body: string;
+  executiveName: string;
+  executiveId?: string;
+  templateId?: string;
+  templateName?: string;
+  emailCc?: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const email = opts.email.trim();
+  if (!email || !email.includes("@")) {
+    return { ok: false, error: "Missing or invalid email address" };
+  }
+
+  const { automationSettings, appendAutomationLog, setAutomationLogs, automationTemplates } =
+    useAppStore.getState();
+  const settings = automationSettings;
+
+  const emailTpl =
+    automationTemplates.find(
+      (t) =>
+        t.id === opts.templateId ||
+        (t.trigger === "executive_open_proposals_reminder" && t.channel === "email" && t.isActive),
+    ) ?? null;
+
+  const logId = crypto.randomUUID();
+  const templateId = opts.templateId || emailTpl?.id || "executive-reminder-manual-email";
+  const templateName =
+    opts.templateName || emailTpl?.name || "Executive Reminder — Open Proposals (Email)";
+
+  const logEntry: AutomationLog = {
+    id: logId,
+    templateId,
+    templateName,
+    trigger: "executive_open_proposals_reminder",
+    channel: "email",
+    recipient: email,
+    recipientName: opts.executiveName,
+    entityType: "proposal",
+    entityId: opts.executiveId || "",
+    entityName: opts.executiveName,
+    status: "pending",
+    sentAt: new Date().toISOString(),
+  };
+  appendAutomationLog(logEntry);
+
+  const patchLog = (updates: Partial<AutomationLog>) => {
+    const current = useAppStore.getState().automationLogs;
+    const updated = current.map((l) => (l.id === logId ? { ...l, ...updates } : l));
+    setAutomationLogs(updated);
+    const target = updated.find((l) => l.id === logId);
+    if (target) {
+      void fetch(apiUrl(`/api/automation/logs/${logId}`), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(target),
+      }).catch(() => undefined);
+    }
+  };
+
+  try {
+    if (!import.meta.env.DEV && !settings.n8nWebhookBase?.trim()) {
+      const https =
+        typeof window !== "undefined" && window.location.protocol === "https:";
+      if (!https) {
+        const error = "n8n webhook base is not set — open Automation → Settings and save your n8n URL.";
+        patchLog({ status: "failed", errorMessage: error });
+        return { ok: false, error };
+      }
+    }
+
+    const emailCc = resolveMergedEmailCc(
+      settings,
+      { emailCc: opts.emailCc ?? emailTpl?.emailCc ?? "" },
+      {
+        salesRepId: opts.executiveId,
+        salesRepName: opts.executiveName,
+        salesRepEmail: email,
+        executiveName: opts.executiveName,
+      },
+    );
+
+    const payload = {
+      channel: "email" as const,
+      templateId,
+      templateName,
+      trigger: "executive_open_proposals_reminder",
+      recipientPhone: "",
+      recipientEmail: email,
+      recipientName: opts.executiveName,
+      messageBody: opts.body,
+      emailSubject: opts.subject,
+      emailCc,
+      wahaApiUrl: settings.wahaApiUrl,
+      wahaApiKey: settings.wahaApiKey,
+      wahaSession: settings.wahaSession,
+      delayHours: emailTpl?.delayHours ?? 0,
+      entityType: "proposal",
+      entityId: opts.executiveId || "",
+      entityName: opts.executiveName,
+      emailFromAddress: settings.emailFromAddress,
+      emailFromName: settings.emailFromName,
+    };
+
+    const res = await fetchN8nWebhook(settings, "buildesk-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errBody = (await res.text().catch(() => "")).slice(0, 600);
+      const errShort = errBody.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 240);
+      const error = `HTTP ${res.status}${errShort ? ` — ${errShort}` : ""}`;
+      patchLog({ status: "failed", errorMessage: error });
+      return { ok: false, error };
+    }
+
+    patchLog({ status: "sent", errorMessage: undefined });
+    return { ok: true };
+  } catch (err) {
+    const error = String(err);
+    patchLog({ status: "failed", errorMessage: error });
+    return { ok: false, error };
+  }
 }

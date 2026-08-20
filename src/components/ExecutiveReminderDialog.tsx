@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Copy, Mail, MessageCircle, Bell } from "lucide-react";
+import { Copy, Mail, MessageCircle, Bell, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogBody,
@@ -31,11 +31,11 @@ import { proposalStatusLabel } from "@/lib/proposalStatus";
 import { useAppStore } from "@/store/useAppStore";
 import {
   buildExecutiveReminderDraft,
-  buildMailtoUrl,
-  buildWhatsAppUrl,
   filterUnconvertedProposals,
   normalizeWhatsAppPhone,
   proposalReminderValue,
+  sendExecutiveReminderEmail,
+  sendExecutiveReminderWhatsApp,
 } from "@/lib/executiveReminder";
 import type { Proposal, User } from "@/types";
 import { Link } from "react-router-dom";
@@ -70,6 +70,7 @@ export function ExecutiveReminderDialog({
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [sending, setSending] = useState(false);
 
   const proposalsQuery = useQuery({
     queryKey: QK.proposals(),
@@ -146,20 +147,43 @@ export function ExecutiveReminderDialog({
     }
   };
 
-  const shareEmail = (): boolean => {
+  const shareEmail = async (opts?: { silentSuccess?: boolean }): Promise<boolean> => {
     if (!pending.length) {
       toast({ title: "No open proposals to remind about", variant: "destructive" });
       return false;
     }
-    if (!emailTo) {
+    if (!emailTo || !emailTo.includes("@")) {
       toast({ title: "Add an email address", variant: "destructive" });
       return false;
     }
-    window.open(buildMailtoUrl(emailTo, emailSubject, emailBody), "_blank");
+    const emailTpl = automationTemplates.find(
+      (t) => t.trigger === "executive_open_proposals_reminder" && t.channel === "email" && t.isActive,
+    );
+    const result = await sendExecutiveReminderEmail({
+      email: emailTo,
+      subject: emailSubject,
+      body: emailBody,
+      executiveName: executive?.name || "Executive",
+      executiveId: executive?.id,
+      templateId: emailTpl?.id,
+      templateName: emailTpl?.name,
+      emailCc: emailTpl?.emailCc,
+    });
+    if (!result.ok) {
+      toast({
+        title: "Email send failed",
+        description: result.error || "n8n could not send the email",
+        variant: "destructive",
+      });
+      return false;
+    }
+    if (!opts?.silentSuccess) {
+      toast({ title: "Email sent via n8n" });
+    }
     return true;
   };
 
-  const shareWhatsApp = (): boolean => {
+  const sendWhatsAppViaWaha = async (opts?: { silentSuccess?: boolean }): Promise<boolean> => {
     if (!pending.length) {
       toast({ title: "No open proposals to remind about", variant: "destructive" });
       return false;
@@ -168,16 +192,58 @@ export function ExecutiveReminderDialog({
       toast({ title: "Add a WhatsApp number", variant: "destructive" });
       return false;
     }
-    window.open(buildWhatsAppUrl(phoneTo, whatsappMessage), "_blank", "noopener,noreferrer");
+    const waTpl = automationTemplates.find(
+      (t) => t.trigger === "executive_open_proposals_reminder" && t.channel === "whatsapp" && t.isActive,
+    );
+    const result = await sendExecutiveReminderWhatsApp({
+      phone: phoneTo,
+      message: whatsappMessage,
+      executiveName: executive?.name || "Executive",
+      executiveId: executive?.id,
+      templateId: waTpl?.id,
+      templateName: waTpl?.name,
+    });
+    if (!result.ok) {
+      toast({
+        title: "WhatsApp send failed",
+        description: result.error || "WAHA could not send the message",
+        variant: "destructive",
+      });
+      return false;
+    }
+    if (!opts?.silentSuccess) {
+      toast({ title: "WhatsApp sent via WAHA" });
+    }
     return true;
   };
 
-  const shareBoth = () => {
+  const onShareEmail = async () => {
+    if (sending) return;
+    setSending(true);
+    try {
+      await shareEmail();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const shareWhatsApp = async () => {
+    if (sending) return;
+    setSending(true);
+    try {
+      await sendWhatsAppViaWaha();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const shareBoth = async () => {
+    if (sending) return;
     if (!pending.length) {
       toast({ title: "No open proposals to remind about", variant: "destructive" });
       return;
     }
-    if (!emailTo) {
+    if (!emailTo || !emailTo.includes("@")) {
       toast({ title: "Add an email address", variant: "destructive" });
       return;
     }
@@ -185,12 +251,22 @@ export function ExecutiveReminderDialog({
       toast({ title: "Add a WhatsApp number", variant: "destructive" });
       return;
     }
-    // Open WhatsApp first, then email — staggered to reduce popup blocking.
-    window.open(buildWhatsAppUrl(phoneTo, whatsappMessage), "_blank", "noopener,noreferrer");
-    window.setTimeout(() => {
-      window.open(buildMailtoUrl(emailTo, emailSubject, emailBody), "_blank");
-    }, 250);
-    toast({ title: "Opening WhatsApp and email" });
+    setSending(true);
+    try {
+      const [emailOk, waOk] = await Promise.all([
+        shareEmail({ silentSuccess: true }),
+        sendWhatsAppViaWaha({ silentSuccess: true }),
+      ]);
+      if (emailOk && waOk) {
+        toast({ title: "Email sent via n8n · WhatsApp sent via WAHA" });
+      } else if (emailOk) {
+        toast({ title: "Email sent via n8n (WhatsApp failed)", variant: "destructive" });
+      } else if (waOk) {
+        toast({ title: "WhatsApp sent via WAHA (email failed)", variant: "destructive" });
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -372,37 +448,43 @@ export function ExecutiveReminderDialog({
         </DialogBody>
 
         <DialogFooter className="gap-2 sm:gap-2">
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Close
           </Button>
           <Button
             type="button"
             variant="outline"
             className="gap-1.5"
-            disabled={!executiveId || pending.length === 0}
-            onClick={() => shareEmail()}
+            disabled={!executiveId || pending.length === 0 || sending}
+            onClick={() => void onShareEmail()}
           >
-            <Mail className="h-3.5 w-3.5" />
+            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mail className="h-3.5 w-3.5" />}
             Email
           </Button>
           <Button
             type="button"
             variant="outline"
             className="gap-1.5"
-            disabled={!executiveId || pending.length === 0}
-            onClick={() => shareWhatsApp()}
+            disabled={!executiveId || pending.length === 0 || sending}
+            onClick={() => void shareWhatsApp()}
           >
-            <MessageCircle className="h-3.5 w-3.5" />
+            {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircle className="h-3.5 w-3.5" />}
             WhatsApp
           </Button>
           <Button
             type="button"
             className="gap-1.5"
-            disabled={!executiveId || pending.length === 0}
-            onClick={shareBoth}
+            disabled={!executiveId || pending.length === 0 || sending}
+            onClick={() => void shareBoth()}
           >
-            <Mail className="h-3.5 w-3.5" />
-            <MessageCircle className="h-3.5 w-3.5" />
+            {sending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <>
+                <Mail className="h-3.5 w-3.5" />
+                <MessageCircle className="h-3.5 w-3.5" />
+              </>
+            )}
             Send both
           </Button>
         </DialogFooter>
