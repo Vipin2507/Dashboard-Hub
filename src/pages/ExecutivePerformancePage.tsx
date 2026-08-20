@@ -1153,10 +1153,7 @@ export default function ExecutivePerformancePage() {
                     )}
                   </ChartCard>
 
-                  <ChartCard
-                    title="Conversion funnel"
-                    description="Proposal stages for the filtered period — Won matches the summary KPI (proposals and closed deals, deduplicated)."
-                  >
+                  <ChartCard title="Conversion funnel">
                     {(data?.funnel?.length ?? 0) === 0 ? (
                       <EmptyChart message="No funnel activity in this period." />
                     ) : (

@@ -13,35 +13,19 @@ const STEP_COLORS = [
   { bar: "bg-success", track: "bg-success/10", text: "text-success", ring: "ring-success/25" },
 ];
 
-function stepPct(count: number, base: number) {
-  if (!base) return 0;
-  return Math.round((count / base) * 1000) / 10;
-}
-
-function prevStepRate(count: number, prev: number) {
-  if (!prev) return null;
-  return Math.round((count / prev) * 1000) / 10;
-}
-
 function FunnelRow({
   step,
   index,
   maxCount,
-  topCount,
-  prevCount,
   onStepClick,
 }: {
   step: FunnelStep;
   index: number;
   maxCount: number;
-  topCount: number;
-  prevCount: number;
   onStepClick?: (key: ExecutiveDetailType) => void;
 }) {
   const colors = STEP_COLORS[index % STEP_COLORS.length];
   const widthPct = maxCount > 0 ? Math.max((step.count / maxCount) * 100, step.count > 0 ? 6 : 0) : 0;
-  const ofTop = stepPct(step.count, topCount);
-  const fromPrev = index > 0 ? prevStepRate(step.count, prevCount) : null;
   const detailKey = step.key as ExecutiveDetailType;
 
   return (
@@ -70,20 +54,9 @@ function FunnelRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
             <p className="truncate text-xs font-medium text-foreground sm:text-sm">{step.label}</p>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <span className="text-sm font-semibold tabular-nums text-foreground">
-                <CountUp value={step.count} />
-              </span>
-              {index > 0 && fromPrev != null ? (
-                <span className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  {fromPrev}% from prev
-                </span>
-              ) : (
-                <span className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  {ofTop}% of top
-                </span>
-              )}
-            </div>
+            <span className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+              <CountUp value={step.count} />
+            </span>
           </div>
           {step.value > 0 ? (
             <p className="mt-0.5 text-[10px] text-muted-foreground">{formatINR(step.value)} revenue excl. GST</p>
@@ -121,42 +94,23 @@ export function ConversionFunnelChart({
   className?: string;
 }) {
   const maxCount = Math.max(...steps.map((s) => s.count), 1);
-  const topCount = steps[0]?.count ?? 0;
-  const wonCount = steps[steps.length - 1]?.count ?? 0;
-  const overallRate = stepPct(wonCount, topCount);
 
   return (
-    <div className={cn("space-y-3", className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
-        <p className="text-[11px] text-muted-foreground">
-          Flow left to right — bar width relative to highest stage count
-        </p>
-        {topCount > 0 ? (
-          <p className="text-[11px] font-medium text-foreground">
-            Overall conversion{" "}
-            <span className="tabular-nums text-success">{overallRate}%</span>
-          </p>
-        ) : null}
-      </div>
-
-      <motion.div
-        variants={staggerContainer}
-        initial="initial"
-        animate="animate"
-        className="space-y-1"
-      >
-        {steps.map((step, index) => (
-          <FunnelRow
-            key={step.key}
-            step={step}
-            index={index}
-            maxCount={maxCount}
-            topCount={topCount}
-            prevCount={steps[index - 1]?.count ?? 0}
-            onStepClick={onStepClick}
-          />
-        ))}
-      </motion.div>
-    </div>
+    <motion.div
+      variants={staggerContainer}
+      initial="initial"
+      animate="animate"
+      className={cn("space-y-1", className)}
+    >
+      {steps.map((step, index) => (
+        <FunnelRow
+          key={step.key}
+          step={step}
+          index={index}
+          maxCount={maxCount}
+          onStepClick={onStepClick}
+        />
+      ))}
+    </motion.div>
   );
 }
