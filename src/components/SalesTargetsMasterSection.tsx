@@ -214,7 +214,7 @@ export function SalesTargetsMasterSection() {
               filtered.
             </p>
             <div className="hidden gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-3">
-              <span>Proposals shared</span>
+              <span>Approved & shared</span>
               <span>Won</span>
               <span>Revenue excl. GST</span>
             </div>

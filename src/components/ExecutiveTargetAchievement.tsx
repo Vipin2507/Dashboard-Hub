@@ -98,6 +98,7 @@ function MetricCard({ metric }: { metric: TargetAchievementMetric }) {
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             Target{" "}
             <span className="font-medium text-foreground/80">{hasTarget ? targetDisplay : "Not set"}</span>
+            {metric.hint ? ` · ${metric.hint}` : ""}
           </p>
         </div>
         <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", colors.bg)}>

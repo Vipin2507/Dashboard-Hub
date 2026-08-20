@@ -128,6 +128,10 @@ function isProposalSentStatus(status) {
   return s === "sent" || s === "shared";
 }
 
+function isProposalApprovedStatus(status) {
+  return String(status || "").trim() === "approved";
+}
+
 function proposalAmountWithoutTax(row, data) {
   const src = data && typeof data === "object" ? data : {};
   const sub = Number(src.subtotal ?? 0);
@@ -174,6 +178,7 @@ function emptyExecStats() {
   return {
     proposalsCreated: 0,
     proposalsSent: 0,
+    proposalsShared: 0,
     proposalsPending: 0,
     proposalsWon: 0,
     revenueExclGst: 0,
@@ -482,6 +487,16 @@ export function registerExecutivePerformanceApi(app, db) {
       const detailPool = [];
       /** Deals already counted from a won proposal in this period (avoid double revenue). */
       const countedWonDealIds = new Set();
+      /** Per-executive proposal ids already counted toward shared/approved target achievement. */
+      const sharedSeenByExec = new Map();
+      const markProposalShared = (userId, proposalId) => {
+        if (!byExec.has(userId)) return;
+        if (!sharedSeenByExec.has(userId)) sharedSeenByExec.set(userId, new Set());
+        const seen = sharedSeenByExec.get(userId);
+        if (seen.has(proposalId)) return;
+        seen.add(proposalId);
+        byExec.get(userId).proposalsShared += 1;
+      };
 
       let approxCustomer = false;
       let unlinkedPayments = 0;
@@ -511,6 +526,20 @@ export function registerExecutivePerformanceApi(app, db) {
         const dealId = data?.dealId || null;
 
         const stats = byExec.get(assignedTo);
+
+        if (!reasonType) {
+          if (inRange(sentYmd, from, to) && matchesWeekday(sentYmd, weekday)) {
+            markProposalShared(assignedTo, row.id);
+          }
+          if (inRange(approvedYmd, from, to) && matchesWeekday(approvedYmd, weekday)) {
+            markProposalShared(assignedTo, row.id);
+          }
+          if (inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday)) {
+            if (isProposalSentStatus(status) || isProposalApprovedStatus(status)) {
+              markProposalShared(assignedTo, row.id);
+            }
+          }
+        }
 
         if (inRange(createdYmd, from, to) && matchesWeekday(createdYmd, weekday)) {
           if (!reasonType || (reasonType === "rejection" && (!reason || normalizeReason(rejectionReason) === reason))) {
@@ -973,6 +1002,9 @@ export function registerExecutivePerformanceApi(app, db) {
       }
       coverageNotes.push("Won and revenue without GST use win date: proposal converted/updated date, or Closed/Won deal date.");
       coverageNotes.push("Total / sent / pending still use proposal created date in the selected range.");
+      coverageNotes.push(
+        "Target vs achievement — proposals shared counts approved and sent/shared proposals by approval date, sent date, or created date (fallback).",
+      );
 
       // Sparse long trends: if > 92 days, roll up by week in response? Keep daily — UI can handle.
       // For very long ranges (>180 days), sample weekly to keep payload light.
@@ -1070,7 +1102,7 @@ export function registerExecutivePerformanceApi(app, db) {
 
       const targetVsAchievement = buildTargetVsAchievement({
         achieved: {
-          proposalsSent: summary.proposalsSent,
+          proposalsSent: summary.proposalsShared,
           proposalsWon: summary.proposalsWon,
           revenueExclGst: summary.revenueExclGst,
         },

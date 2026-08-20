@@ -171,6 +171,7 @@ export function buildTargetVsAchievementMetrics(input) {
         target: targets.proposalsSentTarget,
         pct: pct(achieved.proposalsSentTarget, targets.proposalsSentTarget),
         format: "count",
+        hint: "Approved & sent/shared",
       },
       {
         key: "proposalsWon",

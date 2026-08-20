@@ -42,6 +42,8 @@ export type MetricCoverage =
 export type ExecutivePerformanceSummary = {
   proposalsCreated: number;
   proposalsSent: number;
+  /** Approved + sent/shared in period (target vs achievement). */
+  proposalsShared: number;
   proposalsPending: number;
   proposalsWon: number;
   revenueExclGst: number;
@@ -163,6 +165,7 @@ export type TargetAchievementMetric = {
   target: number;
   pct: number;
   format: "count" | "inr";
+  hint?: string;
 };
 
 export type TargetVsAchievement = {
