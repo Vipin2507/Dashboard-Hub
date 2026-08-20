@@ -42,6 +42,24 @@ function migrateCustomerNameSchema() {
 }
 migrateCustomerNameSchema();
 
+/** Sales targets table for executive performance (CREATE TABLE in schema for new installs). */
+function migrateExecutiveSalesTargetsSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS executive_sales_targets (
+      id TEXT PRIMARY KEY,
+      yearMonth TEXT NOT NULL,
+      userId TEXT NOT NULL DEFAULT '',
+      proposalsSentTarget REAL NOT NULL DEFAULT 0,
+      proposalsWonTarget REAL NOT NULL DEFAULT 0,
+      revenueExclGstTarget REAL NOT NULL DEFAULT 0,
+      updatedAt TEXT NOT NULL,
+      updatedBy TEXT,
+      UNIQUE(yearMonth, userId)
+    )
+  `);
+}
+migrateExecutiveSalesTargetsSchema();
+
 /** Add deal columns on existing DBs (CREATE TABLE already has them for new installs). */
 function migrateDealSchema() {
   const cols = db.prepare("PRAGMA table_info(deals)").all();

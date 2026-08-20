@@ -12,6 +12,7 @@ import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
 import { registerCustomerExtrasApi } from "./customerExtrasApi.js";
 import { registerExecutivePerformanceApi } from "./executivePerformanceApi.js";
+import { registerSalesTargetsApi } from "./salesTargetsApi.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -2527,6 +2528,7 @@ registerCustomerExtrasApi(app, db, { broadcast });
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
 registerExecutivePerformanceApi(app, db);
+registerSalesTargetsApi(app, db, { makeId });
 
 server.on("error", (err) => {
   if (err && err.code === "EADDRINUSE") {

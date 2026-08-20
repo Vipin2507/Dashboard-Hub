@@ -3,6 +3,8 @@
  * Auth model matches the rest of the app: client-supplied actorRole === "super_admin".
  */
 
+import { buildTargetVsAchievement, resolveTargetsForPeriod } from "./salesTargetsLib.js";
+
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 const WEEKDAY_LABELS = [
   "Sunday",
@@ -720,7 +722,7 @@ export function registerExecutivePerformanceApi(app, db) {
           detailPool.push({
             id: `${d.id}:won`,
             type: "deal",
-            detailKinds: ["deals_won", "proposals_won"],
+            detailKinds: ["deals_won"],
             title: d.name || d.id,
             subtitle: "Closed/Won",
             executiveId: d.ownerUserId,
@@ -927,7 +929,6 @@ export function registerExecutivePerformanceApi(app, db) {
         { key: "proposals_sent", label: "Sent proposals", count: summary.proposalsSent, value: 0 },
         { key: "proposals_pending", label: "Pending proposals", count: summary.proposalsPending, value: 0 },
         { key: "proposals_won", label: "Won", count: summary.proposalsWon, value: summary.revenueExclGst },
-        { key: "deals_won", label: "Deals won", count: summary.dealsWon, value: summary.wonValue },
       ];
 
       // Detail filtering
@@ -1060,6 +1061,29 @@ export function registerExecutivePerformanceApi(app, db) {
         }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
+      const resolvedTargets = resolveTargetsForPeriod(db, {
+        from: hasFrom ? from : "",
+        to: hasTo ? to : "",
+        executiveId,
+        userById,
+      });
+
+      const targetVsAchievement = buildTargetVsAchievement({
+        achieved: {
+          proposalsSent: summary.proposalsSent,
+          proposalsWon: summary.proposalsWon,
+          revenueExclGst: summary.revenueExclGst,
+        },
+        targets: {
+          proposalsSentTarget: resolvedTargets.proposalsSentTarget,
+          proposalsWonTarget: resolvedTargets.proposalsWonTarget,
+          revenueExclGstTarget: resolvedTargets.revenueExclGstTarget,
+        },
+        hasTargets: resolvedTargets.hasTargets,
+        periodLabel: resolvedTargets.periodLabel,
+        scopeLabel: resolvedTargets.scopeLabel,
+      });
+
       res.json({
         filters: {
           from,
@@ -1076,6 +1100,7 @@ export function registerExecutivePerformanceApi(app, db) {
           winRate: winRate(summary.dealsWon, summary.dealsLost),
           avgWonDealSize: avgDealSize(summary.wonValue, summary.dealsWon),
         },
+        targetVsAchievement,
         trend,
         executives,
         funnel,

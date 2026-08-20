@@ -20,11 +20,13 @@ import {
   Pencil,
   Plus,
   Search,
+  Target,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
+import { SalesTargetsMasterSection } from "@/components/SalesTargetsMasterSection";
 
-type SectionKey = "products" | "subscriptions" | "formats";
+type SectionKey = "products" | "subscriptions" | "formats" | "targets";
 
 function useMaster(endpoint: string) {
   const queryClient = useQueryClient();
@@ -171,7 +173,12 @@ export default function MastersPage() {
     },
   ];
 
-  const visibleSections = sectionFilter === "all" ? sections : sections.filter((s) => s.key === sectionFilter);
+  const visibleSections =
+    sectionFilter === "targets"
+      ? []
+      : sectionFilter === "all"
+        ? sections
+        : sections.filter((s) => s.key === sectionFilter);
   const hasActiveFilters = search.trim() !== "" || sectionFilter !== "all";
 
   return (
@@ -182,7 +189,7 @@ export default function MastersPage() {
           variants={staggerContainer}
           initial="initial"
           animate="animate"
-          className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2"
+          className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2"
         >
           <MasterKpiCard
             label="Categories"
@@ -213,6 +220,16 @@ export default function MastersPage() {
             iconBg="bg-success/15"
             active={sectionFilter === "formats"}
             onClick={() => setSectionFilter((s) => (s === "formats" ? "all" : "formats"))}
+          />
+          <MasterKpiCard
+            label="Targets"
+            value="—"
+            sub="Sales goals"
+            icon={Target}
+            iconColor="text-warning-foreground"
+            iconBg="bg-warning/15"
+            active={sectionFilter === "targets"}
+            onClick={() => setSectionFilter((s) => (s === "targets" ? "all" : "targets"))}
           />
         </motion.div>
 
@@ -255,6 +272,7 @@ export default function MastersPage() {
                     { value: "products" as const, label: "Categories" },
                     { value: "subscriptions" as const, label: "Subscriptions" },
                     { value: "formats" as const, label: "Formats" },
+                    { value: "targets" as const, label: "Targets" },
                   ] as const
                 ).map((s) => (
                   <button
@@ -290,6 +308,10 @@ export default function MastersPage() {
             </div>
           </div>
         </FilterPanel>
+
+        {(sectionFilter === "all" || sectionFilter === "targets") && search.trim() === "" ? (
+          <SalesTargetsMasterSection />
+        ) : null}
 
         {visibleSections.map((section) => (
           <MasterSection

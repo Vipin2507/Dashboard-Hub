@@ -154,6 +154,24 @@ export type ExecutivePerformanceCoverage = {
   notes: string[];
 };
 
+export type TargetMetricKey = "proposalsSent" | "proposalsWon" | "revenueExclGst";
+
+export type TargetAchievementMetric = {
+  key: TargetMetricKey;
+  label: string;
+  achieved: number;
+  target: number;
+  pct: number;
+  format: "count" | "inr";
+};
+
+export type TargetVsAchievement = {
+  hasTargets: boolean;
+  periodLabel: string;
+  scopeLabel: string;
+  metrics: TargetAchievementMetric[];
+};
+
 export type ExecutivePerformanceResponse = {
   filters: {
     from: string;
@@ -166,6 +184,7 @@ export type ExecutivePerformanceResponse = {
     reason: string | null;
   };
   summary: ExecutivePerformanceSummary;
+  targetVsAchievement: TargetVsAchievement;
   trend: ExecutiveTrendPoint[];
   executives: ExecutiveRow[];
   funnel: FunnelStep[];

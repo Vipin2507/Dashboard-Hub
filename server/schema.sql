@@ -141,6 +141,18 @@ CREATE TABLE IF NOT EXISTS masters (
   type TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS executive_sales_targets (
+  id TEXT PRIMARY KEY,
+  yearMonth TEXT NOT NULL,
+  userId TEXT NOT NULL DEFAULT '',
+  proposalsSentTarget REAL NOT NULL DEFAULT 0,
+  proposalsWonTarget REAL NOT NULL DEFAULT 0,
+  revenueExclGstTarget REAL NOT NULL DEFAULT 0,
+  updatedAt TEXT NOT NULL,
+  updatedBy TEXT,
+  UNIQUE(yearMonth, userId)
+);
+
 CREATE TABLE IF NOT EXISTS proposals (
   id TEXT PRIMARY KEY,
   proposalNumber TEXT NOT NULL,

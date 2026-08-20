@@ -27,6 +27,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
+import { ExecutiveTargetAchievement } from "@/components/ExecutiveTargetAchievement";
 import { FilterPanel } from "@/components/FilterPanel";
 import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import { StatusPill } from "@/components/StatusPill";
@@ -1023,6 +1024,11 @@ export default function ExecutivePerformancePage() {
               />
             </motion.div>
 
+            <ExecutiveTargetAchievement
+              data={data?.targetVsAchievement}
+              isLoading={query.isLoading && !data}
+            />
+
             <Tabs value={tab} onValueChange={onTabChange} className="space-y-3">
               <TabsList className="w-full sm:w-auto">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -1153,7 +1159,7 @@ export default function ExecutivePerformancePage() {
 
                   <ChartCard
                     title="Conversion funnel"
-                    description="Stage counts for the filtered period. Pipeline is current open book."
+                    description="Proposal stages for the filtered period — Won matches the summary KPI (proposals and closed deals, deduplicated)."
                   >
                     {(data?.funnel?.length ?? 0) === 0 ? (
                       <EmptyChart message="No funnel activity in this period." />
