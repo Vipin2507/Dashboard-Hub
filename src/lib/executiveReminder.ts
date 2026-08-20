@@ -1,7 +1,7 @@
 import { isoToLocalYmd, ymdInInclusiveRange } from "@/lib/dateRange";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
 import { formatINR } from "@/lib/rbac";
-import { isProposalWon, proposalStatusLabel } from "@/lib/proposalStatus";
+import { isProposalWon } from "@/lib/proposalStatus";
 import {
   resolveAutomationTemplateText,
   resolveMergedEmailCc,
@@ -66,7 +66,7 @@ function formatProposalLine(p: Proposal, index: number): string {
     .slice(0, 2)
     .join(", ");
   const itemPart = items ? ` | ${items}${(p.lineItems?.length ?? 0) > 2 ? "…" : ""}` : "";
-  return `${index}. ${p.proposalNumber} — ${company} | ${proposalStatusLabel(p.status)} | ${value} excl. GST | Created ${created}${itemPart}`;
+  return `${index}. ${p.proposalNumber} — ${company} | ${value} excl. GST | Created ${created}${itemPart}`;
 }
 
 const DEFAULT_EMAIL_SUBJECT =
