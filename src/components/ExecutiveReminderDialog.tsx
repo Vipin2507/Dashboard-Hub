@@ -146,28 +146,51 @@ export function ExecutiveReminderDialog({
     }
   };
 
-  const shareEmail = () => {
+  const shareEmail = (): boolean => {
+    if (!pending.length) {
+      toast({ title: "No open proposals to remind about", variant: "destructive" });
+      return false;
+    }
+    if (!emailTo) {
+      toast({ title: "Add an email address", variant: "destructive" });
+      return false;
+    }
+    window.open(buildMailtoUrl(emailTo, emailSubject, emailBody), "_blank");
+    return true;
+  };
+
+  const shareWhatsApp = (): boolean => {
+    if (!pending.length) {
+      toast({ title: "No open proposals to remind about", variant: "destructive" });
+      return false;
+    }
+    if (!normalizeWhatsAppPhone(phoneTo)) {
+      toast({ title: "Add a WhatsApp number", variant: "destructive" });
+      return false;
+    }
+    window.open(buildWhatsAppUrl(phoneTo, whatsappMessage), "_blank", "noopener,noreferrer");
+    return true;
+  };
+
+  const shareBoth = () => {
+    if (!pending.length) {
+      toast({ title: "No open proposals to remind about", variant: "destructive" });
+      return;
+    }
     if (!emailTo) {
       toast({ title: "Add an email address", variant: "destructive" });
       return;
     }
-    if (!pending.length) {
-      toast({ title: "No open proposals to remind about", variant: "destructive" });
-      return;
-    }
-    window.open(buildMailtoUrl(emailTo, emailSubject, emailBody), "_blank");
-  };
-
-  const shareWhatsApp = () => {
-    if (!pending.length) {
-      toast({ title: "No open proposals to remind about", variant: "destructive" });
-      return;
-    }
-    const url = buildWhatsAppUrl(phoneTo, whatsappMessage);
     if (!normalizeWhatsAppPhone(phoneTo)) {
-      toast({ title: "Opening WhatsApp — add a number for a direct chat" });
+      toast({ title: "Add a WhatsApp number", variant: "destructive" });
+      return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    // Open WhatsApp first, then email — staggered to reduce popup blocking.
+    window.open(buildWhatsAppUrl(phoneTo, whatsappMessage), "_blank", "noopener,noreferrer");
+    window.setTimeout(() => {
+      window.open(buildMailtoUrl(emailTo, emailSubject, emailBody), "_blank");
+    }, 250);
+    toast({ title: "Opening WhatsApp and email" });
   };
 
   return (
@@ -357,19 +380,30 @@ export function ExecutiveReminderDialog({
             variant="outline"
             className="gap-1.5"
             disabled={!executiveId || pending.length === 0}
-            onClick={shareEmail}
+            onClick={() => shareEmail()}
           >
             <Mail className="h-3.5 w-3.5" />
             Email
           </Button>
           <Button
             type="button"
+            variant="outline"
             className="gap-1.5"
             disabled={!executiveId || pending.length === 0}
-            onClick={shareWhatsApp}
+            onClick={() => shareWhatsApp()}
           >
             <MessageCircle className="h-3.5 w-3.5" />
             WhatsApp
+          </Button>
+          <Button
+            type="button"
+            className="gap-1.5"
+            disabled={!executiveId || pending.length === 0}
+            onClick={shareBoth}
+          >
+            <Mail className="h-3.5 w-3.5" />
+            <MessageCircle className="h-3.5 w-3.5" />
+            Send both
           </Button>
         </DialogFooter>
       </DialogContent>
