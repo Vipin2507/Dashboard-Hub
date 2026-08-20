@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useAppStore } from "@/store/useAppStore";
 import { fetchN8nWebhook, fetchWahaSendText, fetchWahaSessions } from "@/lib/automationEndpoints";
 import type { AutomationContext } from "@/lib/automationService";
-import { resolveMergedEmailCc } from "@/lib/automationService";
+import { resolveMergedEmailCc, resolveWahaSession } from "@/lib/automationService";
 import { runAutomationRules } from "@/lib/automationService";
 import { loadRulesFromStore, saveRulesToStore, toggleRule, type AutomationRule } from "@/lib/automationRules";
 import { apiUrl } from "@/lib/api";
@@ -412,6 +412,7 @@ export default function Automation() {
               (a.maxRepeats ?? 0) !== (b.maxRepeats ?? 0) ||
               (a.subject ?? "") !== (b.subject ?? "") ||
               (a.emailCc ?? "").trim() !== (b.emailCc ?? "").trim() ||
+              (a.wahaSession ?? "").trim() !== (b.wahaSession ?? "").trim() ||
               a.body !== b.body ||
               JSON.stringify(a.recipients ?? []) !== JSON.stringify(b.recipients ?? [])
             );
@@ -706,6 +707,13 @@ function AutomationTemplateCard({
         </p>
       )}
 
+      {(template.wahaSession ?? "").trim() !== "" && (
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">WAHA session</span>{" "}
+          <span className="font-mono">{(template.wahaSession ?? "").trim()}</span>
+        </p>
+      )}
+
       <div className="mb-2.5 rounded-md border border-border bg-muted/30 px-2.5 py-2">
         <p className="line-clamp-2 font-mono text-[11px] leading-relaxed text-muted-foreground">{template.body}</p>
       </div>
@@ -819,7 +827,7 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
               "X-Api-Key": settings.wahaApiKey,
             },
             body: JSON.stringify({
-              session: settings.wahaSession,
+              session: resolveWahaSession(template, settings),
               chatId: recipient.phone ? toWahaChatId(recipient.phone) : "",
               text: template.body,
             }),
@@ -844,6 +852,9 @@ function TemplatesTab({ onEdit }: { onNew: () => void; onEdit: (t: AutomationTem
                   ? { emailCc: resolveMergedEmailCc(settings, template, testCcCtx) }
                   : {}),
                 delayHours: 0,
+                wahaApiUrl: settings.wahaApiUrl,
+                wahaApiKey: settings.wahaApiKey,
+                wahaSession: resolveWahaSession(template, settings),
                 entityType: "customer",
                 entityId: "test",
                 entityName: "Test",
@@ -1064,6 +1075,10 @@ type TemplateDialogProps = { template: AutomationTemplate | null; onClose: () =>
 function TemplateDialog({ template, onClose }: TemplateDialogProps) {
   const addAutomationTemplate = useAppStore((s) => s.addAutomationTemplate);
   const updateAutomationTemplate = useAppStore((s) => s.updateAutomationTemplate);
+  const settingsWahaSession = useAppStore((s) => s.automationSettings.wahaSession);
+  const settingsSessionHint = settingsWahaSession?.trim()
+    ? ` (currently “${settingsWahaSession.trim()}”)`
+    : "";
 
   const schema = z.object({
     name: z.string().min(3),
@@ -1079,6 +1094,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
     delayHours: z.number().min(0),
     repeatEveryHours: z.number().min(0),
     maxRepeats: z.number().min(0),
+    wahaSession: z.string().optional(),
   });
 
   type FormValues = z.infer<typeof schema>;
@@ -1097,6 +1113,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
       delayHours: template?.delayHours ?? 0,
       repeatEveryHours: template?.repeatEveryHours ?? 0,
       maxRepeats: template?.maxRepeats ?? 0,
+      wahaSession: template?.wahaSession ?? "",
     },
   });
 
@@ -1115,6 +1132,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
       delayHours: template?.delayHours ?? 0,
       repeatEveryHours: template?.repeatEveryHours ?? 0,
       maxRepeats: template?.maxRepeats ?? 0,
+      wahaSession: template?.wahaSession ?? "",
     });
   }, [template?.id]);
 
@@ -1154,6 +1172,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         ...values,
         subject: values.channel === "email" ? values.subject : undefined,
         emailCc: values.channel === "email" ? (values.emailCc?.trim() ? values.emailCc.trim() : undefined) : undefined,
+        wahaSession: values.wahaSession?.trim() ? values.wahaSession.trim() : undefined,
         updatedAt: now,
       } satisfies AutomationTemplate;
       try {
@@ -1183,6 +1202,7 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
         delayHours: values.delayHours || 0,
         repeatEveryHours: values.repeatEveryHours || 0,
         maxRepeats: values.maxRepeats || 0,
+        wahaSession: values.wahaSession?.trim() ? values.wahaSession.trim() : undefined,
         createdAt: now,
         updatedAt: now,
       };
@@ -1397,6 +1417,21 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
                 )}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              WAHA session name
+            </label>
+            <Input
+              className="h-9 text-sm font-mono"
+              placeholder="Leave blank to use Automation Settings session"
+              {...form.register("wahaSession")}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Optional per-template override. Empty = use Settings → Session name
+              {settingsSessionHint}.
+            </p>
           </div>
 
           <div>

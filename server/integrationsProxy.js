@@ -96,7 +96,7 @@ export function registerIntegrationProxies(app, { db }) {
 
   async function proxyWahaSendMedia(req, res) {
     try {
-      const { to, message, customerId, proposalId, userId, userName } = req.body;
+      const { to, message, customerId, proposalId, userId, userName, session } = req.body;
       const file = (req.files || [])[0];
       
       if (!to || !file) {
@@ -109,7 +109,11 @@ export function registerIntegrationProxies(app, { db }) {
       const b64 = file.buffer.toString('base64');
       const mimetype = file.mimetype || 'application/octet-stream';
       const filename = file.originalname || 'attachment.pdf';
-      const session_name = settings.wahaSessionName || "first";
+      const session_name =
+        String(session || "").trim() ||
+        String(settings.wahaSession || "").trim() ||
+        String(settings.wahaSessionName || "").trim() ||
+        "first";
 
       let endpoint = `${base}/api/sendFile`;
       if (mimetype.startsWith('image/')) {

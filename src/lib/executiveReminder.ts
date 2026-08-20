@@ -5,6 +5,7 @@ import { isProposalWon } from "@/lib/proposalStatus";
 import {
   resolveAutomationTemplateText,
   resolveMergedEmailCc,
+  resolveWahaSession,
   type AutomationContext,
 } from "@/lib/automationService";
 import { fetchWahaSendText, fetchN8nWebhook } from "@/lib/automationEndpoints";
@@ -193,14 +194,26 @@ export async function sendExecutiveReminderWhatsApp(opts: {
   executiveId?: string;
   templateId?: string;
   templateName?: string;
+  wahaSession?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const phone = normalizeWhatsAppPhone(opts.phone);
   if (!phone) {
     return { ok: false, error: "Missing or invalid WhatsApp number" };
   }
 
-  const { automationSettings, appendAutomationLog, setAutomationLogs } = useAppStore.getState();
+  const { automationSettings, appendAutomationLog, setAutomationLogs, automationTemplates } =
+    useAppStore.getState();
   const settings = automationSettings;
+  const waTpl =
+    automationTemplates.find((t) => t.id === opts.templateId) ||
+    automationTemplates.find(
+      (t) => t.trigger === "executive_open_proposals_reminder" && t.channel === "whatsapp" && t.isActive,
+    ) ||
+    null;
+  const session = resolveWahaSession(
+    { wahaSession: opts.wahaSession ?? waTpl?.wahaSession },
+    settings,
+  );
   const logId = crypto.randomUUID();
   const logEntry: AutomationLog = {
     id: logId,
@@ -248,7 +261,7 @@ export async function sendExecutiveReminderWhatsApp(opts: {
         "X-Api-Key": settings.wahaApiKey,
       },
       body: JSON.stringify({
-        session: settings.wahaSession,
+        session,
         chatId: `${phone}@c.us`,
         text: opts.message,
       }),
@@ -368,7 +381,7 @@ export async function sendExecutiveReminderEmail(opts: {
       emailCc,
       wahaApiUrl: settings.wahaApiUrl,
       wahaApiKey: settings.wahaApiKey,
-      wahaSession: settings.wahaSession,
+      wahaSession: resolveWahaSession(emailTpl, settings),
       delayHours: emailTpl?.delayHours ?? 0,
       entityType: "proposal",
       entityId: opts.executiveId || "",

@@ -43,6 +43,11 @@ export interface AutomationTemplate {
   delayHours?: number; // for follow-up: send after X hours
   repeatEveryHours?: number; // repeat interval (0 = send once)
   maxRepeats?: number; // max times to repeat
+  /**
+   * Optional WAHA session for this template.
+   * When empty, Automation Settings → Session name is used.
+   */
+  wahaSession?: string;
   createdAt: string;
   updatedAt: string;
 }

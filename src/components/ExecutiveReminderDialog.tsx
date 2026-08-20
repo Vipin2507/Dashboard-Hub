@@ -202,6 +202,7 @@ export function ExecutiveReminderDialog({
       executiveId: executive?.id,
       templateId: waTpl?.id,
       templateName: waTpl?.name,
+      wahaSession: waTpl?.wahaSession,
     });
     if (!result.ok) {
       toast({

@@ -194,6 +194,16 @@ export function isAutomationGloballyEnabled(): boolean {
   return automationSettings.automationsEnabled !== false;
 }
 
+/** Template session override, else Automation Settings session. */
+export function resolveWahaSession(
+  template: Pick<AutomationTemplate, "wahaSession"> | null | undefined,
+  settings: Pick<AutomationSettings, "wahaSession">,
+): string {
+  const fromTemplate = String(template?.wahaSession ?? "").trim();
+  if (fromTemplate) return fromTemplate;
+  return String(settings.wahaSession ?? "").trim() || "default";
+}
+
 // Call this from anywhere in the app when a triggerable event occurs.
 // e.g. triggerAutomation('proposal_sent', { proposalId: 'p-001' })
 export async function triggerAutomation(
@@ -336,7 +346,7 @@ export async function sendDealInvoiceN8n(context: AutomationContext): Promise<{ 
     entityName: ctx.dealTitle ?? ctx.customerName ?? "",
     wahaApiUrl: automationSettings.wahaApiUrl,
     wahaApiKey: automationSettings.wahaApiKey,
-    wahaSession: automationSettings.wahaSession,
+    wahaSession: resolveWahaSession(primaryInvoiceEmailTemplate, automationSettings),
     ...(primaryInvoiceEmailTemplate
       ? {
           automationTemplateId: primaryInvoiceEmailTemplate.id,
@@ -772,6 +782,7 @@ async function fireN8nWebhook(
     const entityName = ctx.proposalTitle ?? ctx.dealTitle ?? ctx.invoiceNumber ?? ctx.customerName ?? "";
 
     const emailCc = resolveMergedEmailCc(settings, template, ctx);
+    const wahaSession = resolveWahaSession(template, settings);
     const payload = {
       channel: (template.channel === "sms" ? "sms" : "email") as "email" | "sms",
       templateId: template.id,
@@ -785,7 +796,7 @@ async function fireN8nWebhook(
       ...(template.channel === "email" ? { emailCc } : {}),
       wahaApiUrl: settings.wahaApiUrl,
       wahaApiKey: settings.wahaApiKey,
-      wahaSession: settings.wahaSession,
+      wahaSession,
       delayHours: template.delayHours ?? 0,
       entityType,
       entityId,
@@ -938,6 +949,7 @@ async function fireWhatsAppDirect(
         const formData = new FormData();
         formData.append("to", phone);
         formData.append("message", body);
+        formData.append("session", resolveWahaSession(template, settings));
         if (ctx.customerId) formData.append("customerId", ctx.customerId);
         if (ctx.proposalId) formData.append("proposalId", ctx.proposalId);
         
@@ -956,7 +968,7 @@ async function fireWhatsAppDirect(
             "X-Api-Key": settings.wahaApiKey,
           },
           body: JSON.stringify({
-            session: settings.wahaSession,
+            session: resolveWahaSession(template, settings),
             chatId: `${phone}@c.us`,
             text: body,
           }),
