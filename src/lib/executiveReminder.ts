@@ -56,8 +56,9 @@ export function formatReminderPeriodLabel(from: string, to: string): string {
 }
 
 function formatProposalLine(p: Proposal, index: number): string {
-  const title = (p.title || p.proposalNumber || p.id).trim();
-  return `${index}. ${title}`;
+  // Prefer proposal number (e.g. "PROP-0637 || Company") — `title` often embeds line-item names.
+  const label = (p.proposalNumber || p.title || p.id).trim();
+  return `${index}. ${label}`;
 }
 
 const DEFAULT_EMAIL_SUBJECT =
