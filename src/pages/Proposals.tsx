@@ -68,6 +68,7 @@ import { Topbar } from "@/components/Topbar";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import type { Proposal, ProposalStatus } from "@/types";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
+import { ProposalLineItemsPreview } from "@/components/ProposalLineItemsPreview";
 import { ProposalFormDialog } from "@/components/ProposalFormDialog";
 import { ApproveProposalDialog } from "@/components/ApproveProposalDialog";
 import { RejectProposalDialog } from "@/components/RejectProposalDialog";
@@ -1340,7 +1341,9 @@ export default function Proposals() {
                         <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailId(p.id)}>
                           <p className="truncate font-mono text-xs font-medium text-primary">{p.proposalNumber}</p>
                           <p className="truncate text-sm font-medium">{cust?.companyName || cust?.customerName || p.customerName || "—"}</p>
-                          <p className="truncate text-[11px] text-muted-foreground">{p.title}</p>
+                          <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+                            <ProposalLineItemsPreview lineItems={p.lineItems} />
+                          </div>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
                             <ProposalStatusBadge status={p.status} />
                             <span className="text-xs font-semibold tabular-nums">{formatINR(proposalValueExclGst(p))}</span>
@@ -1378,7 +1381,9 @@ export default function Proposals() {
                               >
                                 {p.proposalNumber}
                               </button>
-                              <p className="mt-0.5 max-w-[220px] truncate text-[11px] text-muted-foreground">{p.title}</p>
+                              <div className="mt-0.5">
+                                <ProposalLineItemsPreview lineItems={p.lineItems} />
+                              </div>
                             </TableCell>
                             <TableCell className="max-w-[14rem]">
                               <button

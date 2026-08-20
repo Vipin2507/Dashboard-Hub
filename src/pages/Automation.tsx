@@ -87,6 +87,7 @@ const ALL_TRIGGERS: AutomationTrigger[] = [
   "subscription_expiry_day",
   "subscription_overdue",
   "subscription_renewed_confirm",
+  "executive_open_proposals_reminder",
 ];
 
 const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
@@ -109,6 +110,7 @@ const TRIGGER_LABELS: Record<AutomationTrigger, string> = {
   subscription_expiry_day: "Subscription — expiry day",
   subscription_overdue: "Subscription — overdue",
   subscription_renewed_confirm: "Subscription — renewed confirmation",
+  executive_open_proposals_reminder: "Executive — Open Proposals Reminder",
 };
 
 const CHANNEL_ICON: Record<AutomationChannel, React.ReactNode> = {
@@ -1249,6 +1251,16 @@ function TemplateDialog({ template, onClose }: TemplateDialogProps) {
                   <code className="text-[10px]">buildesk-email</code>.
                   Email automations include multipart field <code className="text-[10px]">invoice_pdf</code> when the
                   installment invoice can be loaded (same pattern as <code className="text-[10px]">estimate_pdf</code>).
+                </p>
+              )}
+              {watchedTrigger === "executive_open_proposals_reminder" && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Used by Executive Performance → Remind executive (manual). Edit subject/body here; variables include{" "}
+                  <code className="text-[10px]">{"{{executive_name}}"}</code>,{" "}
+                  <code className="text-[10px]">{"{{period_label}}"}</code>,{" "}
+                  <code className="text-[10px]">{"{{open_proposal_count}}"}</code>,{" "}
+                  <code className="text-[10px]">{"{{total_value}}"}</code>,{" "}
+                  <code className="text-[10px]">{"{{proposal_list}}"}</code>.
                 </p>
               )}
             </div>

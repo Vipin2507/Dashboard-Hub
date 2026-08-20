@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import {
   AlertCircle,
+  Bell,
   Building2,
   Clock,
   Download,
@@ -28,6 +29,7 @@ import {
 import { Topbar } from "@/components/Topbar";
 import { ExecutiveTargetAchievement } from "@/components/ExecutiveTargetAchievement";
 import { ConversionFunnelChart } from "@/components/ConversionFunnelChart";
+import { ExecutiveReminderDialog } from "@/components/ExecutiveReminderDialog";
 import { FilterPanel } from "@/components/FilterPanel";
 import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import { StatusPill } from "@/components/StatusPill";
@@ -506,6 +508,7 @@ export default function ExecutivePerformancePage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailPage, setDetailPage] = useState(1);
   const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetricKey>("proposalsCreated");
+  const [reminderOpen, setReminderOpen] = useState(false);
 
   useEffect(() => {
     const next = readExecutiveFiltersFromParams(searchParams);
@@ -540,7 +543,11 @@ export default function ExecutivePerformancePage() {
   const query = useExecutivePerformanceQuery(queryFilters, Boolean(isSuperAdmin));
 
   const salesReps = useMemo(
-    () => users.filter((u) => u.role === "sales_rep" && u.status !== "disabled"),
+    () =>
+      users.filter(
+        (u) =>
+          (u.role === "sales_rep" || u.role === "sales_manager") && u.status !== "disabled",
+      ),
     [users],
   );
 
@@ -708,6 +715,17 @@ export default function ExecutivePerformancePage() {
         subtitle={smUp ? "Sales analytics by person, team, region, and reason" : undefined}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5 text-xs"
+              onClick={() => setReminderOpen(true)}
+            >
+              <Bell className="mr-1 h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Remind executive</span>
+              <span className="sm:hidden">Remind</span>
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -1644,6 +1662,17 @@ export default function ExecutivePerformancePage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <ExecutiveReminderDialog
+        open={reminderOpen}
+        onOpenChange={setReminderOpen}
+        executives={salesReps}
+        senderName={loggedInUser?.name}
+        initialExecutiveId={applied.executiveId}
+        initialRange={applied.range}
+        initialFrom={applied.from}
+        initialTo={applied.to}
+      />
     </>
   );
 }

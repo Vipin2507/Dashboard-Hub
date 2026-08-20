@@ -737,6 +737,33 @@ export const seedAutomationTemplates: AutomationTemplate[] = [
     createdAt: '2026-03-15T00:00:00Z',
     updatedAt: '2026-03-15T00:00:00Z',
   },
+  // 9. Executive reminder — open proposals not converted to deals (email)
+  {
+    id: 'tpl-009',
+    name: 'Executive Reminder — Open Proposals (Email)',
+    trigger: 'executive_open_proposals_reminder',
+    channel: 'email',
+    recipients: ['sales_rep'],
+    isActive: true,
+    delayHours: 0,
+    subject: 'Action needed: {{open_proposal_count}} open proposal(s) pending deal conversion ({{period_label}})',
+    body: `Hi {{executive_name}},\n\nThis is a gentle reminder to follow up on your open proposals that are not yet converted into deals.\n\nPeriod: {{period_label}}\nOpen proposals: {{open_proposal_count}}\nTotal value (excl. GST): {{total_value}}\n\nPlease review and convert the following proposals (or update their status) at the earliest:\n\n{{proposal_list}}\n\nNext steps suggested:\n1. Follow up with the customer on each open proposal\n2. Convert approved / won outcomes into deals in Buildesk\n3. Mark cold / rejected proposals with a clear reason\n\nThank you,\n{{sender_name}}\n{{company_name}}`,
+    createdAt: '2026-08-20T00:00:00Z',
+    updatedAt: '2026-08-20T00:00:00Z',
+  },
+  // 10. Executive reminder — WhatsApp
+  {
+    id: 'tpl-010',
+    name: 'Executive Reminder — Open Proposals (WhatsApp)',
+    trigger: 'executive_open_proposals_reminder',
+    channel: 'whatsapp',
+    recipients: ['sales_rep'],
+    isActive: true,
+    delayHours: 0,
+    body: `Hi {{executive_name}} 👋\n\nReminder from Buildesk: you have *{{open_proposal_count}}* open proposal(s) in *{{period_label}}* that are *not yet converted into deals*.\n\n*Total value (excl. GST):* {{total_value}}\n\n*Pending proposals:*\n{{proposal_list}}\n\nPlease follow up and convert them into deals (or update status) soon.\n\n— {{sender_name}}`,
+    createdAt: '2026-08-20T00:00:00Z',
+    updatedAt: '2026-08-20T00:00:00Z',
+  },
 ];
 
 const seedNow = '2026-03-01T10:00:00Z';

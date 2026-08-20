@@ -17,7 +17,8 @@ export type AutomationTrigger =
   | "subscription_renewal_30d"
   | "subscription_expiry_day"
   | "subscription_overdue"
-  | "subscription_renewed_confirm";
+  | "subscription_renewed_confirm"
+  | "executive_open_proposals_reminder";
 
 export type AutomationChannel = "whatsapp" | "email" | "sms" | "in_app";
 
@@ -315,5 +316,17 @@ export const TEMPLATE_VARIABLES: Record<AutomationTrigger, string[]> = {
     "{{sales_rep_name}}",
     "{{sales_rep_phone}}",
     "{{sales_rep_email}}",
+  ],
+  executive_open_proposals_reminder: [
+    "{{executive_name}}",
+    "{{sales_rep_name}}",
+    "{{sales_rep_phone}}",
+    "{{sales_rep_email}}",
+    "{{period_label}}",
+    "{{open_proposal_count}}",
+    "{{total_value}}",
+    "{{proposal_list}}",
+    "{{sender_name}}",
+    "{{company_name}}",
   ],
 };

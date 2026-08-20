@@ -445,6 +445,13 @@ export interface AutomationContext {
   salesManagerId?: string;
   approvedBy?: string;
   rejectionReason?: string;
+  // Executive open-proposals reminder (manual share from Executive Performance)
+  executiveName?: string;
+  periodLabel?: string;
+  openProposalCount?: number;
+  totalValue?: number;
+  proposalList?: string;
+  senderName?: string;
   // Payments
   amountPaid?: number;
   paymentDate?: string;
@@ -548,10 +555,21 @@ function resolveVariables(template: string, ctx: AutomationContext): string {
     "{{renewal_link}}": ctx.renewalLink ?? "",
     "{{renewal_amount}}": formatINRInline(ctx.renewalAmount),
     "{{plan_start_date}}": ctx.planStartDate ?? "",
+    "{{executive_name}}": ctx.executiveName ?? ctx.salesRepName ?? "",
+    "{{period_label}}": ctx.periodLabel ?? "",
+    "{{open_proposal_count}}": String(ctx.openProposalCount ?? ""),
+    "{{total_value}}": formatINRInline(ctx.totalValue),
+    "{{proposal_list}}": ctx.proposalList ?? "",
+    "{{sender_name}}": ctx.senderName ?? "",
   };
 
   // `String.prototype.replaceAll` isn't available on all TS lib targets in this repo.
   return Object.entries(map).reduce((text, [token, value]) => text.split(token).join(value), template);
+}
+
+/** Public helper for composing messages from stored automation templates. */
+export function resolveAutomationTemplateText(template: string, ctx: AutomationContext): string {
+  return resolveVariables(template, enrichAutomationContext(ctx));
 }
 
 type ResolvedRecipient = { name: string; phone?: string; email?: string; userId?: string };

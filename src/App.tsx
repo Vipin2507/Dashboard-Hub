@@ -72,6 +72,7 @@ function AutomationBootstrapper() {
   const setAutomationLogs = useAppStore((s) => s.setAutomationLogs);
   const setAutomationSettings = useAppStore((s) => s.setAutomationSettings);
   const automationSettings = useAppStore((s) => s.automationSettings);
+  const seedTemplates = useAppStore((s) => s.automationTemplates);
 
   useEffect(() => {
     if (!authUserId) return;
@@ -84,7 +85,26 @@ function AutomationBootstrapper() {
           fetch(apiUrl("/api/automation/settings")),
         ]);
         if (!mounted) return;
-        if (tplRes.ok) setAutomationTemplates(await tplRes.json());
+        if (tplRes.ok) {
+          const serverTemplates = (await tplRes.json()) as import("@/types").AutomationTemplate[];
+          const byId = new Map(serverTemplates.map((t) => [t.id, t]));
+          const missingSeed = seedTemplates.filter((t) => !byId.has(t.id));
+          if (missingSeed.length > 0) {
+            await Promise.all(
+              missingSeed.map((t) =>
+                fetch(apiUrl("/api/automation/templates"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(t),
+                }).catch(() => undefined),
+              ),
+            );
+            for (const t of missingSeed) byId.set(t.id, t);
+          }
+          setAutomationTemplates(
+            Array.from(byId.values()).sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "")),
+          );
+        }
         if (logRes.ok) setAutomationLogs(await logRes.json());
         if (settingsRes.ok) {
           const serverSettings = (await settingsRes.json()) as Partial<typeof automationSettings>;
@@ -100,9 +120,10 @@ function AutomationBootstrapper() {
     return () => {
       mounted = false;
     };
+    // Intentionally omit seedTemplates from deps — only use initial seed snapshot for missing-id merge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     authUserId,
-    automationSettings,
     setAutomationLogs,
     setAutomationSettings,
     setAutomationTemplates,
