@@ -5,7 +5,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   LabelList,
   Line,
   LineChart,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 import { Topbar } from "@/components/Topbar";
 import { ExecutiveTargetAchievement } from "@/components/ExecutiveTargetAchievement";
+import { ConversionFunnelChart } from "@/components/ConversionFunnelChart";
 import { FilterPanel } from "@/components/FilterPanel";
 import { TimeRangeFilter } from "@/components/TimeRangeFilter";
 import { StatusPill } from "@/components/StatusPill";
@@ -636,10 +636,6 @@ export default function ExecutivePerformancePage() {
     winRate: { label: "Win rate %", color: CHART_COLORS[1] },
   } satisfies ChartConfig;
 
-  const funnelConfig = {
-    count: { label: "Count", color: CHART_COLORS[0] },
-  } satisfies ChartConfig;
-
   const weekdayConfig = {
     dealsWon: { label: "Won", color: CHART_COLORS[1] },
     dealsLost: { label: "Lost", color: CHART_COLORS[3] },
@@ -1164,41 +1160,10 @@ export default function ExecutivePerformancePage() {
                     {(data?.funnel?.length ?? 0) === 0 ? (
                       <EmptyChart message="No funnel activity in this period." />
                     ) : (
-                      <ChartContainer config={funnelConfig} className="h-48 w-full sm:h-64 lg:h-72">
-                        <BarChart
-                          data={data?.funnel}
-                          margin={{ left: 8, right: 12, top: 22, bottom: 24 }}
-                        >
-                          <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                          <XAxis
-                            dataKey="label"
-                            tickLine={false}
-                            axisLine={false}
-                            interval={0}
-                            angle={-18}
-                            textAnchor="end"
-                            height={56}
-                            tick={{ fontSize: 11 }}
-                          />
-                          <YAxis tickLine={false} axisLine={false} width={36} allowDecimals={false} />
-                          <ChartTooltip content={<ChartTooltipContent />} />
-                          <Bar
-                            dataKey="count"
-                            radius={[6, 6, 0, 0]}
-                            cursor="pointer"
-                            onClick={(entry) => {
-                              const key = (entry as { payload?: { key?: string } })?.payload
-                                ?.key as ExecutiveDetailType | undefined;
-                              if (key) openDetail(key);
-                            }}
-                          >
-                            {(data?.funnel ?? []).map((_, i) => (
-                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                            ))}
-                            <LabelList dataKey="count" position="top" offset={6} style={CHART_LABEL} formatter={formatChartNumber} />
-                          </Bar>
-                        </BarChart>
-                      </ChartContainer>
+                      <ConversionFunnelChart
+                        steps={data?.funnel ?? []}
+                        onStepClick={(key) => openDetail(key)}
+                      />
                     )}
                   </ChartCard>
                 </div>
