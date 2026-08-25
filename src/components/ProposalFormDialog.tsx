@@ -367,7 +367,7 @@ export function ProposalFormDialog({
     };
   }, [pdfPreviewUrl]);
 
-  const handleSaveDraft = async () => {
+  const handleSave = async () => {
     if (!title || !customerId) {
       toast({ title: "Missing fields", description: "Title and Customer are required.", variant: "destructive" });
       return;
@@ -375,8 +375,15 @@ export function ProposalFormDialog({
     const payload = buildProposal();
     try {
       if (editingProposal) {
-        await updateProposal(editingProposal.id, payload);
-        toast({ title: "Proposal updated", description: `${payload.proposalNumber} saved.` });
+        const live = proposals.find((p) => p.id === editingProposal.id) ?? editingProposal;
+        // Persist content only — keep current status (no workflow / send / version bump).
+        await updateProposal(editingProposal.id, {
+          ...payload,
+          status: live.status,
+          versionHistory: live.versionHistory,
+          currentVersion: live.currentVersion,
+        });
+        toast({ title: "Proposal saved", description: `${payload.proposalNumber} updated.` });
       } else {
         const id = "p" + makeId();
         const now = new Date().toISOString();
@@ -409,7 +416,10 @@ export function ProposalFormDialog({
     try {
       if (editingProposal) {
         await updateProposal(editingProposal.id, { ...payload, status: "draft" });
-        saveNewVersion(editingProposal.id);
+        // Super admin edits are corrections — do not append version history.
+        if (me.role !== "super_admin") {
+          saveNewVersion(editingProposal.id);
+        }
         await updateProposal(editingProposal.id, { status: "approval_pending" });
         await submitForApproval(editingProposal.id);
       } else {
@@ -443,8 +453,8 @@ export function ProposalFormDialog({
     const payload = buildProposal();
     try {
       if (editingProposal) {
+        // Super Admin Save & send is a content/status correction — do not append version history.
         await updateProposal(editingProposal.id, { ...payload, status: "sent" });
-        saveNewVersion(editingProposal.id);
         const now = new Date().toISOString();
         await updateProposal(editingProposal.id, { status: "sent", sentAt: now });
         await sendProposal(editingProposal.id);
@@ -794,8 +804,8 @@ export function ProposalFormDialog({
               <FileText className="mr-1 h-3.5 w-3.5" />
               Edit PDF
             </Button>
-            <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSaveDraft}>
-              Save draft
+            <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSave}>
+              {canSaveAndSend ? "Save" : "Save draft"}
             </Button>
             {canRequestApproval && (
               <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSubmitForApproval}>
