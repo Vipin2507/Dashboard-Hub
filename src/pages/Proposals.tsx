@@ -19,7 +19,12 @@ import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import { FilterPanel } from "@/components/FilterPanel";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
-import { isProposalWon, proposalStatusLabel, proposalStatusMatches } from "@/lib/proposalStatus";
+import {
+  isProposalWon,
+  normalizeProposalStatus,
+  proposalStatusLabel,
+  proposalStatusMatches,
+} from "@/lib/proposalStatus";
 import { isoToLocalYmd, ymdInInclusiveRange, hydrateTimeRange, parseTimeRangeFromSearchParams, resolveTimeRangeYmd, timeRangeChip, type TimeRangePreset } from "@/lib/dateRange";
 import { computeProposalKpis, type ProposalKpiData } from "@/lib/proposalKpis";
 import {
@@ -121,6 +126,19 @@ const STATUS_OPTIONS: { value: ProposalStatus | "all"; label: string }[] = [
   { value: "cold", label: "Cold" },
   { value: "rejected", label: "Rejected" },
 ];
+
+/** All assignable statuses for admin direct override (no workflow / automation). */
+const ADMIN_STATUS_OPTIONS: { value: ProposalStatus; label: string }[] = STATUS_OPTIONS.filter(
+  (o): o is { value: ProposalStatus; label: string } => o.value !== "all",
+);
+
+const STATUS_PILL_TRIGGER: Record<StatusTone, string> = {
+  muted: "border-border bg-muted/40 text-muted-foreground hover:bg-muted/60",
+  info: "border-primary/30 bg-primary/15 text-primary hover:bg-primary/20",
+  success: "border-success/30 bg-success/15 text-success hover:bg-success/20",
+  warning: "border-warning/30 bg-warning/15 text-warning-foreground hover:bg-warning/20",
+  danger: "border-destructive/30 bg-destructive/15 text-destructive hover:bg-destructive/20",
+};
 
 function proposalStatusTone(status: ProposalStatus): StatusTone {
   if (isProposalWon(status) || status === "approved") return "success";
@@ -277,6 +295,48 @@ function ProposalStatusBadge({ status }: { status: ProposalStatus }) {
     <StatusPill tone={proposalStatusTone(status)} className="capitalize">
       {proposalStatusLabel(status)}
     </StatusPill>
+  );
+}
+
+function AdminProposalStatusSelect({
+  status,
+  onChange,
+  disabled,
+}: {
+  status: ProposalStatus;
+  onChange: (next: ProposalStatus) => void;
+  disabled?: boolean;
+}) {
+  const current = normalizeProposalStatus(status);
+  const tone = proposalStatusTone(current);
+  return (
+    <Select
+      value={current}
+      disabled={disabled}
+      onValueChange={(v) => {
+        const next = normalizeProposalStatus(v);
+        if (next === current) return;
+        onChange(next);
+      }}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-auto w-auto min-w-[8.5rem] gap-1 rounded-full px-2 py-0.5 text-xs font-medium capitalize shadow-none focus:ring-1 focus:ring-offset-0 [&>span]:line-clamp-1 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-70",
+          STATUS_PILL_TRIGGER[tone],
+        )}
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Change proposal status"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="start" className="min-w-[10rem]">
+        {ADMIN_STATUS_OPTIONS.map((o) => (
+          <SelectItem key={o.value} value={o.value} className="capitalize text-xs">
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -547,6 +607,7 @@ export default function Proposals() {
   };
 
   const canReassign = me.role === "super_admin";
+  const canAdminSetStatus = me.role === "super_admin";
 
   const changeAssignedTo = async (p: Proposal, nextUserId: string) => {
     if (!canReassign) return;
@@ -840,6 +901,28 @@ export default function Proposals() {
     if (!p) return;
     setCreateDealId(id);
     toast({ title: "Create deal", description: "Complete the deal form to finalize this win." });
+  };
+
+  const setStatusDirect = (p: Proposal, next: ProposalStatus) => {
+    const current = normalizeProposalStatus(p.status);
+    if (current === next) return;
+    void (async () => {
+      try {
+        await updateProposal(p.id, { status: next });
+        void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+        void queryClient.invalidateQueries({ queryKey: QK.dashboard() });
+        toast({
+          title: "Status updated",
+          description: `${p.proposalNumber} → ${proposalStatusLabel(next)}`,
+        });
+      } catch (e) {
+        toast({
+          title: "Failed to update status",
+          description: String(e),
+          variant: "destructive",
+        });
+      }
+    })();
   };
 
   const applyKpiFilter = (key: "all" | "pending" | "won") => {
@@ -1338,17 +1421,25 @@ export default function Proposals() {
                     const cust = customers.find((c) => c.id === p.customerId);
                     return (
                       <div key={p.id} className="flex items-start gap-2 px-2.5 py-2.5">
-                        <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetailId(p.id)}>
-                          <p className="truncate font-mono text-xs font-medium text-primary">{p.proposalNumber}</p>
-                          <p className="truncate text-sm font-medium">{cust?.companyName || cust?.customerName || p.customerName || "—"}</p>
-                          <div className="mt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <div className="min-w-0 flex-1">
+                          <button type="button" className="w-full text-left" onClick={() => setDetailId(p.id)}>
+                            <p className="truncate font-mono text-xs font-medium text-primary">{p.proposalNumber}</p>
+                            <p className="truncate text-sm font-medium">{cust?.companyName || cust?.customerName || p.customerName || "—"}</p>
+                          </button>
+                          <div className="mt-0.5">
                             <ProposalLineItemsPreview lineItems={p.lineItems} />
                           </div>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <ProposalStatusBadge status={p.status} />
+                            {canAdminSetStatus ? (
+                              <AdminProposalStatusSelect status={p.status} onChange={(next) => setStatusDirect(p, next)} />
+                            ) : (
+                              <button type="button" className="text-left" onClick={() => setDetailId(p.id)}>
+                                <ProposalStatusBadge status={p.status} />
+                              </button>
+                            )}
                             <span className="text-xs font-semibold tabular-nums">{formatINR(proposalValueExclGst(p))}</span>
                           </div>
-                        </button>
+                        </div>
                         {proposalActions(p)}
                       </div>
                     );
@@ -1399,7 +1490,11 @@ export default function Proposals() {
                               {formatINR(proposalValueExclGst(p))}
                             </TableCell>
                             <TableCell>
-                              <ProposalStatusBadge status={p.status} />
+                              {canAdminSetStatus ? (
+                                <AdminProposalStatusSelect status={p.status} onChange={(next) => setStatusDirect(p, next)} />
+                              ) : (
+                                <ProposalStatusBadge status={p.status} />
+                              )}
                             </TableCell>
                             <TableCell className="hidden whitespace-nowrap text-muted-foreground lg:table-cell">
                               {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-IN") : "—"}
