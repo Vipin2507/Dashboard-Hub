@@ -91,18 +91,18 @@ export function ProposalDetailSheet({
   const teams = useAppStore((s) => s.teams);
   const updateProposal = useAppStore((s) => s.updateProposal);
 
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
-  const [savingTitle, setSavingTitle] = useState(false);
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [savingNumber, setSavingNumber] = useState(false);
 
   useEffect(() => {
     if (!open || !proposal) {
-      setEditingTitle(false);
+      setEditingNumber(false);
       return;
     }
-    setTitleDraft(proposal.title || "");
-    setEditingTitle(false);
-  }, [open, proposal?.id, proposal?.title]);
+    setNumberDraft(proposal.proposalNumber || "");
+    setEditingNumber(false);
+  }, [open, proposal?.id, proposal?.proposalNumber]);
 
   if (!proposal) return null;
 
@@ -120,7 +120,7 @@ export function ProposalDetailSheet({
       proposal.status === "negotiation" ||
       proposal.status === "approval_pending") &&
     ownsOrAdmin;
-  const canEditTitle = canUpdate && ownsOrAdmin;
+  const canEditNumber = canUpdate && ownsOrAdmin;
   const canOutcome = canUpdate && ownsOrAdmin && !proposal.dealId;
 
   const activityLog: { at: string; text: string }[] = [];
@@ -134,25 +134,25 @@ export function ProposalDetailSheet({
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
   const status = normalizeProposalStatus(proposal.status);
 
-  const saveTitle = async () => {
-    const next = titleDraft.trim();
+  const saveNumber = async () => {
+    const next = numberDraft.trim();
     if (!next) {
       toast({ title: "Title required", variant: "destructive" });
       return;
     }
-    if (next === (proposal.title || "").trim()) {
-      setEditingTitle(false);
+    if (next === (proposal.proposalNumber || "").trim()) {
+      setEditingNumber(false);
       return;
     }
-    setSavingTitle(true);
+    setSavingNumber(true);
     try {
-      await updateProposal(proposal.id, { title: next });
+      await updateProposal(proposal.id, { proposalNumber: next });
       toast({ title: "Title updated" });
-      setEditingTitle(false);
+      setEditingNumber(false);
     } catch (e) {
       toast({ title: "Failed to update title", description: String(e), variant: "destructive" });
     } finally {
-      setSavingTitle(false);
+      setSavingNumber(false);
     }
   };
 
@@ -162,66 +162,65 @@ export function ProposalDetailSheet({
         <SheetHeader className="space-y-3 border-b border-border pb-3 text-left">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <SheetTitle className="font-mono text-sm font-semibold tracking-tight text-primary sm:text-base">
-                  {proposal.proposalNumber}
-                </SheetTitle>
-                <StatusPill tone={STATUS_TONE[status]}>{proposalStatusLabel(proposal.status)}</StatusPill>
-              </div>
-
-              {editingTitle ? (
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    className="h-8 text-sm"
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void saveTitle();
-                      if (e.key === "Escape") {
-                        setTitleDraft(proposal.title || "");
-                        setEditingTitle(false);
-                      }
-                    }}
-                    autoFocus
-                    disabled={savingTitle}
-                  />
-                  <Button
-                    type="button"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => void saveTitle()}
-                    disabled={savingTitle}
-                    title="Save title"
-                  >
-                    {savingTitle ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => {
-                      setTitleDraft(proposal.title || "");
-                      setEditingTitle(false);
-                    }}
-                    disabled={savingTitle}
-                    title="Cancel"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="group flex items-start gap-1.5">
-                  <p className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground">
-                    {proposal.title || "Untitled proposal"}
-                  </p>
-                  {canEditTitle ? (
+              {editingNumber ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <SheetTitle className="sr-only">{proposal.proposalNumber}</SheetTitle>
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <Input
+                      className="h-8 min-w-0 flex-1 font-mono text-sm font-semibold"
+                      value={numberDraft}
+                      onChange={(e) => setNumberDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveNumber();
+                        if (e.key === "Escape") {
+                          setNumberDraft(proposal.proposalNumber || "");
+                          setEditingNumber(false);
+                        }
+                      }}
+                      autoFocus
+                      disabled={savingNumber}
+                      aria-label="Proposal title"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => void saveNumber()}
+                      disabled={savingNumber}
+                      title="Save title"
+                    >
+                      {savingNumber ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 shrink-0 opacity-70 group-hover:opacity-100"
-                      onClick={() => setEditingTitle(true)}
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => {
+                        setNumberDraft(proposal.proposalNumber || "");
+                        setEditingNumber(false);
+                      }}
+                      disabled={savingNumber}
+                      title="Cancel"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  <StatusPill tone={STATUS_TONE[status]}>{proposalStatusLabel(proposal.status)}</StatusPill>
+                </div>
+              ) : (
+                <div className="group flex flex-wrap items-center gap-2">
+                  <SheetTitle className="font-mono text-sm font-semibold tracking-tight text-primary sm:text-base">
+                    {proposal.proposalNumber}
+                  </SheetTitle>
+                  <StatusPill tone={STATUS_TONE[status]}>{proposalStatusLabel(proposal.status)}</StatusPill>
+                  {canEditNumber ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground opacity-80 hover:text-foreground group-hover:opacity-100"
+                      onClick={() => setEditingNumber(true)}
                       title="Edit title"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -229,6 +228,10 @@ export function ProposalDetailSheet({
                   ) : null}
                 </div>
               )}
+
+              {proposal.title && proposal.title.trim() !== proposal.proposalNumber.trim() ? (
+                <p className="text-sm font-medium leading-snug text-foreground">{proposal.title}</p>
+              ) : null}
 
               <p className="text-[11px] text-muted-foreground">
                 Created {new Date(proposal.createdAt).toLocaleDateString("en-IN")}
