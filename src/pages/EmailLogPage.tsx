@@ -1,8 +1,9 @@
 import { Topbar } from '@/components/Topbar';
 import { useAppStore } from '@/store/useAppStore';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getScope } from '@/lib/rbac';
+import { scopeNotificationsForUser } from '@/lib/scopeNotifications';
 import { apiUrl } from '@/lib/api';
 import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { Card, CardContent } from '@/components/ui/card';
@@ -13,13 +14,21 @@ export default function EmailLogPage() {
   const me = useAppStore(s => s.me);
   const notifications = useAppStore(s => s.notifications);
   const setNotifications = useAppStore(s => s.setNotifications);
+  const proposals = useAppStore(s => s.proposals);
+  const deals = useAppStore(s => s.deals);
+  const users = useAppStore(s => s.users);
   const scope = getScope(me.role, 'email_log');
-  const visible = scope === 'NONE' ? [] : notifications;
+  const visible = useMemo(() => {
+    if (scope === 'NONE') return [];
+    return scopeNotificationsForUser(me, notifications, { proposals, deals, users });
+  }, [scope, me, notifications, proposals, deals, users]);
 
   const notificationsQuery = useQuery({
-    queryKey: QK.notifications(),
+    queryKey: [...QK.notifications(), me.id, me.role],
     queryFn: async () => {
-      const res = await fetch(apiUrl('/api/notifications'));
+      const res = await fetch(
+        apiUrl(`/api/notifications?userId=${encodeURIComponent(me.id)}&role=${encodeURIComponent(me.role)}`),
+      );
       if (!res.ok) throw new Error('Failed to load notifications');
       return res.json() as Promise<import('@/types').Notification[]>;
     },

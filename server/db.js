@@ -60,6 +60,16 @@ function migrateExecutiveSalesTargetsSchema() {
 }
 migrateExecutiveSalesTargetsSchema();
 
+/** Optional userId on notifications for executive scoping. */
+function migrateNotificationsUserIdSchema() {
+  const cols = db.prepare("PRAGMA table_info(notifications)").all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("userId")) {
+    db.exec(`ALTER TABLE notifications ADD COLUMN userId TEXT`);
+  }
+}
+migrateNotificationsUserIdSchema();
+
 /** Add deal columns on existing DBs (CREATE TABLE already has them for new installs). */
 function migrateDealSchema() {
   const cols = db.prepare("PRAGMA table_info(deals)").all();
@@ -1006,9 +1016,16 @@ function seedIfEmpty() {
   const notificationsCount = db.prepare("SELECT COUNT(*) AS c FROM notifications").get().c;
   if (notificationsCount === 0) {
     const stmt = db.prepare(
-      "INSERT INTO notifications (id, type, \"to\", subject, entityId, at) VALUES (@id, @type, @to, @subject, @entityId, @at)"
+      'INSERT INTO notifications (id, type, "to", subject, entityId, at, userId) VALUES (@id, @type, @to, @subject, @entityId, @at, @userId)'
     );
-    db.transaction((rows) => rows.forEach((r) => stmt.run(r)))(seedNotifications);
+    db.transaction((rows) =>
+      rows.forEach((r) =>
+        stmt.run({
+          ...r,
+          userId: r.userId ?? null,
+        }),
+      ),
+    )(seedNotifications);
   }
 
   const ppcCount = db.prepare("SELECT COUNT(*) AS c FROM payment_plan_catalog_legacy").get().c;

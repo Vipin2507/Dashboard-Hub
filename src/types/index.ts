@@ -397,6 +397,8 @@ export interface Notification {
   subject: string;
   entityId: string;
   at: string;
+  /** Executive (or other user) this notification is scoped to. Super admin sees all regardless. */
+  userId?: string;
 }
 
 export * from "./automation";

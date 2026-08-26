@@ -5,6 +5,7 @@ import { Bell, CheckCheck, FileText, Handshake, IndianRupee, Building2 } from "l
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
+import { scopeNotificationsForUser } from "@/lib/scopeNotifications";
 import { useAppStore } from "@/store/useAppStore";
 import type { Notification } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -103,12 +104,20 @@ const ENTITY_TONE = {
 export function NotificationBell() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const meId = useAppStore((s) => s.me.id);
+  const me = useAppStore((s) => s.me);
+  const meId = me.id;
+  const meRole = me.role;
   const zustandNotifs = useAppStore((s) => s.notifications);
+  const proposals = useAppStore((s) => s.proposals);
+  const deals = useAppStore((s) => s.deals);
+  const users = useAppStore((s) => s.users);
 
   const { data: apiRows = [] } = useQuery({
-    queryKey: QK.notifications(),
-    queryFn: () => api.get<Notification[]>("/notifications"),
+    queryKey: [...QK.notifications(), meId, meRole],
+    queryFn: () =>
+      api.get<Notification[]>(
+        `/notifications?userId=${encodeURIComponent(meId)}&role=${encodeURIComponent(meRole)}`,
+      ),
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
@@ -134,15 +143,25 @@ export function NotificationBell() {
 
   const readIds = useMemo(() => new Set(storedReadIds ?? loadLocalReads(meId)), [meId, storedReadIds]);
 
+  const scopedRaw = useMemo(
+    () =>
+      scopeNotificationsForUser(me, [...apiRows, ...zustandNotifs], {
+        proposals,
+        deals,
+        users,
+      }),
+    [me, apiRows, zustandNotifs, proposals, deals, users],
+  );
+
   const allNotifs = useMemo(() => {
     const byId = new Map<string, UnifiedNotification>();
-    for (const n of [...apiRows, ...zustandNotifs]) {
+    for (const n of scopedRaw) {
       if (!byId.has(n.id)) byId.set(n.id, mapNotification(n, readIds));
     }
     return Array.from(byId.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [apiRows, zustandNotifs, readIds]);
+  }, [scopedRaw, readIds]);
 
   const unread = useMemo(() => allNotifs.filter((n) => !n.isRead).slice(0, 40), [allNotifs]);
   const unreadCount = allNotifs.filter((n) => !n.isRead).length;
@@ -163,7 +182,7 @@ export function NotificationBell() {
   });
 
   const markAllMutation = useMutation({
-    mutationFn: () => api.post("/notifications/read-all", { userId: meId }),
+    mutationFn: () => api.post("/notifications/read-all", { userId: meId, role: meRole }),
     onError: () => undefined,
   });
 

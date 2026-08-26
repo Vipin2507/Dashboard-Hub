@@ -102,7 +102,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   "to" TEXT NOT NULL,
   subject TEXT NOT NULL,
   entityId TEXT NOT NULL,
-  at TEXT NOT NULL
+  at TEXT NOT NULL,
+  userId TEXT
 );
 
 CREATE TABLE IF NOT EXISTS notification_reads (

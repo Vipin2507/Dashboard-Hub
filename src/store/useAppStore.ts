@@ -873,7 +873,25 @@ export const useAppStore = create<AppState>((set, get) => ({
         throw new Error(errText || 'Failed to submit proposal');
       }
     }
-    get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'manager@buildesk.com', subject: 'Proposal submitted for approval', entityId: id });
+    const managers = get().users.filter((u) => u.role === "sales_manager");
+    if (managers.length > 0) {
+      for (const m of managers) {
+        get().pushNotification({
+          type: "INTERNAL_EMAIL",
+          to: m.email || "manager@buildesk.com",
+          subject: "Proposal submitted for approval",
+          entityId: id,
+          userId: m.id,
+        });
+      }
+    } else {
+      get().pushNotification({
+        type: "INTERNAL_EMAIL",
+        to: "manager@buildesk.com",
+        subject: "Proposal submitted for approval",
+        entityId: id,
+      });
+    }
   },
 
   approveProposal: (id, approverId) => {
@@ -891,7 +909,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         body: JSON.stringify(proposalPersist),
       }).catch(() => undefined);
     }
-    get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal approved', entityId: id });
+    const approvedProposal = get().proposals.find(p => p.id === id);
+    get().pushNotification({
+      type: 'INTERNAL_EMAIL',
+      to: 'admin@buildesk.com',
+      subject: 'Proposal approved',
+      entityId: id,
+      userId: approvedProposal?.assignedTo,
+    });
 
     void (async () => {
       const proposal = get().proposals.find(p => p.id === id);
@@ -949,7 +974,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         body: JSON.stringify(proposalPersist),
       }).catch(() => undefined);
     }
-    get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Proposal rejected', entityId: id });
+    get().pushNotification({
+      type: 'INTERNAL_EMAIL',
+      to: 'admin@buildesk.com',
+      subject: 'Proposal rejected',
+      entityId: id,
+      userId: get().proposals.find((p) => p.id === id)?.assignedTo,
+    });
 
     const proposal = get().proposals.find(p => p.id === id);
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
@@ -990,7 +1021,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const customer = proposal ? get().customers.find(c => c.id === proposal.customerId) : null;
     const primaryContact = customer?.contacts?.find(c => c.isPrimary) ?? customer?.contacts?.[0];
     const to = primaryContact?.email ?? 'customer@example.com';
-    get().pushNotification({ type: 'CUSTOMER_EMAIL', to, subject: `Proposal ${proposal?.proposalNumber ?? id} sent`, entityId: id });
+    get().pushNotification({
+      type: 'CUSTOMER_EMAIL',
+      to,
+      subject: `Proposal ${proposal?.proposalNumber ?? id} sent`,
+      entityId: id,
+      userId: proposal?.assignedTo,
+    });
 
     const rep = proposal ? get().users.find(u => u.id === proposal.assignedTo) : null;
     void triggerAutomation('proposal_sent', {
@@ -1122,7 +1159,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     }
-    get().pushNotification({ type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Deal created from proposal', entityId: id });
+    get().pushNotification({
+      type: 'INTERNAL_EMAIL',
+      to: 'admin@buildesk.com',
+      subject: 'Deal created from proposal',
+      entityId: id,
+      userId: proposal?.assignedTo,
+    });
   },
 
   saveNewVersion: (id) => {

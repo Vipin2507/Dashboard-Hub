@@ -6,6 +6,8 @@ import { useAppStore } from '@/store/useAppStore';
 import { formatINR } from '@/lib/rbac';
 import { runAutomationRules } from '@/lib/automationService';
 import { useDashboardData } from '@/hooks/useDashboardData';
+import { scopeNotificationsForUser } from '@/lib/scopeNotifications';
+import type { Notification, ProposalStatus } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -56,7 +58,6 @@ import {
 } from '@/lib/filterSessionPersistence';
 import { FilterPanel } from '@/components/FilterPanel';
 import { TimeRangeFilter } from '@/components/TimeRangeFilter';
-import type { ProposalStatus } from '@/types';
 import { isProposalWon, proposalStatusLabel, proposalStatusMatches, normalizeProposalStatus } from '@/lib/proposalStatus';
 import { resolveDealPipelineStatus } from '@/lib/dealStatus';
 import { getDealDateForFilter } from '@/lib/dealDate';
@@ -561,9 +562,13 @@ export default function DashboardPage() {
   const customerStatusSlices = customerStatusData.filter((d) => d.value > 0);
   const pipelineChartData = pipelineData.filter((d) => d.count > 0);
 
-  // Recent Activity — from notifications API (live, cross-module)
+  // Recent Activity — from notifications API (live, cross-module), scoped by role
   const recentActivity = useMemo(() => {
-    const rows = notificationsQuery.data ?? [];
+    const rows = scopeNotificationsForUser(
+      me,
+      (notificationsQuery.data ?? []) as Notification[],
+      { proposals: scopedProposals, deals: scopedDeals, users },
+    );
     const items = rows
       .map((n) => ({
         id: n.id,
@@ -581,7 +586,7 @@ export default function DashboardPage() {
       return true;
     };
     return items.filter((x) => inRange(x.timestamp)).slice(0, 10);
-  }, [notificationsQuery.data, dateFrom, dateTo]);
+  }, [notificationsQuery.data, dateFrom, dateTo, me, scopedProposals, scopedDeals, users]);
 
   // Recent Proposals — last 5 by updatedAt desc
   const recentProposals = useMemo(

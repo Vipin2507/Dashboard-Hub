@@ -622,8 +622,8 @@ export const seedDeals: Deal[] = [
 ];
 
 export const seedNotifications: Notification[] = [
-  { id: 'n1', type: 'CUSTOMER_EMAIL', to: 'accounts@sunrise.dev', subject: 'Buildesk Proposal PROP-2026-0007 shared', entityId: 'p1', at: '2026-03-10T15:00:00Z' },
-  { id: 'n2', type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Final quote value overridden (Sales Manager)', entityId: 'p1', at: '2026-03-10T14:35:00Z' },
+  { id: 'n1', type: 'CUSTOMER_EMAIL', to: 'accounts@sunrise.dev', subject: 'Buildesk Proposal PROP-2026-0007 shared', entityId: 'p1', at: '2026-03-10T15:00:00Z', userId: 'u4' },
+  { id: 'n2', type: 'INTERNAL_EMAIL', to: 'admin@buildesk.com', subject: 'Final quote value overridden (Sales Manager)', entityId: 'p1', at: '2026-03-10T14:35:00Z', userId: 'u4' },
 ];
 
 export const seedAutomationTemplates: AutomationTemplate[] = [

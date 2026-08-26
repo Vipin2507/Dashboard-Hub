@@ -28,6 +28,7 @@ type NotificationRow = {
   subject: string;
   entityId: string;
   at: string;
+  userId?: string;
 };
 
 type SubscriptionTrackerResponse = {
@@ -117,8 +118,11 @@ export function useCoreEntityQueries() {
   });
 
   const notificationsQuery = useQuery({
-    queryKey: QK.notifications(),
-    queryFn: () => api.get<NotificationRow[]>("/notifications"),
+    queryKey: [...QK.notifications(), me.id, role],
+    queryFn: () =>
+      api.get<NotificationRow[]>(
+        `/notifications?userId=${encodeURIComponent(me.id)}&role=${encodeURIComponent(role)}`,
+      ),
     staleTime: 15_000,
     refetchInterval: NOTIF_INTERVAL,
   });

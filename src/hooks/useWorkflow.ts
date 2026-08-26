@@ -32,12 +32,25 @@ export function useSubmitProposalForApproval() {
     },
     onSuccess: (proposal) => {
       INVALIDATE.proposal(qc, proposal.id, proposal.customerId);
-      useAppStore.getState().pushNotification({
-        type: "INTERNAL_EMAIL",
-        to: "manager@buildesk.com",
-        subject: `Approval required — ${proposal.proposalNumber} (${proposal.customerName})`,
-        entityId: proposal.id,
-      });
+      const managers = useAppStore.getState().users.filter((u) => u.role === "sales_manager");
+      if (managers.length > 0) {
+        for (const m of managers) {
+          useAppStore.getState().pushNotification({
+            type: "INTERNAL_EMAIL",
+            to: m.email || "manager@buildesk.com",
+            subject: `Approval required — ${proposal.proposalNumber} (${proposal.customerName})`,
+            entityId: proposal.id,
+            userId: m.id,
+          });
+        }
+      } else {
+        useAppStore.getState().pushNotification({
+          type: "INTERNAL_EMAIL",
+          to: "manager@buildesk.com",
+          subject: `Approval required — ${proposal.proposalNumber} (${proposal.customerName})`,
+          entityId: proposal.id,
+        });
+      }
       toast({ title: "Submitted for approval" });
     },
   });
@@ -106,6 +119,7 @@ export function useApproveProposal() {
         to: rep?.email ?? proposal.assignedTo,
         subject: `Proposal approved — ${proposal.proposalNumber}`,
         entityId: proposal.id,
+        userId: proposal.assignedTo,
       });
       toast({ title: "Proposal approved", description: proposal.proposalNumber });
     },
@@ -147,6 +161,7 @@ export function useRejectProposal() {
         to: rep?.email ?? proposal.assignedTo,
         subject: `Proposal rejected — ${proposal.proposalNumber}`,
         entityId: proposal.id,
+        userId: proposal.assignedTo,
       });
       toast({ title: "Proposal rejected", variant: "destructive" });
     },
@@ -259,6 +274,7 @@ export function useCreateDealFromProposal() {
         to: "admin@buildesk.com",
         subject: `Deal created from ${proposal.proposalNumber}`,
         entityId: proposal.id,
+        userId: proposal.assignedTo,
       });
       toast({
         title: "Deal created",
@@ -305,7 +321,7 @@ export function useUpdateDealStage() {
       const rep = users.find((u) => u.id === deal.ownerUserId);
       const primary = customer?.contacts?.find((c) => c.isPrimary) ?? customer?.contacts?.[0];
 
-      if (next === "Closed/Won" && prev !== "Closed/Won") {
+        if (next === "Closed/Won" && prev !== "Closed/Won") {
         await triggerAutomation("deal_won", {
           dealId: deal.id,
           dealTitle: deal.name,
@@ -318,12 +334,25 @@ export function useUpdateDealStage() {
           salesRepName: rep?.name,
           companyName: "CRAVINGCODE TECHNOLOGIES PVT. LTD.",
         });
-        useAppStore.getState().pushNotification({
-          type: "INTERNAL_EMAIL",
-          to: "finance@buildesk.com",
-          subject: `Deal won — set up payment for ${customer?.companyName || customer?.customerName || deal.name}`,
-          entityId: deal.id,
-        });
+        const subject = `Deal won — set up payment for ${customer?.companyName || customer?.customerName || deal.name}`;
+        if (deal.ownerUserId) {
+          useAppStore.getState().pushNotification({
+            type: "INTERNAL_EMAIL",
+            to: rep?.email || "finance@buildesk.com",
+            subject,
+            entityId: deal.id,
+            userId: deal.ownerUserId,
+          });
+        }
+        for (const f of users.filter((u) => u.role === "finance")) {
+          useAppStore.getState().pushNotification({
+            type: "INTERNAL_EMAIL",
+            to: f.email || "finance@buildesk.com",
+            subject,
+            entityId: deal.id,
+            userId: f.id,
+          });
+        }
         toast({
           title: "Deal won",
           description: `${deal.name} — assign a payment plan when ready`,

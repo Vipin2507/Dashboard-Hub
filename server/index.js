@@ -706,9 +706,15 @@ app.delete("/api/users/:id", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/notifications", (_req, res) => {
+app.get("/api/notifications", (req, res) => {
+  const userId = String(req.query.userId || "").trim();
+  const role = String(req.query.role || "").trim();
   const rows = db.prepare("SELECT * FROM notifications ORDER BY at DESC").all();
-  res.json(rows);
+  // Super admin sees everything; others optionally pre-filter by userId (client also scopes by entity).
+  if (role === "super_admin" || !userId) {
+    return res.json(rows);
+  }
+  res.json(rows.filter((r) => !r.userId || r.userId === userId));
 });
 
 app.get("/api/notifications/reads", (req, res) => {
@@ -739,12 +745,16 @@ app.post("/api/notifications/read", (req, res) => {
 
 app.post("/api/notifications/read-all", (req, res) => {
   const userId = String(req.body?.userId || "").trim();
+  const role = String(req.body?.role || "").trim();
   if (!userId) return res.status(400).json({ error: "userId is required" });
   const readAt = new Date().toISOString();
   const existing = new Set(
     db.prepare("SELECT notificationId FROM notification_reads WHERE userId = ?").all(userId).map((r) => r.notificationId),
   );
-  const all = db.prepare("SELECT id FROM notifications").all();
+  let all = db.prepare("SELECT id, userId FROM notifications").all();
+  if (role !== "super_admin") {
+    all = all.filter((r) => !r.userId || r.userId === userId);
+  }
   const stmt = db.prepare(
     "INSERT OR IGNORE INTO notification_reads (userId, notificationId, readAt) VALUES (?, ?, ?)",
   );
@@ -757,13 +767,21 @@ app.post("/api/notifications/read-all", (req, res) => {
 });
 
 app.post("/api/notifications", (req, res) => {
-  const { id, type, to, subject, entityId, at } = req.body || {};
+  const { id, type, to, subject, entityId, at, userId } = req.body || {};
   if (!type || !to || !subject || !entityId || !at) {
     return res.status(400).json({ error: "type, to, subject, entityId, at are required" });
   }
-  const notification = { id: id || "n" + makeId(), type, to, subject, entityId, at };
+  const notification = {
+    id: id || "n" + makeId(),
+    type,
+    to,
+    subject,
+    entityId,
+    at,
+    userId: userId ? String(userId) : null,
+  };
   db.prepare(
-    'INSERT INTO notifications (id, type, "to", subject, entityId, at) VALUES (@id, @type, @to, @subject, @entityId, @at)'
+    'INSERT INTO notifications (id, type, "to", subject, entityId, at, userId) VALUES (@id, @type, @to, @subject, @entityId, @at, @userId)'
   ).run(notification);
   try {
     req.logInteraction?.({

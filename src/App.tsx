@@ -33,16 +33,22 @@ function DataBootstrapper() {
   const setTeams = useAppStore((s) => s.setTeams);
   const setUsers = useAppStore((s) => s.setUsers);
   const setNotifications = useAppStore((s) => s.setNotifications);
+  const meId = useAppStore((s) => s.me.id);
+  const meRole = useAppStore((s) => s.me.role);
 
   useEffect(() => {
     let mounted = true;
     const sync = async () => {
       try {
+        const notifQs = new URLSearchParams({
+          userId: meId || "",
+          role: meRole || "",
+        });
         const [regionsRes, teamsRes, usersRes, notificationsRes] = await Promise.all([
           fetch(apiUrl("/api/regions")),
           fetch(apiUrl("/api/teams")),
           fetch(apiUrl("/api/users")),
-          fetch(apiUrl("/api/notifications")),
+          fetch(apiUrl(`/api/notifications?${notifQs}`)),
         ]);
         if (!mounted) return;
         if (regionsRes.ok) setRegions(await regionsRes.json());
@@ -61,7 +67,7 @@ function DataBootstrapper() {
       mounted = false;
       window.clearInterval(intervalId);
     };
-  }, [setRegions, setTeams, setUsers, setNotifications]);
+  }, [setRegions, setTeams, setUsers, setNotifications, meId, meRole]);
 
   return null;
 }

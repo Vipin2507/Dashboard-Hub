@@ -169,6 +169,7 @@ async function executeAction(action: AutomationAction, ctx: AutomationContext): 
         to: action.targetRole ?? 'system',
         subject: msg,
         entityId: ctx.dealId ?? ctx.proposalId ?? ctx.customerId ?? 'automation',
+        userId: ctx.salesRepId,
       });
       return;
     }
