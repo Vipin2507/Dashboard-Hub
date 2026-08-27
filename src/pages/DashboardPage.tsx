@@ -597,19 +597,29 @@ export default function DashboardPage() {
   const isAdminView = me.role === "super_admin" || me.role === "sales_manager";
   const teamPerformance = useMemo(() => {
     if (!isAdminView) return [];
-    const reps = users.filter((u) => u.role === "sales_rep");
-    const dealsWon = filteredDeals.filter((d) => resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) === "Closed/Won");
+    const reps = users.filter((u) => {
+      if (u.role !== "sales_rep") return false;
+      if (ownerFilter !== "all" && u.id !== ownerFilter) return false;
+      if (teamFilter !== "all" && u.teamId !== teamFilter) return false;
+      if (regionFilter !== "all" && u.regionId !== regionFilter) return false;
+      return true;
+    });
+    const dealsWon = filteredDeals.filter((d) => {
+      if (resolveDealPipelineStatus(d.dealStatus, d.invoiceStatus) !== "Closed/Won") return false;
+      return inDateRange(getDealDateForFilter(d) ?? "");
+    });
+    const proposalsInRange = filteredProposals.filter((p) => inDateRange(p.createdAt));
     return reps
       .map((u) => {
-        const proposalCount = filteredProposals.filter((p) => p.assignedTo === u.id).length;
-        const approvalPending = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "approval_pending").length;
-        const approved = filteredProposals.filter((p) => p.assignedTo === u.id && (p.status === "approved" || isProposalWon(p.status))).length;
-        const negotiation = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "negotiation").length;
-        const cold = filteredProposals.filter((p) => p.assignedTo === u.id && p.status === "cold").length;
-        const dealsWonCount = dealsWon.filter((d) => d.ownerUserId === u.id).length;
-        const dealsWonValue = dealsWon
-          .filter((d) => d.ownerUserId === u.id)
-          .reduce((s, d) => s + Number(d.value ?? 0), 0);
+        const mine = proposalsInRange.filter((p) => p.assignedTo === u.id);
+        const proposalCount = mine.length;
+        const approvalPending = mine.filter((p) => p.status === "approval_pending").length;
+        const approved = mine.filter((p) => p.status === "approved" || isProposalWon(p.status)).length;
+        const negotiation = mine.filter((p) => p.status === "negotiation").length;
+        const cold = mine.filter((p) => p.status === "cold").length;
+        const myWon = dealsWon.filter((d) => d.ownerUserId === u.id);
+        const dealsWonCount = myWon.length;
+        const dealsWonValue = myWon.reduce((s, d) => s + Number(d.value ?? 0), 0);
         return {
           userId: u.id,
           name: u.name,
@@ -623,7 +633,7 @@ export default function DashboardPage() {
         };
       })
       .sort((a, b) => b.dealsWonValue - a.dealsWonValue);
-  }, [isAdminView, users, filteredProposals, filteredDeals]);
+  }, [isAdminView, users, filteredProposals, filteredDeals, ownerFilter, teamFilter, regionFilter, dateFrom, dateTo]);
 
   const leastPerforming = useMemo(() => {
     if (!teamPerformance.length) return null;
@@ -1408,6 +1418,7 @@ export default function DashboardPage() {
               <div>
                 <p className="typo-section-title">Team performance</p>
                 <p className="text-[11px] text-muted-foreground">
+                  {dateFrom ? "In selected period · " : ""}
                   Least:{" "}
                   <span className="font-medium text-foreground">
                     {leastPerforming
