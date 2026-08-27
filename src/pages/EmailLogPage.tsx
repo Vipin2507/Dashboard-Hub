@@ -3,7 +3,7 @@ import { useAppStore } from '@/store/useAppStore';
 import { useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getScope } from '@/lib/rbac';
-import { scopeNotificationsForUser } from '@/lib/scopeNotifications';
+import { scopeNotificationsForUser, notificationAudienceLabel } from '@/lib/scopeNotifications';
 import { apiUrl } from '@/lib/api';
 import { QK, LIVE_ENTITY_POLL_MS } from '@/lib/queryKeys';
 import { Card, CardContent } from '@/components/ui/card';
@@ -56,7 +56,7 @@ export default function EmailLogPage() {
                 <TableRow className="bg-muted/40">
                   <TableHead className="whitespace-nowrap text-xs">When</TableHead>
                   <TableHead className="text-xs">Type</TableHead>
-                  <TableHead className="text-xs">To</TableHead>
+                  <TableHead className="text-xs">Executive / To</TableHead>
                   <TableHead className="text-xs">Subject</TableHead>
                   <TableHead className="hidden text-xs md:table-cell">Entity</TableHead>
                 </TableRow>
@@ -72,7 +72,9 @@ export default function EmailLogPage() {
                         'border-muted-foreground/40 text-muted-foreground'
                       }`}>{n.type.replace(/_/g, ' ')}</Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{n.to}</TableCell>
+                    <TableCell className="text-xs font-medium">
+                      {notificationAudienceLabel(n, { users, proposals, deals })}
+                    </TableCell>
                     <TableCell className="text-xs">{n.subject}</TableCell>
                     <TableCell className="hidden font-mono-id md:table-cell">{n.entityId}</TableCell>
                   </TableRow>

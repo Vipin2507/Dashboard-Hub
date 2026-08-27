@@ -35,7 +35,7 @@ const STATUS_LABELS: Record<DeliveryStatus, string> = {
 const STATUS_BADGE: Record<DeliveryStatus, string> = {
   not_started: "border-border bg-muted/40 text-muted-foreground",
   in_progress: "border-primary/30 bg-primary/15 text-primary",
-  quality_check: "border-warning/30 bg-warning/15 text-warning-foreground",
+  quality_check: "border-warning/40 bg-warning/15 text-warning",
   final_approval: "border-info/30 bg-info/15 text-info",
   delivered: "border-success/30 bg-success/15 text-success",
 };

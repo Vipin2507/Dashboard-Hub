@@ -487,7 +487,7 @@ export function RenewalSubscriptionTracker() {
       value: summary?.expiring30 ?? 0,
       sub: "Needs outreach",
       icon: Bell,
-      iconColor: "text-warning-foreground",
+      iconColor: "text-warning",
       iconBg: "bg-warning/15",
     },
     {

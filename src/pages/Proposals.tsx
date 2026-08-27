@@ -136,7 +136,7 @@ const STATUS_PILL_TRIGGER: Record<StatusTone, string> = {
   muted: "border-border bg-muted/40 text-muted-foreground hover:bg-muted/60",
   info: "border-primary/30 bg-primary/15 text-primary hover:bg-primary/20",
   success: "border-success/30 bg-success/15 text-success hover:bg-success/20",
-  warning: "border-warning/30 bg-warning/15 text-warning-foreground hover:bg-warning/20",
+  warning: "border-warning/40 bg-warning/15 text-warning hover:bg-warning/20",
   danger: "border-destructive/30 bg-destructive/15 text-destructive hover:bg-destructive/20",
 };
 
@@ -220,7 +220,7 @@ function ProposalKPICards({
       sub: data.pending > 0 ? "Needs attention" : "None waiting",
       icon: Clock,
       iconBg: "bg-warning/15",
-      iconColor: "text-warning-foreground",
+      iconColor: "text-warning",
       badge: data.pending > 0,
     },
     {

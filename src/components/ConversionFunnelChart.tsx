@@ -9,7 +9,7 @@ import type { ExecutiveDetailType, FunnelStep } from "@/types/executivePerforman
 const STEP_COLORS = [
   { bar: "bg-primary", track: "bg-primary/10", text: "text-primary", ring: "ring-primary/25" },
   { bar: "bg-info", track: "bg-info/10", text: "text-info", ring: "ring-info/25" },
-  { bar: "bg-warning", track: "bg-warning/15", text: "text-warning-foreground", ring: "ring-warning/30" },
+  { bar: "bg-warning", track: "bg-warning/15", text: "text-warning", ring: "ring-warning/30" },
   { bar: "bg-success", track: "bg-success/10", text: "text-success", ring: "ring-success/25" },
 ];
 

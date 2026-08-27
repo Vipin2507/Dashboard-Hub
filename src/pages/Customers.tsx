@@ -223,7 +223,15 @@ function filtersFromSearchParams(params: URLSearchParams): Partial<PersistedCust
 
 function loadInitialCustomerFilters(searchParams: URLSearchParams): PersistedCustomerFilters {
   if (hasAnySearchParam(searchParams, ["q", "status", "owner", "team", "region", "from", "to", "range", "tab"])) {
-    return { ...defaultCustomerFilters(), ...filtersFromSearchParams(searchParams) };
+    const fromUrl = filtersFromSearchParams(searchParams);
+    const base = defaultCustomerFilters();
+    // Navbar / deep-link `q` without an explicit range should search all time, not this month.
+    if (searchParams.get("q") != null && searchParams.get("range") == null && searchParams.get("from") == null) {
+      base.timeRangeFilter = "all";
+      base.dateFrom = "";
+      base.dateTo = "";
+    }
+    return { ...base, ...fromUrl };
   }
   return loadSessionFilters<PersistedCustomerFilters>(FILTER_SESSION_KEYS.customers) ?? defaultCustomerFilters();
 }
@@ -320,7 +328,14 @@ export default function Customers() {
     const team = searchParams.get("team");
     const region = searchParams.get("region");
     const tab = searchParams.get("tab");
-    if (q != null) setSearch(q);
+    if (q != null) {
+      setSearch(q);
+      if (!searchParams.get("range") && !searchParams.get("from") && !searchParams.get("to")) {
+        setTimeRangeFilter("all");
+        setCustomFrom("");
+        setCustomTo("");
+      }
+    }
     if (status && STATUS_OPTIONS.some((s) => s.value === status)) setStatusFilter(status as CustomerStatus | "all");
     if (owner) setAssignedToFilter(owner);
     if (team) setTeamQueryFilter(team);

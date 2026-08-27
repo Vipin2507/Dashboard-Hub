@@ -481,9 +481,9 @@ export default function DashboardPage() {
   ];
 
   const kpiRow2 = [
-    { label: 'Pending approvals', value: String(pendingApprovals), sub: 'Proposals', icon: Clock, color: 'text-warning-foreground', iconBg: 'bg-warning/15', badge: 'amber' as const, path: '/proposals' as const, extra: { status: 'approval_pending' } },
+    { label: 'Pending approvals', value: String(pendingApprovals), sub: 'Proposals', icon: Clock, color: 'text-warning', iconBg: 'bg-warning/15', badge: 'amber' as const, path: '/proposals' as const, extra: { status: 'approval_pending' } },
     { label: 'Overdue invoices', value: String(overdueInvoices), sub: 'Unpaid', icon: AlertCircle, color: 'text-destructive', iconBg: 'bg-destructive/15', badge: 'red' as const, path: '/payments' as const, extra: {} },
-    { label: 'Expiring in 30d', value: String(expiringSubscriptions), sub: 'Subscriptions', icon: CalendarClock, color: 'text-warning-foreground', iconBg: 'bg-warning/15', badge: 'orange' as const, path: '/customers' as const, extra: {} },
+    { label: 'Expiring in 30d', value: String(expiringSubscriptions), sub: 'Subscriptions', icon: CalendarClock, color: 'text-warning', iconBg: 'bg-warning/15', badge: 'orange' as const, path: '/customers' as const, extra: {} },
     { label: 'Open tickets', value: String(openSupportTickets), sub: 'Support', icon: Ticket, color: 'text-muted-foreground', iconBg: 'bg-muted', path: '/customers' as const, extra: {} },
   ];
 

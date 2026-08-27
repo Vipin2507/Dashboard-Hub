@@ -226,7 +226,7 @@ export default function MastersPage() {
             value="—"
             sub="Sales goals"
             icon={Target}
-            iconColor="text-warning-foreground"
+            iconColor="text-warning"
             iconBg="bg-warning/15"
             active={sectionFilter === "targets"}
             onClick={() => setSectionFilter((s) => (s === "targets" ? "all" : "targets"))}

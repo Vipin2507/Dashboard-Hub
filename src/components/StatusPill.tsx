@@ -4,7 +4,7 @@ const TONE = {
   muted: "border-border bg-muted/40 text-muted-foreground",
   info: "border-primary/30 bg-primary/15 text-primary",
   success: "border-success/30 bg-success/15 text-success",
-  warning: "border-warning/30 bg-warning/15 text-warning-foreground",
+  warning: "border-warning/40 bg-warning/15 text-warning",
   danger: "border-destructive/30 bg-destructive/15 text-destructive",
 } as const;
 

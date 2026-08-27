@@ -5,9 +5,9 @@ import { Bell, CheckCheck, FileText, Handshake, IndianRupee, Building2 } from "l
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
-import { scopeNotificationsForUser } from "@/lib/scopeNotifications";
+import { scopeNotificationsForUser, notificationAudienceLabel } from "@/lib/scopeNotifications";
 import { useAppStore } from "@/store/useAppStore";
-import type { Notification } from "@/types";
+import type { Notification, User, Proposal, Deal } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -65,11 +65,17 @@ function inferHref(n: Notification): string | undefined {
   return undefined;
 }
 
-function mapNotification(n: Notification, readIds: Set<string>): UnifiedNotification {
+function mapNotification(
+  n: Notification,
+  readIds: Set<string>,
+  users: User[],
+  proposals: Proposal[],
+  deals: Deal[],
+): UnifiedNotification {
   return {
     id: n.id,
     title: n.subject,
-    message: n.to,
+    message: notificationAudienceLabel(n, { users, proposals, deals }),
     createdAt: n.at,
     isRead: readIds.has(n.id),
     entityType: inferEntityType(n),
@@ -156,12 +162,12 @@ export function NotificationBell() {
   const allNotifs = useMemo(() => {
     const byId = new Map<string, UnifiedNotification>();
     for (const n of scopedRaw) {
-      if (!byId.has(n.id)) byId.set(n.id, mapNotification(n, readIds));
+      if (!byId.has(n.id)) byId.set(n.id, mapNotification(n, readIds, users, proposals, deals));
     }
     return Array.from(byId.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [scopedRaw, readIds]);
+  }, [scopedRaw, readIds, users, proposals, deals]);
 
   const unread = useMemo(() => allNotifs.filter((n) => !n.isRead).slice(0, 40), [allNotifs]);
   const unreadCount = allNotifs.filter((n) => !n.isRead).length;

@@ -240,7 +240,7 @@ const DEAL_STAGE_VISUAL: StageVisual[] = [
   {
     key: "Negotiation",
     label: "Negotiation",
-    pillColor: "border-warning/30 bg-warning/15 text-warning-foreground",
+    pillColor: "border-warning/40 bg-warning/15 text-warning",
     dotColor: "bg-warning",
   },
   {

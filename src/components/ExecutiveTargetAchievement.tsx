@@ -26,7 +26,7 @@ function pctTone(pct: number, hasTarget: boolean) {
   if (!hasTarget) return "text-muted-foreground";
   if (pct >= 100) return "text-success";
   if (pct >= 70) return "text-primary";
-  return "text-warning-foreground";
+  return "text-warning";
 }
 
 function ProgressRing({ pct, color, label }: { pct: number; color: string; label: string }) {

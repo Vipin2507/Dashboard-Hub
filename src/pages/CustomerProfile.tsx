@@ -110,14 +110,14 @@ const STATUS_PILL: Record<string, string> = {
   active: "border-success/30 bg-success/15 text-success",
   inactive: "border-border bg-muted/40 text-muted-foreground",
   lead: "border-primary/30 bg-primary/15 text-primary",
-  churned: "border-warning/30 bg-warning/15 text-warning-foreground",
+  churned: "border-warning/40 bg-warning/15 text-warning",
   blacklisted: "border-destructive/30 bg-destructive/15 text-destructive",
 };
 
 const TICKET_PRIORITY_BADGE: Record<string, string> = {
   low: "border-border bg-muted/40 text-muted-foreground",
   medium: "border-primary/30 bg-primary/15 text-primary",
-  high: "border-warning/30 bg-warning/15 text-warning-foreground",
+  high: "border-warning/40 bg-warning/15 text-warning",
   critical: "border-destructive/30 bg-destructive/15 text-destructive",
 };
 

@@ -40,3 +40,48 @@ export function scopeNotificationsForUser(
     return false;
   });
 }
+
+/** Prefer executive/user display name over raw email for notification UI. */
+export function notificationAudienceLabel(
+  n: Notification,
+  opts: {
+    users: User[];
+    proposals?: Proposal[];
+    deals?: Deal[];
+  },
+): string {
+  const users = opts.users ?? [];
+  const uid = (n.userId || "").trim();
+  if (uid) {
+    const byId = users.find((u) => u.id === uid);
+    if (byId?.name?.trim()) return byId.name.trim();
+  }
+
+  const to = (n.to || "").trim();
+  if (to) {
+    const byEmail = users.find((u) => (u.email || "").trim().toLowerCase() === to.toLowerCase());
+    if (byEmail?.name?.trim()) return byEmail.name.trim();
+    const byId = users.find((u) => u.id === to);
+    if (byId?.name?.trim()) return byId.name.trim();
+  }
+
+  const proposal = opts.proposals?.find((p) => p.id === n.entityId);
+  if (proposal?.assignedToName?.trim()) return proposal.assignedToName.trim();
+  if (proposal?.assignedTo) {
+    const owner = users.find((u) => u.id === proposal.assignedTo);
+    if (owner?.name?.trim()) return owner.name.trim();
+  }
+
+  const deal = opts.deals?.find((d) => d.id === n.entityId);
+  if (deal?.ownerUserId) {
+    const owner = users.find((u) => u.id === deal.ownerUserId);
+    if (owner?.name?.trim()) return owner.name.trim();
+  }
+
+  // Generic system addresses — don't present as a person
+  if (/@(buildesk\.com|example\.com)$/i.test(to) || to === "system") {
+    return "System";
+  }
+
+  return to || "—";
+}

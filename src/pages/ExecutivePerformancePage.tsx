@@ -942,7 +942,7 @@ export default function ExecutivePerformancePage() {
         </FilterPanel>
 
         {data?.coverage?.notes?.length ? (
-          <div className="card-soft flex items-start gap-2 px-3 py-2.5 text-[11px] text-warning-foreground">
+          <div className="card-soft flex items-start gap-2 px-3 py-2.5 text-[11px] text-warning">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
             <div className="min-w-0 space-y-0.5">
               {data.coverage.notes.map((n) => (
@@ -1014,7 +1014,7 @@ export default function ExecutivePerformancePage() {
                 value={String(summary?.proposalsPending ?? 0)}
                 sub={summary?.proposalsPending ? "Awaiting approval" : "None waiting"}
                 icon={Clock}
-                iconColor="text-warning-foreground"
+                iconColor="text-warning"
                 iconBg="bg-warning/15"
                 onClick={() => openDetail("proposals_pending")}
               />
