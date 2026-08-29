@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS customers (
   city TEXT,
   email TEXT,
   primaryPhone TEXT,
+  -- Comma-separated CC emails for automations
+  secondaryEmails TEXT,
   status TEXT NOT NULL DEFAULT 'active',
   createdAt TEXT NOT NULL,
   salesExecutive TEXT,

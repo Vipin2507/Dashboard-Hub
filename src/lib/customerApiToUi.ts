@@ -50,6 +50,7 @@ export function mapApiCustomerRowToCustomer(row: CustomersApiListRow, ctx: MapCu
     pan: undefined,
     industry: undefined,
     website: undefined,
+    secondaryEmails: row.secondaryEmails?.trim() || undefined,
     address: {
       city: row.city ?? undefined,
       state: row.state ?? undefined,
@@ -142,6 +143,7 @@ export function mergeApiCustomerRowToCustomer(
     companyName: fromApi.companyName,
     status: fromApi.status,
     gstin: fromApi.gstin,
+    secondaryEmails: fromApi.secondaryEmails ?? existing.secondaryEmails,
     regionId: fromApi.regionId,
     regionName: fromApi.regionName,
     teamId: fromApi.teamId,

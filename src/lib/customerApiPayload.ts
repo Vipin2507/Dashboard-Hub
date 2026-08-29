@@ -18,6 +18,7 @@ export function toApiCustomerPayload(customer: Customer, users: User[]) {
     city: customer.address?.city ?? null,
     email,
     primaryPhone,
+    secondaryEmails: customer.secondaryEmails?.trim() || null,
     status: customer.status,
     salesExecutive: users.find((u) => u.id === customer.assignedTo)?.name ?? customer.assignedToName ?? null,
     accountManager: null,

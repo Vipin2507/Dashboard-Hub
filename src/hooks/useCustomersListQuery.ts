@@ -15,6 +15,7 @@ export type CustomersApiListRow = {
   city?: string | null;
   email?: string | null;
   primaryPhone?: string | null;
+  secondaryEmails?: string | null;
   status?: string | null;
   createdAt?: string;
   salesExecutive?: string | null;

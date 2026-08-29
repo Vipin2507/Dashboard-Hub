@@ -826,6 +826,7 @@ app.post("/api/customers", (req, res) => {
     city,
     email,
     primaryPhone,
+    secondaryEmails,
     status,
     salesExecutive,
     accountManager,
@@ -863,6 +864,7 @@ app.post("/api/customers", (req, res) => {
     city: city || null,
     email: email || null,
     primaryPhone: primaryPhone || null,
+    secondaryEmails: typeof secondaryEmails === "string" && secondaryEmails.trim() ? secondaryEmails.trim() : null,
     status: status || "active",
     createdAt: new Date().toISOString(),
     salesExecutive: salesExecutive || null,
@@ -873,8 +875,8 @@ app.post("/api/customers", (req, res) => {
   };
 
   db.prepare(`
-    INSERT INTO customers (id, leadId, name, customerName, companyName, state, gstin, regionId, city, email, primaryPhone, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks, tags)
-    VALUES (@id, @leadId, @name, @customerName, @companyName, @state, @gstin, @regionId, @city, @email, @primaryPhone, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks, @tags)
+    INSERT INTO customers (id, leadId, name, customerName, companyName, state, gstin, regionId, city, email, primaryPhone, secondaryEmails, status, createdAt, salesExecutive, accountManager, deliveryExecutive, remarks, tags)
+    VALUES (@id, @leadId, @name, @customerName, @companyName, @state, @gstin, @regionId, @city, @email, @primaryPhone, @secondaryEmails, @status, @createdAt, @salesExecutive, @accountManager, @deliveryExecutive, @remarks, @tags)
   `).run(customer);
 
   broadcast({ type: "change", entity: "customers", action: "created", id: customer.id });
@@ -2291,6 +2293,7 @@ app.put("/api/customers/:id", (req, res) => {
     city,
     email,
     primaryPhone,
+    secondaryEmails,
     status,
     salesExecutive,
     accountManager,
@@ -2326,6 +2329,9 @@ app.put("/api/customers/:id", (req, res) => {
     ...(city !== undefined && { city }),
     ...(email !== undefined && { email }),
     ...(primaryPhone !== undefined && { primaryPhone }),
+    ...(secondaryEmails !== undefined && {
+      secondaryEmails: typeof secondaryEmails === "string" && secondaryEmails.trim() ? secondaryEmails.trim() : null,
+    }),
     ...(status !== undefined && { status }),
     ...(salesExecutive !== undefined && { salesExecutive }),
     ...(accountManager !== undefined && { accountManager }),
@@ -2344,7 +2350,7 @@ app.put("/api/customers/:id", (req, res) => {
   db.prepare(`
     UPDATE customers SET
       leadId=@leadId, name=@name, customerName=@customerName, companyName=@companyName, state=@state, gstin=@gstin, regionId=@regionId, city=@city,
-      email=@email, primaryPhone=@primaryPhone, status=@status, salesExecutive=@salesExecutive,
+      email=@email, primaryPhone=@primaryPhone, secondaryEmails=@secondaryEmails, status=@status, salesExecutive=@salesExecutive,
       accountManager=@accountManager, deliveryExecutive=@deliveryExecutive, remarks=@remarks, tags=@tags
     WHERE id=@id
   `).run(updated);

@@ -509,12 +509,14 @@ function enrichAutomationContext(ctx: AutomationContext): AutomationContext {
     const customer = customers.find((c) => c.id === next.customerId);
     if (customer) {
       const r = primaryReachabilityFromUnknown(customer);
+      const secondary =
+        (next.customerSecondaryEmails ?? customer.secondaryEmails ?? "").trim() || undefined;
       next = {
         ...next,
         customerName: next.customerName ?? customer.customerName ?? customer.companyName ?? r.name,
         customerPhone: next.customerPhone ?? r.phone,
         customerEmail: next.customerEmail ?? r.email,
-        customerSecondaryEmails: next.customerSecondaryEmails ?? customer.secondaryEmails,
+        customerSecondaryEmails: secondary,
       };
     }
   }

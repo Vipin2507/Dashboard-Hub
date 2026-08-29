@@ -42,6 +42,16 @@ function migrateCustomerNameSchema() {
 }
 migrateCustomerNameSchema();
 
+/** Optional secondaryEmails (CC) on customers. */
+function migrateCustomerSecondaryEmailsSchema() {
+  const cols = db.prepare("PRAGMA table_info(customers)").all();
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("secondaryEmails")) {
+    db.exec(`ALTER TABLE customers ADD COLUMN secondaryEmails TEXT`);
+  }
+}
+migrateCustomerSecondaryEmailsSchema();
+
 /** Sales targets table for executive performance (CREATE TABLE in schema for new installs). */
 function migrateExecutiveSalesTargetsSchema() {
   db.exec(`

@@ -1081,6 +1081,17 @@ export default function CustomerProfile() {
                         </CardContent>
                       </Card>
                     ))}
+                    {customer.secondaryEmails?.trim() ? (
+                      <div className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Secondary emails (CC)
+                        </p>
+                        <p className="mt-1 text-sm text-foreground break-all">{customer.secondaryEmails.trim()}</p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          Included on customer email automations
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </CardContent>
               </Card>
