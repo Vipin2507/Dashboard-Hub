@@ -19,6 +19,7 @@ import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import { FilterPanel } from "@/components/FilterPanel";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
+import { persistCustomerUpdate, patchCustomerRowInStore } from "@/lib/customerPersistence";
 import {
   isProposalWon,
   normalizeProposalStatus,
@@ -340,6 +341,45 @@ function AdminProposalStatusSelect({
   );
 }
 
+function AdminProposalOwnerSelect({
+  assignedTo,
+  options,
+  onChange,
+  disabled,
+}: {
+  assignedTo: string;
+  options: { id: string; name: string }[];
+  onChange: (nextUserId: string) => void;
+  disabled?: boolean;
+}) {
+  const value = options.some((o) => o.id === assignedTo) ? assignedTo : options[0]?.id;
+  return (
+    <Select
+      value={value}
+      disabled={disabled || options.length === 0}
+      onValueChange={(v) => {
+        if (v === assignedTo) return;
+        onChange(v);
+      }}
+    >
+      <SelectTrigger
+        className="h-8 min-w-[9rem] max-w-[12rem] gap-1 border-border bg-card px-2 text-xs font-medium shadow-none focus:ring-1 focus:ring-offset-0"
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Change proposal owner"
+      >
+        <SelectValue placeholder="Select owner" />
+      </SelectTrigger>
+      <SelectContent align="start" className="min-w-[12rem]">
+        {options.map((o) => (
+          <SelectItem key={o.id} value={o.id} className="text-xs">
+            {o.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 type PersistedProposalsFilters = {
   search: string;
   statusFilter: ProposalStatus | "all";
@@ -609,18 +649,54 @@ export default function Proposals() {
   const canReassign = me.role === "super_admin";
   const canAdminSetStatus = me.role === "super_admin";
 
+  const ownerOptions = useMemo(() => {
+    const reps = users.filter((u) => u.role === "sales_rep" || u.role === "sales_manager" || u.role === "super_admin");
+    const list = reps.length > 0 ? reps : users;
+    return [...list].sort((a, b) => a.name.localeCompare(b.name)).map((u) => ({ id: u.id, name: u.name }));
+  }, [users]);
+
   const changeAssignedTo = async (p: Proposal, nextUserId: string) => {
     if (!canReassign) return;
     const u = users.find((x) => x.id === nextUserId);
     if (!u) return;
-    await updateProposal(p.id, {
-      assignedTo: u.id,
-      assignedToName: u.name,
-      teamId: u.teamId,
-      regionId: u.regionId,
-    });
-    await queryClient.invalidateQueries({ queryKey: QK.proposals() });
-    toast({ title: "Assigned updated", description: `${p.proposalNumber} → ${u.name}` });
+    if (u.id === p.assignedTo) return;
+    try {
+      await updateProposal(p.id, {
+        assignedTo: u.id,
+        assignedToName: u.name,
+        teamId: u.teamId,
+        regionId: u.regionId,
+      });
+
+      // Keep the linked customer's owner in sync when admin reassigns from the list.
+      const cust = customers.find((c) => c.id === p.customerId);
+      if (cust && cust.assignedTo !== u.id) {
+        const nextCustomer = {
+          ...cust,
+          assignedTo: u.id,
+          assignedToName: u.name,
+          teamId: u.teamId,
+          regionId: u.regionId,
+          regionName: regions.find((r) => r.id === u.regionId)?.name ?? cust.regionName,
+        };
+        try {
+          const row = await persistCustomerUpdate(nextCustomer, users);
+          patchCustomerRowInStore(row, { regions, users, me });
+        } catch {
+          // Proposal owner still saved; customer sync is best-effort.
+        }
+      }
+
+      await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+      void queryClient.invalidateQueries({ queryKey: QK.customers() });
+      toast({ title: "Owner updated", description: `${p.proposalNumber} → ${u.name}` });
+    } catch (e) {
+      toast({
+        title: "Failed to update owner",
+        description: String(e),
+        variant: "destructive",
+      });
+    }
   };
 
   const canCreate = can(me.role, "proposals", "create");
@@ -1437,6 +1513,19 @@ export default function Proposals() {
                                 <ProposalStatusBadge status={p.status} />
                               </button>
                             )}
+                            {canReassign ? (
+                              <AdminProposalOwnerSelect
+                                assignedTo={p.assignedTo}
+                                options={
+                                  ownerOptions.some((o) => o.id === p.assignedTo)
+                                    ? ownerOptions
+                                    : [{ id: p.assignedTo, name: p.assignedToName || "Owner" }, ...ownerOptions]
+                                }
+                                onChange={(nextId) => void changeAssignedTo(p, nextId)}
+                              />
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground">{p.assignedToName || "—"}</span>
+                            )}
                             <span className="text-xs font-semibold tabular-nums">{formatINR(proposalValueExclGst(p))}</span>
                           </div>
                         </div>
@@ -1452,6 +1541,7 @@ export default function Proposals() {
                       <TableRow>
                         <TableHead>Proposal</TableHead>
                         <TableHead>Company</TableHead>
+                        <TableHead>Owner</TableHead>
                         <TableHead className="text-right">Value excl. GST</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -1462,6 +1552,9 @@ export default function Proposals() {
                     <TableBody>
                       {pageItems.map((p) => {
                         const cust = customers.find((c) => c.id === p.customerId);
+                        const ownerSelectOptions = ownerOptions.some((o) => o.id === p.assignedTo)
+                          ? ownerOptions
+                          : [{ id: p.assignedTo, name: p.assignedToName || "Owner" }, ...ownerOptions];
                         return (
                           <TableRow key={p.id}>
                             <TableCell>
@@ -1484,7 +1577,17 @@ export default function Proposals() {
                               >
                                 {cust?.companyName || cust?.customerName || p.customerName || "—"}
                               </button>
-                              <p className="truncate text-[11px] text-muted-foreground">{p.assignedToName}</p>
+                            </TableCell>
+                            <TableCell className="max-w-[12rem]">
+                              {canReassign ? (
+                                <AdminProposalOwnerSelect
+                                  assignedTo={p.assignedTo}
+                                  options={ownerSelectOptions}
+                                  onChange={(nextId) => void changeAssignedTo(p, nextId)}
+                                />
+                              ) : (
+                                <span className="truncate text-sm">{p.assignedToName || "—"}</span>
+                              )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
                               {formatINR(proposalValueExclGst(p))}
