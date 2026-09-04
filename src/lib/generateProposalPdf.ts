@@ -564,7 +564,7 @@ function renderCoverLetterPage(
   addPageNumber(doc, pageNum);
 }
 
-const ROWS_PER_COMMERCIAL_PAGE = 10;
+const ROWS_PER_COMMERCIAL_PAGE = 8;
 
 function chunkLineItems<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -724,56 +724,56 @@ function renderCommercialSection(
       2: { halign: "center", cellWidth: L.comColSvc },
       3: { halign: "right", cellWidth: L.comColCost },
     },
-    margin: { left: L.marginLeft, right: L.marginRight },
+    margin: { left: L.marginLeft, right: L.marginRight, bottom: 22 },
   });
 
   const isLastCommercialPage = chunkIndex === totalChunks - 1;
   let afterY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
+  let usedPageNum = currentPageNum;
 
   if (proposal.customerNotes && isLastCommercialPage) {
     const noteY = afterY + 6;
+    // If note won't fit, move it (and terms) to a fresh page.
+    if (noteY > L.footerBreakY - 20) {
+      addPageNumber(doc, usedPageNum);
+      doc.addPage();
+      usedPageNum += 1;
+      addPageHeader(doc);
+      afterY = L.contentStartY;
+    }
+    const drawNoteY = afterY + 6;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(FONT.tableBody);
     doc.setTextColor(BLUE[0], BLUE[1], BLUE[2]);
-    doc.text("NOTE:", L.marginLeft, noteY);
+    doc.text("NOTE:", L.marginLeft, drawNoteY);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(50, 50, 50);
-    afterY = renderParagraph(doc, proposal.customerNotes, L.marginLeft, noteY + 5, L.contentWidth, 5, FONT.bodySmall);
+    afterY = renderParagraph(doc, proposal.customerNotes, L.marginLeft, drawNoteY + 5, L.contentWidth, 5, FONT.bodySmall);
   }
 
-  // Terms should start immediately after the product table (or NOTE), not on a separate page.
+  // Terms: keep on the commercial page when space allows; otherwise continue on following pages
+  // (never drop bullets that don't fit under a tall product table).
   if (isLastCommercialPage) {
     const terms = getTermsForProposal(proposal);
-    const footerLimitY = 276;
+    const footerLimitY = L.footerBreakY;
+    const fontSize = 9.5;
+    const lineHeight = 5.1;
+    const itemGap = 2.0;
+    const titleGap = 8;
+    const minBlockForHeading = titleGap + lineHeight + 4;
 
-    const chooseLayout = () => {
-      const candidates = [
-        { fontSize: 9.5, lineHeight: 5.1, itemGap: 2.0, titleGap: 8 },
-        { fontSize: 9.0, lineHeight: 4.9, itemGap: 1.6, titleGap: 7 },
-        { fontSize: 8.6, lineHeight: 4.7, itemGap: 1.4, titleGap: 6 },
-      ];
-      const estimate = (c: (typeof candidates)[number], startY: number) => {
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(c.fontSize);
-        let h = 0;
-        // Title line + gap to bullets
-        h += c.titleGap + 2;
-        for (const item of terms) {
-          const lines = doc.splitTextToSize(`• ${item}`, L.contentWidth - 4);
-          const linesCount = Math.max(1, lines.length);
-          h += linesCount * c.lineHeight + c.itemGap;
-        }
-        return startY + h;
-      };
-
-      const titleY = afterY + 6;
-      for (const c of candidates) {
-        if (estimate(c, titleY) <= footerLimitY) return { ...c, titleY };
-      }
-      return { ...candidates[candidates.length - 1], titleY };
+    const startTermsOnNewPage = () => {
+      addPageNumber(doc, usedPageNum);
+      doc.addPage();
+      usedPageNum += 1;
+      addPageHeader(doc);
+      return L.contentStartY;
     };
 
-    const layout = chooseLayout();
+    let titleY = afterY + 6;
+    if (titleY + minBlockForHeading > footerLimitY) {
+      titleY = startTermsOnNewPage();
+    }
 
     const renderTermsHeading = (y: number) => {
       doc.setFont("helvetica", "bold");
@@ -781,39 +781,53 @@ function renderCommercialSection(
       doc.setTextColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
       doc.text("Terms & Conditions", L.marginLeft, y);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(layout.fontSize);
+      doc.setFontSize(fontSize);
       doc.setTextColor(40, 40, 40);
-      return y + layout.titleGap;
+      return y + titleGap;
     };
 
-    let y = renderTermsHeading(layout.titleY);
+    let y = renderTermsHeading(titleY);
 
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(layout.fontSize);
+    doc.setFontSize(fontSize);
     doc.setTextColor(40, 40, 40);
 
-    // Render all points on this page (no continuation page).
     for (const item of terms) {
       const firstLine = `• ${item}`;
       const lines = doc.splitTextToSize(firstLine, L.contentWidth - 4);
-      const itemHeight = Math.max(1, lines.length) * layout.lineHeight + layout.itemGap;
-      if (y + itemHeight > footerLimitY) break;
+      const itemHeight = Math.max(1, lines.length) * lineHeight + itemGap;
+
+      if (y + itemHeight > footerLimitY) {
+        y = startTermsOnNewPage();
+        y = renderTermsHeading(y);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(fontSize);
+        doc.setTextColor(40, 40, 40);
+      }
 
       if (lines.length) {
         doc.text(lines[0], L.marginLeft, y);
         if (lines.length > 1) {
           for (let i = 1; i < lines.length; i++) {
-            y += layout.lineHeight;
+            // Wrap long bullets across pages if needed
+            if (y + lineHeight > footerLimitY) {
+              y = startTermsOnNewPage();
+              y = renderTermsHeading(y);
+              doc.setFont("helvetica", "normal");
+              doc.setFontSize(fontSize);
+              doc.setTextColor(40, 40, 40);
+            }
+            y += lineHeight;
             doc.text(lines[i], L.marginLeft + 3, y);
           }
         }
       }
-      y += layout.lineHeight + layout.itemGap;
+      y += lineHeight + itemGap;
     }
   }
 
-  addPageNumber(doc, currentPageNum);
-  return currentPageNum;
+  addPageNumber(doc, usedPageNum);
+  return usedPageNum;
 }
 
 export const DEFAULT_TERMS = [
