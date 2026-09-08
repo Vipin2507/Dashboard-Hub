@@ -17,6 +17,12 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
+import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import {
+  isProposalBelowMinimumTotal,
+  proposalMinimumTotalMessage,
+  PROPOSAL_OUTBOUND_STATUSES,
+} from "@/lib/proposalMinValue";
 import { FilterPanel } from "@/components/FilterPanel";
 import { dealAmountsFromProposal } from "@/lib/dealAmountsFromProposal";
 import { persistCustomerUpdate, patchCustomerRowInStore } from "@/lib/customerPersistence";
@@ -736,6 +742,8 @@ export default function Proposals() {
 
   const duplicateProposal = async (p: Proposal) => {
     const now = new Date().toISOString();
+    const setup = MANDATORY_SETUP_CONFIGURATION_COST;
+    const grandTotal = Number(p.subtotal) + Number(p.totalTax) + setup;
     const copy: Proposal = {
       ...p,
       id: "p" + Math.random().toString(36).slice(2, 10),
@@ -746,14 +754,29 @@ export default function Proposals() {
       approvedBy: undefined,
       approvedAt: undefined,
       sentAt: undefined,
+      setupDeploymentCharges: setup,
+      grandTotal,
+      finalQuoteValue: p.finalQuoteValue != null ? grandTotal : undefined,
       createdAt: now,
       updatedAt: now,
       createdBy: me.id,
     };
-    await useAppStore.getState().addProposal(copy);
-    toast({ title: "Duplicated", description: `${copy.proposalNumber} created as Shared.` });
-    await queryClient.invalidateQueries({ queryKey: QK.proposals() });
-    await queryClient.refetchQueries({ queryKey: QK.proposals() });
+    if (isProposalBelowMinimumTotal(copy)) {
+      toast({ title: "Total too low", description: proposalMinimumTotalMessage(copy), variant: "destructive" });
+      return;
+    }
+    try {
+      await useAppStore.getState().addProposal(copy);
+      toast({ title: "Duplicated", description: `${copy.proposalNumber} created as Shared.` });
+      await queryClient.invalidateQueries({ queryKey: QK.proposals() });
+      await queryClient.refetchQueries({ queryKey: QK.proposals() });
+    } catch (e) {
+      toast({
+        title: "Duplicate failed",
+        description: e instanceof Error ? e.message : "Could not duplicate proposal",
+        variant: "destructive",
+      });
+    }
   };
 
   const stateCustomerId = (location.state as { customerId?: string; detailId?: string } | null)?.customerId;
@@ -982,6 +1005,10 @@ export default function Proposals() {
   const setStatusDirect = (p: Proposal, next: ProposalStatus) => {
     const current = normalizeProposalStatus(p.status);
     if (current === next) return;
+    if (PROPOSAL_OUTBOUND_STATUSES.has(next) && isProposalBelowMinimumTotal(p)) {
+      toast({ title: "Total too low", description: proposalMinimumTotalMessage(p), variant: "destructive" });
+      return;
+    }
     void (async () => {
       try {
         await updateProposal(p.id, { status: next });
@@ -994,7 +1021,7 @@ export default function Proposals() {
       } catch (e) {
         toast({
           title: "Failed to update status",
-          description: String(e),
+          description: e instanceof Error ? e.message : String(e),
           variant: "destructive",
         });
       }
@@ -1047,6 +1074,10 @@ export default function Proposals() {
             <DropdownMenuItem
               className="cursor-pointer"
               onClick={async () => {
+                if (isProposalBelowMinimumTotal(p)) {
+                  toast({ title: "Total too low", description: proposalMinimumTotalMessage(p), variant: "destructive" });
+                  return;
+                }
                 try {
                   await submitForApprovalAction(p.id);
                   await queryClient.invalidateQueries({ queryKey: QK.proposals() });
@@ -1133,12 +1164,30 @@ export default function Proposals() {
                       markWon(p.id);
                       return;
                     }
-                    updateProposal(p.id, { status: st });
-                    void queryClient.invalidateQueries({ queryKey: QK.proposals() });
-                    toast({
-                      title: "Status updated",
-                      description: `${p.proposalNumber} → ${st.replace(/_/g, " ")}`,
-                    });
+                    if (PROPOSAL_OUTBOUND_STATUSES.has(st) && isProposalBelowMinimumTotal(p)) {
+                      toast({
+                        title: "Total too low",
+                        description: proposalMinimumTotalMessage(p),
+                        variant: "destructive",
+                      });
+                      return;
+                    }
+                    void updateProposal(p.id, { status: st }).then(
+                      () => {
+                        void queryClient.invalidateQueries({ queryKey: QK.proposals() });
+                        toast({
+                          title: "Status updated",
+                          description: `${p.proposalNumber} → ${st.replace(/_/g, " ")}`,
+                        });
+                      },
+                      (e: unknown) => {
+                        toast({
+                          title: "Status update failed",
+                          description: e instanceof Error ? e.message : "Try again",
+                          variant: "destructive",
+                        });
+                      },
+                    );
                   }}
                 >
                   {st === "sent" ? <Send className="mr-2 h-4 w-4" /> : null}
@@ -1156,13 +1205,34 @@ export default function Proposals() {
           <DropdownMenuSeparator />
           {canMenu.sendEmail && (
             <>
-              <DropdownMenuItem className="cursor-pointer" onClick={() => setSendId(p.id)}>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => {
+                  if (isProposalBelowMinimumTotal(p)) {
+                    toast({
+                      title: "Total too low",
+                      description: proposalMinimumTotalMessage(p),
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  setSendId(p.id);
+                }}
+              >
                 <Send className="mr-2 h-4 w-4" />
                 Send via Email
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
                 onClick={() => {
+                  if (isProposalBelowMinimumTotal(p)) {
+                    toast({
+                      title: "Total too low",
+                      description: proposalMinimumTotalMessage(p),
+                      variant: "destructive",
+                    });
+                    return;
+                  }
                   setSharePdfId(p.id);
                   const cust = useAppStore.getState().customers.find((c) => c.id === p.customerId);
                   setSharePdfPhone(cust?.primaryPhone || "");
@@ -1824,6 +1894,14 @@ export default function Proposals() {
                 if (!sharePdfId) return;
                 const p = proposals.find((x) => x.id === sharePdfId);
                 if (!p) return;
+                if (isProposalBelowMinimumTotal(p)) {
+                  toast({
+                    title: "Total too low",
+                    description: proposalMinimumTotalMessage(p),
+                    variant: "destructive",
+                  });
+                  return;
+                }
 
                 try {
                   setSharePdfLoading(true);

@@ -7,6 +7,7 @@ import { triggerAutomation } from "@/lib/automationService";
 import { normalizeDealStatus } from "@/lib/dealStatus";
 import { persistProductLinesFromProposal } from "@/lib/productLineSync";
 import { useAppStore } from "@/store/useAppStore";
+import { isProposalBelowMinimumTotal, proposalMinimumTotalMessage } from "@/lib/proposalMinValue";
 import type { Deal, Proposal } from "@/types";
 
 async function loadProposal(proposalId: string): Promise<Proposal> {
@@ -23,6 +24,9 @@ export function useSubmitProposalForApproval() {
   return useMutation({
     mutationFn: async (proposalId: string) => {
       const p = await loadProposal(proposalId);
+      if (isProposalBelowMinimumTotal(p)) {
+        throw new Error(proposalMinimumTotalMessage(p));
+      }
       const updated: Proposal = {
         ...p,
         status: "approval_pending",
@@ -175,6 +179,9 @@ export function useSendProposal() {
   return useMutation({
     mutationFn: async (proposalId: string) => {
       const p = await loadProposal(proposalId);
+      if (isProposalBelowMinimumTotal(p)) {
+        throw new Error(proposalMinimumTotalMessage(p));
+      }
       const now = new Date().toISOString();
       const updated: Proposal = {
         ...p,

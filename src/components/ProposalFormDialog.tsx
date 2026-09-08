@@ -34,6 +34,16 @@ import { useAppStore } from "@/store/useAppStore";
 import { formatINR, can, getScope, visibleWithScope } from "@/lib/rbac";
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
+import {
+  MANDATORY_SETUP_CONFIGURATION_COST,
+  MANDATORY_SETUP_CONFIGURATION_LABEL,
+} from "@/lib/proposalSetupCharge";
+import {
+  isProposalBelowMinimumTotal,
+  MIN_PROPOSAL_TOTAL_VALUE,
+  proposalMinimumTotalMessage,
+  PROPOSAL_OUTBOUND_STATUSES,
+} from "@/lib/proposalMinValue";
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
@@ -118,7 +128,7 @@ export function ProposalFormDialog({
   const [customerNotes, setCustomerNotes] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [lineItems, setLineItems] = useState<ProposalLineItem[]>([]);
-  const [setupDeploymentCharges, setSetupDeploymentCharges] = useState<number>(0);
+  const [setupDeploymentCharges, setSetupDeploymentCharges] = useState<number>(MANDATORY_SETUP_CONFIGURATION_COST);
   const [overrideFinal, setOverrideFinal] = useState(false);
   const [finalQuoteValue, setFinalQuoteValue] = useState("");
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
@@ -136,13 +146,20 @@ export function ProposalFormDialog({
   /** Save & send is restricted to Super Admin only (direct customer send from the form). */
   const canSaveAndSend = me.role === "super_admin";
 
+  const isNewProposal = !editingProposal;
+  /** New proposals always carry the locked mandatory setup charge. */
+  const setupChargesLocked = isNewProposal;
+  const effectiveSetupCharges = setupChargesLocked
+    ? MANDATORY_SETUP_CONFIGURATION_COST
+    : Number(setupDeploymentCharges) || 0;
+
   const totals = useMemo(() => {
     const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
     const totalDiscount = lineItems.reduce((s, li) => s + li.qty * li.unitPrice * (li.discount / 100), 0);
     const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
-    const grandTotal = subtotal + totalTax + (Number(setupDeploymentCharges) || 0);
+    const grandTotal = subtotal + totalTax + effectiveSetupCharges;
     return { subtotal, totalDiscount, totalTax, grandTotal };
-  }, [lineItems, setupDeploymentCharges]);
+  }, [lineItems, effectiveSetupCharges]);
 
   const monthYear = useMemo(() => {
     const d = titleAutoCreatedAt ?? new Date();
@@ -293,14 +310,14 @@ export function ProposalFormDialog({
       status: editingProposal?.status ?? status ?? "shared",
       validUntil,
       lineItems,
-      setupDeploymentCharges: Number(setupDeploymentCharges) || 0,
+      setupDeploymentCharges: effectiveSetupCharges,
       subtotal: totals.subtotal,
       totalDiscount: totals.totalDiscount,
       totalTax: totals.totalTax,
       grandTotal: totals.grandTotal,
       finalQuoteValue: overrideFinal ? value : undefined,
       versionHistory: liveProposal?.versionHistory ?? [
-        { version: 1, createdAt: now, createdBy: me.id, lineItems, setupDeploymentCharges: Number(setupDeploymentCharges) || 0, subtotal: totals.subtotal, totalDiscount: totals.totalDiscount, totalTax: totals.totalTax, grandTotal: totals.grandTotal },
+        { version: 1, createdAt: now, createdBy: me.id, lineItems, setupDeploymentCharges: effectiveSetupCharges, subtotal: totals.subtotal, totalDiscount: totals.totalDiscount, totalTax: totals.totalTax, grandTotal: totals.grandTotal },
       ],
       currentVersion: liveProposal?.currentVersion ?? 1,
       notes: internalNotes || undefined,
@@ -373,6 +390,17 @@ export function ProposalFormDialog({
       return;
     }
     const payload = buildProposal();
+    if (!editingProposal && isProposalBelowMinimumTotal(payload)) {
+      toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
+      return;
+    }
+    if (editingProposal) {
+      const live = proposals.find((p) => p.id === editingProposal.id) ?? editingProposal;
+      if (PROPOSAL_OUTBOUND_STATUSES.has(String(live.status)) && isProposalBelowMinimumTotal(payload)) {
+        toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
+        return;
+      }
+    }
     try {
       if (editingProposal) {
         const live = proposals.find((p) => p.id === editingProposal.id) ?? editingProposal;
@@ -413,6 +441,10 @@ export function ProposalFormDialog({
       return;
     }
     const payload = buildProposal();
+    if (isProposalBelowMinimumTotal(payload)) {
+      toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
+      return;
+    }
     try {
       if (editingProposal) {
         await updateProposal(editingProposal.id, { ...payload, status: "draft" });
@@ -451,6 +483,10 @@ export function ProposalFormDialog({
       return;
     }
     const payload = buildProposal();
+    if (isProposalBelowMinimumTotal(payload)) {
+      toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
+      return;
+    }
     try {
       if (editingProposal) {
         // Super Admin Save & send is a content/status correction — do not append version history.
@@ -508,7 +544,7 @@ export function ProposalFormDialog({
       setCustomerNotes("");
       setInternalNotes("");
       setLineItems([]);
-      setSetupDeploymentCharges(0);
+      setSetupDeploymentCharges(MANDATORY_SETUP_CONFIGURATION_COST);
       setOverrideFinal(false);
       setFinalQuoteValue("");
       setPdfScope("end_to_end");
@@ -744,23 +780,45 @@ export function ProposalFormDialog({
                     <div className="flex justify-between"><span>Deal Value (Excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
                     <div className="flex justify-between"><span>Total Discount</span><span className="font-mono">-{formatINR(totals.totalDiscount)}</span></div>
                     <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
-                    <div className="flex justify-between"><span>Setup &amp; Deployment Charges</span><span className="font-mono">{formatINR(Number(setupDeploymentCharges) || 0)}</span></div>
+                    <div className="flex justify-between"><span>{MANDATORY_SETUP_CONFIGURATION_LABEL}</span><span className="font-mono">{formatINR(effectiveSetupCharges)}</span></div>
                     <div className="flex justify-between font-medium"><span>Deal Value (Incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
+                    {isProposalBelowMinimumTotal({
+                      grandTotal: totals.grandTotal,
+                      finalQuoteValue: overrideFinal && finalQuoteValue ? Number(finalQuoteValue) : undefined,
+                    }) ? (
+                      <p className="pt-1 text-[11px] text-destructive">
+                        Minimum total to create or share: ₹{MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")}.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div className="space-y-2">
-                  <Label>Setup &amp; Deployment Charges</Label>
-                  <NumericInput
-                    className="h-10"
-                    min={0}
-                    emptyOnBlur={0}
-                    value={setupDeploymentCharges}
-                    onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
-                  />
-                  <p className="text-xs text-muted-foreground">Added to the final amount (default 0).</p>
+                  <Label>{MANDATORY_SETUP_CONFIGURATION_LABEL}</Label>
+                  {setupChargesLocked ? (
+                    <>
+                      <Input
+                        className="h-10 bg-muted/40 font-mono tabular-nums"
+                        value={formatINR(MANDATORY_SETUP_CONFIGURATION_COST)}
+                        readOnly
+                        disabled
+                      />
+                      <p className="text-xs text-muted-foreground">Mandatory on all new proposals — not editable.</p>
+                    </>
+                  ) : (
+                    <>
+                      <NumericInput
+                        className="h-10"
+                        min={0}
+                        emptyOnBlur={0}
+                        value={setupDeploymentCharges}
+                        onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                      />
+                      <p className="text-xs text-muted-foreground">Added to the final amount.</p>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -955,14 +1013,25 @@ export function ProposalFormDialog({
                   <div className="grid gap-3 rounded-md border border-border p-2.5 sm:grid-cols-[minmax(0,1fr)_12rem]">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div className="min-w-0 space-y-0.5">
-                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Setup &amp; deployment</Label>
-                        <NumericInput
-                          className="h-9"
-                          min={0}
-                          emptyOnBlur={0}
-                          value={setupDeploymentCharges}
-                          onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
-                        />
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {MANDATORY_SETUP_CONFIGURATION_LABEL}
+                        </Label>
+                        {setupChargesLocked ? (
+                          <Input
+                            className="h-9 bg-muted/40 font-mono text-sm tabular-nums"
+                            value={formatINR(MANDATORY_SETUP_CONFIGURATION_COST)}
+                            readOnly
+                            disabled
+                          />
+                        ) : (
+                          <NumericInput
+                            className="h-9"
+                            min={0}
+                            emptyOnBlur={0}
+                            value={setupDeploymentCharges}
+                            onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                          />
+                        )}
                       </div>
                       {canOverride && (
                         <div className="min-w-0 space-y-0.5">

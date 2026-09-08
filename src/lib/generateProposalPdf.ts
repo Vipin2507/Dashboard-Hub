@@ -618,7 +618,7 @@ function renderCommercialSection(
   if (chunkIndex === totalChunks - 1 && setupCharges > 0) {
     tableBody.push([
       "",
-      "Setup & Deployment Charges",
+      "Setup & Configuration Cost",
       "-",
       formatINR(Math.round(setupCharges)),
     ]);
@@ -676,7 +676,7 @@ function renderCommercialSection(
     pushSummary("Discount", discSum);
     pushSummary("Taxable Amount", taxableSum);
     pushSummary("GST Total", gstSum);
-    if (setupCharges > 0) pushSummary("Setup & Deployment Charges", setupCharges);
+    if (setupCharges > 0) pushSummary("Setup & Configuration Cost", setupCharges);
     pushSummary("Grand Total (Incl. GST)", grandFromProposal);
     if ((proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue != null) {
       pushSummary("Final Quote Value", finalToShow);

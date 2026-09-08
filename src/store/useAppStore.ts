@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { resolveCustomerNotifyReachability } from '@/lib/customerNotifyContacts';
 import { triggerAutomation } from '@/lib/automationService';
+import {
+  assertProposalMeetsMinimumForCreate,
+  assertProposalMeetsMinimumForShare,
+  PROPOSAL_OUTBOUND_STATUSES,
+} from '@/lib/proposalMinValue';
 import type {
   Role,
   MeContext,
@@ -793,6 +798,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addProposal: async (proposal) => {
+    assertProposalMeetsMinimumForCreate(proposal);
     set(s => ({ proposals: [proposal, ...s.proposals] }));
     const me = get().me;
     const customer = get().customers.find(c => c.id === proposal.customerId);
@@ -829,6 +835,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateProposal: async (id, updates) => {
+    const existing = get().proposals.find(p => p.id === id);
+    if (existing) {
+      const merged = { ...existing, ...updates };
+      const nextStatus = String(merged.status ?? '');
+      if (PROPOSAL_OUTBOUND_STATUSES.has(nextStatus)) {
+        assertProposalMeetsMinimumForShare(merged);
+      }
+    }
     const now = new Date().toISOString();
     set(s => ({
       proposals: s.proposals.map(p =>
@@ -856,6 +870,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   submitForApproval: async (id) => {
+    const existing = get().proposals.find(p => p.id === id);
+    if (existing) assertProposalMeetsMinimumForShare(existing);
     set(s => ({
       proposals: s.proposals.map(p =>
         p.id === id ? { ...p, status: 'approval_pending' as const, updatedAt: new Date().toISOString() } : p
@@ -999,6 +1015,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   sendProposal: async (id) => {
+    const existing = get().proposals.find(p => p.id === id);
+    if (existing) assertProposalMeetsMinimumForShare(existing);
     const now = new Date().toISOString();
     set(s => ({
       proposals: s.proposals.map(p =>

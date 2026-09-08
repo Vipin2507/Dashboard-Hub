@@ -17,6 +17,29 @@ import { registerSalesTargetsApi } from "./salesTargetsApi.js";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+const MIN_PROPOSAL_TOTAL_VALUE = 25_000;
+const PROPOSAL_OUTBOUND_STATUSES = new Set(["shared", "sent", "approval_pending", "approved"]);
+
+function proposalTotalValue(p) {
+  if (typeof p?.finalQuoteValue === "number" && Number.isFinite(p.finalQuoteValue)) {
+    return p.finalQuoteValue;
+  }
+  if (typeof p?.grandTotal === "number" && Number.isFinite(p.grandTotal)) {
+    return p.grandTotal;
+  }
+  return (
+    (Number(p?.subtotal) || 0) +
+    (Number(p?.totalTax) || 0) +
+    (Number(p?.setupDeploymentCharges) || 0)
+  );
+}
+
+function proposalMinimumTotalError(p) {
+  const total = proposalTotalValue(p);
+  if (total >= MIN_PROPOSAL_TOTAL_VALUE) return null;
+  return `Proposal total must be at least ₹${MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")}. Current total: ₹${Math.round(total).toLocaleString("en-IN")}.`;
+}
+
 // ---------------------------------------------------------
 // 0. REALTIME (WebSocket) — broadcast DB changes
 // ---------------------------------------------------------
@@ -943,6 +966,10 @@ app.post("/api/proposals", (req, res) => {
       .status(400)
       .json({ error: "id, proposalNumber, title and customerId are required" });
   }
+  const minErr = proposalMinimumTotalError(proposal);
+  if (minErr) {
+    return res.status(400).json({ error: minErr });
+  }
   const row = toProposalRow(proposal);
   db.prepare(`
     INSERT INTO proposals (id, proposalNumber, title, customerId, assignedTo, status, grandTotal, finalQuoteValue, createdAt, updatedAt, data)
@@ -976,7 +1003,8 @@ app.post("/api/proposals/bulk", (req, res) => {
   `);
   const valid = items
     .map(canonicalizeProposal)
-    .filter((p) => p && p.id && p.proposalNumber && p.title && p.customerId);
+    .filter((p) => p && p.id && p.proposalNumber && p.title && p.customerId)
+    .filter((p) => !proposalMinimumTotalError(p));
   const run = db.transaction((rows) => {
     for (const p of rows) insert.run(toProposalRow(p));
   });
@@ -991,6 +1019,13 @@ app.put("/api/proposals/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   const proposal = canonicalizeProposal(req.body || {});
   if (!proposal.id) proposal.id = req.params.id;
+  const status = String(proposal.status || "");
+  if (PROPOSAL_OUTBOUND_STATUSES.has(status)) {
+    const minErr = proposalMinimumTotalError(proposal);
+    if (minErr) {
+      return res.status(400).json({ error: minErr });
+    }
+  }
   const row = toProposalRow(proposal);
   db.prepare(`
     UPDATE proposals SET

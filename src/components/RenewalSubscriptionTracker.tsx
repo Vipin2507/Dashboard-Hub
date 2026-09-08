@@ -16,6 +16,8 @@ import { api, apiUrl } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
+import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { assertProposalMeetsMinimumForCreate } from "@/lib/proposalMinValue";
 import { sendSubscriptionReminderChannels, triggerAutomation } from "@/lib/automationService";
 import type { AutomationContext } from "@/lib/automationService";
 import type { Proposal, ProposalLineItem, ProposalVersion } from "@/types";
@@ -303,7 +305,8 @@ export function RenewalSubscriptionTracker() {
       };
       const subtotal = line.lineTotal;
       const totalTax = line.taxAmount;
-      const grandTotal = subtotal + totalTax;
+      const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
+      assertProposalMeetsMinimumForCreate({ grandTotal });
       const pid = "p" + makeId();
       const nowIso = new Date().toISOString();
       const v1: ProposalVersion = {
@@ -312,6 +315,7 @@ export function RenewalSubscriptionTracker() {
         createdBy: me.id,
         createdByName: me.name,
         lineItems: [line],
+        setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
         subtotal,
         totalDiscount: 0,
         totalTax,
@@ -331,6 +335,7 @@ export function RenewalSubscriptionTracker() {
         status: "draft",
         validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
         lineItems: [line],
+        setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
         subtotal,
         totalDiscount: 0,
         totalTax,

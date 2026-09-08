@@ -17,6 +17,8 @@ import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { isProposalWon } from "@/lib/proposalStatus";
 import { makeProposalNumber } from "@/lib/proposalNumber";
+import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { isProposalBelowMinimumTotal, proposalMinimumTotalMessage } from "@/lib/proposalMinValue";
 import { Topbar } from "@/components/Topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -436,7 +438,15 @@ function SupportWorkflowTab({
                 });
                 const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
                 const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
-                const grandTotal = subtotal + totalTax;
+                const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
+                if (isProposalBelowMinimumTotal({ grandTotal })) {
+                  toast({
+                    title: "Total too low",
+                    description: proposalMinimumTotalMessage({ grandTotal }),
+                    variant: "destructive",
+                  });
+                  return;
+                }
                 try {
                   await addProposal({
                     id,
@@ -452,7 +462,7 @@ function SupportWorkflowTab({
                     status: "draft",
                     validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
                     lineItems,
-                    setupDeploymentCharges: 0,
+                    setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
                     subtotal,
                     totalDiscount: 0,
                     totalTax,

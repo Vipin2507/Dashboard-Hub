@@ -2,6 +2,8 @@ import * as XLSX from "xlsx";
 import type { MeContext, Proposal, ProposalLineItem, ProposalStatus, User, Region, InventoryItem } from "@/types";
 import { apiUrl } from "@/lib/api";
 import { makeProposalNumber } from "@/lib/proposalNumber";
+import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { MIN_PROPOSAL_TOTAL_VALUE } from "@/lib/proposalMinValue";
 
 export type ParseError = { row: number; message: string };
 
@@ -215,6 +217,14 @@ export async function parseProposalsWorkbook(file: File): Promise<{
       errors.push({ row: r + 1, message: "Deal Value must be a non-negative number." });
       continue;
     }
+    // Final proposal total ≈ deal value + mandatory setup; enforce commercial minimum.
+    if (dv + MANDATORY_SETUP_CONFIGURATION_COST < MIN_PROPOSAL_TOTAL_VALUE) {
+      errors.push({
+        row: r + 1,
+        message: `Proposal total must be at least ₹${MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")} (incl. setup ₹${MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}).`,
+      });
+      continue;
+    }
 
     rows.push({ rowIndex: r + 1, data });
   }
@@ -401,7 +411,14 @@ export async function buildProposalsFromExcelRows(
 
     const subtotal = lineTotal;
     const totalTax = taxAmount;
-    const grandTotal = subtotal + totalTax;
+    const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
+    if (grandTotal < MIN_PROPOSAL_TOTAL_VALUE) {
+      errors.push({
+        row: rowIndex,
+        message: `Proposal total must be at least ₹${MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")}. Current: ₹${Math.round(grandTotal).toLocaleString("en-IN")}.`,
+      });
+      continue;
+    }
 
     const status = mapStageToStatus(data.proposalStage);
     const createdFromRow = parseExcelDate(data.date) ?? new Date().toISOString();
@@ -440,6 +457,7 @@ export async function buildProposalsFromExcelRows(
       status,
       validUntil: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
       lineItems: [line],
+      setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
       subtotal,
       totalDiscount: 0,
       totalTax,
@@ -452,6 +470,7 @@ export async function buildProposalsFromExcelRows(
           createdBy: ctx.me.id,
           createdByName: ctx.me.name,
           lineItems: [line],
+          setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
           subtotal,
           totalDiscount: 0,
           totalTax,
