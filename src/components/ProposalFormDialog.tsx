@@ -35,6 +35,7 @@ import { formatINR, can, getScope, visibleWithScope } from "@/lib/rbac";
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
 import {
+  DEFAULT_SETUP_SERVICE_LABEL,
   MANDATORY_SETUP_CONFIGURATION_COST,
   MANDATORY_SETUP_CONFIGURATION_LABEL,
 } from "@/lib/proposalSetupCharge";
@@ -42,7 +43,6 @@ import {
   isProposalBelowMinimumTotal,
   MIN_PROPOSAL_TOTAL_VALUE,
   proposalMinimumTotalMessage,
-  PROPOSAL_OUTBOUND_STATUSES,
 } from "@/lib/proposalMinValue";
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -129,6 +129,7 @@ export function ProposalFormDialog({
   const [internalNotes, setInternalNotes] = useState("");
   const [lineItems, setLineItems] = useState<ProposalLineItem[]>([]);
   const [setupDeploymentCharges, setSetupDeploymentCharges] = useState<number>(MANDATORY_SETUP_CONFIGURATION_COST);
+  const [setupServiceLabel, setSetupServiceLabel] = useState(DEFAULT_SETUP_SERVICE_LABEL);
   const [overrideFinal, setOverrideFinal] = useState(false);
   const [finalQuoteValue, setFinalQuoteValue] = useState("");
   const [inventoryPickerOpen, setInventoryPickerOpen] = useState(false);
@@ -311,6 +312,7 @@ export function ProposalFormDialog({
       validUntil,
       lineItems,
       setupDeploymentCharges: effectiveSetupCharges,
+      setupServiceLabel: setupServiceLabel.trim() || DEFAULT_SETUP_SERVICE_LABEL,
       subtotal: totals.subtotal,
       totalDiscount: totals.totalDiscount,
       totalTax: totals.totalTax,
@@ -390,28 +392,30 @@ export function ProposalFormDialog({
       return;
     }
     const payload = buildProposal();
-    if (!editingProposal && isProposalBelowMinimumTotal(payload)) {
+    if (isProposalBelowMinimumTotal(payload)) {
       toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
       return;
-    }
-    if (editingProposal) {
-      const live = proposals.find((p) => p.id === editingProposal.id) ?? editingProposal;
-      if (PROPOSAL_OUTBOUND_STATUSES.has(String(live.status)) && isProposalBelowMinimumTotal(payload)) {
-        toast({ title: "Total too low", description: proposalMinimumTotalMessage(payload), variant: "destructive" });
-        return;
-      }
     }
     try {
       if (editingProposal) {
         const live = proposals.find((p) => p.id === editingProposal.id) ?? editingProposal;
-        // Persist content only — keep current status (no workflow / send / version bump).
         await updateProposal(editingProposal.id, {
           ...payload,
-          status: live.status,
+          status: "approval_pending",
+          approvedBy: undefined,
+          approvedAt: undefined,
           versionHistory: live.versionHistory,
           currentVersion: live.currentVersion,
         });
-        toast({ title: "Proposal saved", description: `${payload.proposalNumber} updated.` });
+        // Super admin edits are corrections — do not append version history.
+        if (me.role !== "super_admin") {
+          saveNewVersion(editingProposal.id);
+        }
+        await submitForApproval(editingProposal.id);
+        toast({
+          title: "Proposal updated",
+          description: `${payload.proposalNumber} moved to Approval Pending.`,
+        });
       } else {
         const id = "p" + makeId();
         const now = new Date().toISOString();
@@ -527,6 +531,7 @@ export function ProposalFormDialog({
       setInternalNotes(editingProposal.notes ?? "");
       setLineItems(editingProposal.lineItems);
       setSetupDeploymentCharges(Number(editingProposal.setupDeploymentCharges) || 0);
+      setSetupServiceLabel(editingProposal.setupServiceLabel?.trim() || DEFAULT_SETUP_SERVICE_LABEL);
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
       setPdfScope(editingProposal.pdfScope ?? "end_to_end");
@@ -545,6 +550,7 @@ export function ProposalFormDialog({
       setInternalNotes("");
       setLineItems([]);
       setSetupDeploymentCharges(MANDATORY_SETUP_CONFIGURATION_COST);
+      setSetupServiceLabel(DEFAULT_SETUP_SERVICE_LABEL);
       setOverrideFinal(false);
       setFinalQuoteValue("");
       setPdfScope("end_to_end");
@@ -863,7 +869,7 @@ export function ProposalFormDialog({
               Edit PDF
             </Button>
             <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSave}>
-              {canSaveAndSend ? "Save" : "Save draft"}
+              {editingProposal ? "Save" : canSaveAndSend ? "Save" : "Save draft"}
             </Button>
             {canRequestApproval && (
               <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleSubmitForApproval}>
@@ -1032,6 +1038,17 @@ export function ProposalFormDialog({
                             onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
                           />
                         )}
+                      </div>
+                      <div className="min-w-0 space-y-0.5">
+                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Setup service duration
+                        </Label>
+                        <Input
+                          className="h-9 text-sm"
+                          value={setupServiceLabel}
+                          onChange={(e) => setSetupServiceLabel(e.target.value)}
+                          placeholder={DEFAULT_SETUP_SERVICE_LABEL}
+                        />
                       </div>
                       {canOverride && (
                         <div className="min-w-0 space-y-0.5">

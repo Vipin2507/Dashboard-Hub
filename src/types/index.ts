@@ -303,6 +303,11 @@ export interface Proposal {
   lineItems: ProposalLineItem[];
   /** Fixed charges added on top of computed totals (default 0). */
   setupDeploymentCharges: number;
+  /**
+   * PDF "Service" column text for setup & configuration (e.g. "One Time").
+   * Defaults to "One Time" when empty.
+   */
+  setupServiceLabel?: string;
   subtotal: number;
   totalDiscount: number;
   totalTax: number;

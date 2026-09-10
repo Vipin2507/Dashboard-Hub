@@ -1,6 +1,7 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 import { formatProposalVersionComment } from "@/lib/proposalVersionComment";
+import { setupServiceLabelForPdf } from "@/lib/proposalSetupCharge";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -597,7 +598,7 @@ function renderCommercialSection(
     tableBody.push([
       "",
       "Setup & Deployment Charges",
-      "-",
+      setupServiceLabelForPdf(proposal.setupServiceLabel),
       formatINR(Math.round(setupCharges)),
     ]);
   }

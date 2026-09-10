@@ -967,7 +967,6 @@ export default function Proposals() {
   const detailProposal = detailId ? proposals.find((p) => p.id === detailId) : null;
   const canEditProposal = (p: Proposal) => {
     if (!canUpdate) return false;
-    if (p.status !== "draft" && p.status !== "rejected" && p.status !== "negotiation" && p.status !== "approval_pending") return false;
     if (scope === "SELF" && p.assignedTo !== me.id) return false;
     return true;
   };
