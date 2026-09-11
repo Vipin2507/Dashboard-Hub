@@ -38,6 +38,7 @@ import {
   DEFAULT_SETUP_SERVICE_LABEL,
   MANDATORY_SETUP_CONFIGURATION_COST,
   MANDATORY_SETUP_CONFIGURATION_LABEL,
+  normalizeSetupConfigurationCost,
 } from "@/lib/proposalSetupCharge";
 import {
   isProposalBelowMinimumTotal,
@@ -147,12 +148,7 @@ export function ProposalFormDialog({
   /** Save & send is restricted to Super Admin only (direct customer send from the form). */
   const canSaveAndSend = me.role === "super_admin";
 
-  const isNewProposal = !editingProposal;
-  /** New proposals always carry the locked mandatory setup charge. */
-  const setupChargesLocked = isNewProposal;
-  const effectiveSetupCharges = setupChargesLocked
-    ? MANDATORY_SETUP_CONFIGURATION_COST
-    : Number(setupDeploymentCharges) || 0;
+  const effectiveSetupCharges = normalizeSetupConfigurationCost(setupDeploymentCharges);
 
   const totals = useMemo(() => {
     const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
@@ -530,7 +526,7 @@ export function ProposalFormDialog({
       setCustomerNotes(editingProposal.customerNotes ?? "");
       setInternalNotes(editingProposal.notes ?? "");
       setLineItems(editingProposal.lineItems);
-      setSetupDeploymentCharges(Number(editingProposal.setupDeploymentCharges) || 0);
+      setSetupDeploymentCharges(normalizeSetupConfigurationCost(editingProposal.setupDeploymentCharges));
       setSetupServiceLabel(editingProposal.setupServiceLabel?.trim() || DEFAULT_SETUP_SERVICE_LABEL);
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
@@ -803,28 +799,18 @@ export function ProposalFormDialog({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div className="space-y-2">
                   <Label>{MANDATORY_SETUP_CONFIGURATION_LABEL}</Label>
-                  {setupChargesLocked ? (
-                    <>
-                      <Input
-                        className="h-10 bg-muted/40 font-mono tabular-nums"
-                        value={formatINR(MANDATORY_SETUP_CONFIGURATION_COST)}
-                        readOnly
-                        disabled
-                      />
-                      <p className="text-xs text-muted-foreground">Mandatory on all new proposals — not editable.</p>
-                    </>
-                  ) : (
-                    <>
-                      <NumericInput
-                        className="h-10"
-                        min={0}
-                        emptyOnBlur={0}
-                        value={setupDeploymentCharges}
-                        onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
-                      />
-                      <p className="text-xs text-muted-foreground">Added to the final amount.</p>
-                    </>
-                  )}
+                  <NumericInput
+                    className="h-10"
+                    emptyOnBlur={MANDATORY_SETUP_CONFIGURATION_COST}
+                    value={setupDeploymentCharges}
+                    onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                    onBlur={() =>
+                      setSetupDeploymentCharges((prev) => normalizeSetupConfigurationCost(prev))
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Editable — minimum ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}.
+                  </p>
                 </div>
               </div>
 
@@ -1022,22 +1008,18 @@ export function ProposalFormDialog({
                         <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
                           {MANDATORY_SETUP_CONFIGURATION_LABEL}
                         </Label>
-                        {setupChargesLocked ? (
-                          <Input
-                            className="h-9 bg-muted/40 font-mono text-sm tabular-nums"
-                            value={formatINR(MANDATORY_SETUP_CONFIGURATION_COST)}
-                            readOnly
-                            disabled
-                          />
-                        ) : (
-                          <NumericInput
-                            className="h-9"
-                            min={0}
-                            emptyOnBlur={0}
-                            value={setupDeploymentCharges}
-                            onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
-                          />
-                        )}
+                        <NumericInput
+                          className="h-9"
+                          emptyOnBlur={MANDATORY_SETUP_CONFIGURATION_COST}
+                          value={setupDeploymentCharges}
+                          onValueChange={(v) => setSetupDeploymentCharges(Number(v) || 0)}
+                          onBlur={() =>
+                            setSetupDeploymentCharges((prev) => normalizeSetupConfigurationCost(prev))
+                          }
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Min ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}
+                        </p>
                       </div>
                       <div className="min-w-0 space-y-0.5">
                         <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
