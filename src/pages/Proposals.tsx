@@ -1621,33 +1621,37 @@ export default function Proposals() {
                     <TableBody>
                       {pageItems.map((p) => {
                         const cust = customers.find((c) => c.id === p.customerId);
+                        const companyLabel =
+                          cust?.companyName || cust?.customerName || p.customerName || "—";
                         const ownerSelectOptions = ownerOptions.some((o) => o.id === p.assignedTo)
                           ? ownerOptions
                           : [{ id: p.assignedTo, name: p.assignedToName || "Owner" }, ...ownerOptions];
                         return (
                           <TableRow key={p.id}>
-                            <TableCell>
+                            <TableCell className="max-w-[16rem] min-w-0">
                               <button
                                 type="button"
                                 onClick={() => setDetailId(p.id)}
-                                className="font-mono text-xs font-medium text-primary hover:underline"
+                                title={p.proposalNumber}
+                                className="block w-full truncate text-left font-mono text-xs font-medium text-primary hover:underline"
                               >
                                 {p.proposalNumber}
                               </button>
-                              <div className="mt-0.5">
+                              <div className="mt-0.5 min-w-0">
                                 <ProposalLineItemsPreview lineItems={p.lineItems} />
                               </div>
                             </TableCell>
-                            <TableCell className="max-w-[14rem]">
+                            <TableCell className="max-w-[12rem] min-w-0 overflow-hidden">
                               <button
                                 type="button"
-                                className="truncate text-left font-medium hover:underline"
+                                title={companyLabel}
+                                className="block w-full truncate text-left font-medium hover:underline"
                                 onClick={() => navigate(`/customers/${p.customerId}`)}
                               >
-                                {cust?.companyName || cust?.customerName || p.customerName || "—"}
+                                {companyLabel}
                               </button>
                             </TableCell>
-                            <TableCell className="max-w-[12rem]">
+                            <TableCell className="max-w-[12rem] min-w-0 overflow-hidden">
                               {canReassign ? (
                                 <AdminProposalOwnerSelect
                                   assignedTo={p.assignedTo}
@@ -1655,7 +1659,9 @@ export default function Proposals() {
                                   onChange={(nextId) => void changeAssignedTo(p, nextId)}
                                 />
                               ) : (
-                                <span className="truncate text-sm">{p.assignedToName || "—"}</span>
+                                <span className="block truncate text-sm" title={p.assignedToName || undefined}>
+                                  {p.assignedToName || "—"}
+                                </span>
                               )}
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
