@@ -17,7 +17,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { getScope, visibleWithScope, can, formatINR } from "@/lib/rbac";
 import { isProposalWon } from "@/lib/proposalStatus";
 import { makeProposalNumber } from "@/lib/proposalNumber";
-import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { MANDATORY_SETUP_CONFIGURATION_COST, computeProposalMoneyTotals } from "@/lib/proposalSetupCharge";
 import { isProposalBelowMinimumTotal, proposalMinimumTotalMessage } from "@/lib/proposalMinValue";
 import { Topbar } from "@/components/Topbar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -436,13 +436,16 @@ function SupportWorkflowTab({
                     taxAmount,
                   };
                 });
-                const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
-                const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
-                const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
-                if (isProposalBelowMinimumTotal({ grandTotal })) {
+                const money = computeProposalMoneyTotals(lineItems, MANDATORY_SETUP_CONFIGURATION_COST);
+                if (isProposalBelowMinimumTotal({ grandTotal: money.grandTotal, totalTax: money.totalTax, setupDeploymentCharges: money.setupCharges, subtotal: money.subtotal })) {
                   toast({
                     title: "Total too low",
-                    description: proposalMinimumTotalMessage({ grandTotal }),
+                    description: proposalMinimumTotalMessage({
+                      grandTotal: money.grandTotal,
+                      totalTax: money.totalTax,
+                      setupDeploymentCharges: money.setupCharges,
+                      subtotal: money.subtotal,
+                    }),
                     variant: "destructive",
                   });
                   return;
@@ -463,10 +466,10 @@ function SupportWorkflowTab({
                     validUntil: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
                     lineItems,
                     setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
-                    subtotal,
-                    totalDiscount: 0,
-                    totalTax,
-                    grandTotal,
+                    subtotal: money.subtotal,
+                    totalDiscount: money.totalDiscount,
+                    totalTax: money.totalTax,
+                    grandTotal: money.grandTotal,
                     versionHistory: [],
                     currentVersion: 1,
                     createdAt: new Date().toISOString(),

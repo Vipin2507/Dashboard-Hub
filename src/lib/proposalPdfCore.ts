@@ -1,7 +1,7 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 import { formatProposalVersionComment } from "@/lib/proposalVersionComment";
-import { setupServiceLabelForPdf } from "@/lib/proposalSetupCharge";
+import { setupConfigurationGstAmount, setupServiceLabelForPdf } from "@/lib/proposalSetupCharge";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -594,6 +594,7 @@ function renderCommercialSection(
   ]);
 
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
+  const setupGst = setupConfigurationGstAmount(setupCharges);
   if (chunkIndex === totalChunks - 1 && setupCharges > 0) {
     tableBody.push([
       "",
@@ -608,16 +609,11 @@ function renderCommercialSection(
     const baseSum = proposal.lineItems.reduce((s, li) => s + baseAmount(li), 0);
     const discSum = proposal.lineItems.reduce((s, li) => s + discountAmount(li), 0);
     const taxableSum = proposal.lineItems.reduce((s, li) => s + taxableAmount(li), 0);
-    const gstSum = proposal.lineItems.reduce((s, li) => s + gstAmount(li), 0);
+    const gstSum = proposal.lineItems.reduce((s, li) => s + gstAmount(li), 0) + setupGst;
     const grandComputed = taxableSum + gstSum + setupCharges;
 
-    const grandFromProposal =
-      (typeof (proposal as unknown as { grandTotal?: number }).grandTotal === "number"
-        ? (proposal as unknown as { grandTotal?: number }).grandTotal
-        : undefined) ?? grandComputed;
-
     const finalToShow =
-      (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandFromProposal;
+      (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandComputed;
 
     let grandTotalRowIndex: number | null = null;
     const pushSummary = (label: string, value: number) => {
@@ -656,7 +652,7 @@ function renderCommercialSection(
     pushSummary("Taxable Amount", taxableSum);
     pushSummary("GST Total", gstSum);
     if (setupCharges > 0) pushSummary("Setup & Deployment Charges", setupCharges);
-    pushSummary("Grand Total (Incl. GST)", grandFromProposal);
+    pushSummary("Grand Total (Incl. GST)", grandComputed);
     if ((proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue != null) {
       pushSummary("Final Quote Value", finalToShow);
     }
@@ -1063,7 +1059,9 @@ export async function generateProposalPdf(proposal: Proposal): Promise<void> {
   const chunks = chunkLineItems(proposal.lineItems, ROWS_PER_COMMERCIAL_PAGE);
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
   const computedGrand =
-    proposal.lineItems.reduce((sum, item) => sum + lineTotalInclGst(item), 0) + setupCharges;
+    proposal.lineItems.reduce((sum, item) => sum + lineTotalInclGst(item), 0) +
+    setupCharges +
+    setupConfigurationGstAmount(setupCharges);
   const grandFromProposal =
     (typeof (proposal as unknown as { grandTotal?: number }).grandTotal === "number"
       ? (proposal as unknown as { grandTotal?: number }).grandTotal

@@ -38,6 +38,7 @@ import {
   DEFAULT_SETUP_SERVICE_LABEL,
   MANDATORY_SETUP_CONFIGURATION_COST,
   MANDATORY_SETUP_CONFIGURATION_LABEL,
+  computeProposalMoneyTotals,
   normalizeSetupConfigurationCost,
 } from "@/lib/proposalSetupCharge";
 import {
@@ -150,13 +151,10 @@ export function ProposalFormDialog({
 
   const effectiveSetupCharges = normalizeSetupConfigurationCost(setupDeploymentCharges);
 
-  const totals = useMemo(() => {
-    const subtotal = lineItems.reduce((s, li) => s + li.lineTotal, 0);
-    const totalDiscount = lineItems.reduce((s, li) => s + li.qty * li.unitPrice * (li.discount / 100), 0);
-    const totalTax = lineItems.reduce((s, li) => s + li.taxAmount, 0);
-    const grandTotal = subtotal + totalTax + effectiveSetupCharges;
-    return { subtotal, totalDiscount, totalTax, grandTotal };
-  }, [lineItems, effectiveSetupCharges]);
+  const totals = useMemo(
+    () => computeProposalMoneyTotals(lineItems, effectiveSetupCharges),
+    [lineItems, effectiveSetupCharges],
+  );
 
   const monthYear = useMemo(() => {
     const d = titleAutoCreatedAt ?? new Date();
@@ -809,7 +807,7 @@ export function ProposalFormDialog({
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    Editable — minimum ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}.
+                    Editable — minimum ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")} excl. GST.
                   </p>
                 </div>
               </div>

@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { makeProposalNumber } from "@/lib/proposalNumber";
-import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { MANDATORY_SETUP_CONFIGURATION_COST, computeProposalMoneyTotals } from "@/lib/proposalSetupCharge";
 import {
   isProposalBelowMinimumTotal,
   proposalMinimumTotalMessage,
@@ -743,7 +743,7 @@ export default function Proposals() {
   const duplicateProposal = async (p: Proposal) => {
     const now = new Date().toISOString();
     const setup = MANDATORY_SETUP_CONFIGURATION_COST;
-    const grandTotal = Number(p.subtotal) + Number(p.totalTax) + setup;
+    const money = computeProposalMoneyTotals(p.lineItems, setup);
     const copy: Proposal = {
       ...p,
       id: "p" + Math.random().toString(36).slice(2, 10),
@@ -755,8 +755,11 @@ export default function Proposals() {
       approvedAt: undefined,
       sentAt: undefined,
       setupDeploymentCharges: setup,
-      grandTotal,
-      finalQuoteValue: p.finalQuoteValue != null ? grandTotal : undefined,
+      subtotal: money.subtotal,
+      totalDiscount: money.totalDiscount,
+      totalTax: money.totalTax,
+      grandTotal: money.grandTotal,
+      finalQuoteValue: p.finalQuoteValue != null ? money.grandTotal : undefined,
       createdAt: now,
       updatedAt: now,
       createdBy: me.id,

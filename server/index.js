@@ -177,9 +177,9 @@ app.post("/api/auth/login", (req, res) => {
 // ---------------------------------------------------------
 // 5. REMAINING API REGISTRATIONS (payments API registered once below with broadcast)
 // ---------------------------------------------------------
-registerDataControlApi(app,  db );
-registerSubscriptionRenewalApi(app,  db );
-registerDeliveryApi(app,  db , { broadcast } );
+registerDataControlApi(app, db);
+registerSubscriptionRenewalApi(app, db);
+registerDeliveryApi(app, db, { broadcast });
 
 /**
  * Debug helpers (intentionally behind an env flag for VPS troubleshooting).
@@ -915,20 +915,20 @@ app.post("/api/customers/bulk", (req, res) => {
 
   const created = items.filter((it) => it && it.name && it.regionId).map((it) => ({
     id: it.id || "c" + makeId(),
-      leadId: it.leadId || `L-${makeId()}`,
-      name: it.name,
-      state: it.state || "Unknown",
-      gstin: it.gstin ?? null,
-      regionId: it.regionId,
-      city: it.city || null,
-      email: it.email || null,
-      primaryPhone: it.primaryPhone || null,
-      status: it.status || "active",
-      createdAt: new Date().toISOString(),
-      salesExecutive: it.salesExecutive || null,
-      accountManager: it.accountManager || null,
-      deliveryExecutive: it.deliveryExecutive || null,
-    }));
+    leadId: it.leadId || `L-${makeId()}`,
+    name: it.name,
+    state: it.state || "Unknown",
+    gstin: it.gstin ?? null,
+    regionId: it.regionId,
+    city: it.city || null,
+    email: it.email || null,
+    primaryPhone: it.primaryPhone || null,
+    status: it.status || "active",
+    createdAt: new Date().toISOString(),
+    salesExecutive: it.salesExecutive || null,
+    accountManager: it.accountManager || null,
+    deliveryExecutive: it.deliveryExecutive || null,
+  }));
 
   db.transaction((rows) => rows.forEach((r) => insertCustomer.run(r)))(created);
   if (created.length) broadcast({ type: "change", entity: "customers", action: "bulk_created", count: created.length });
@@ -1075,8 +1075,8 @@ app.get("/api/deals", (req, res) => {
     includeDeleted
       ? db.prepare("SELECT * FROM deals ORDER BY id DESC").all()
       : db
-          .prepare("SELECT * FROM deals WHERE (deletedAt IS NULL OR deletedAt = '') ORDER BY id DESC")
-          .all()
+        .prepare("SELECT * FROM deals WHERE (deletedAt IS NULL OR deletedAt = '') ORDER BY id DESC")
+        .all()
   ).map(toDealResponse);
   const { customerId, stage } = req.query || {};
   if (customerId) {
@@ -2593,10 +2593,10 @@ server.on("error", (err) => {
   if (err && err.code === "EADDRINUSE") {
     console.error(
       `[buildesk] Port ${PORT} is already in use (another API server or app is running).\n` +
-        `  • Stop the other process, or run on another port, e.g. PowerShell:\n` +
-        `      $env:PORT=4001; node server/index.js\n` +
-        `  • To free port ${PORT} on Windows (kill listener):\n` +
-        `      Get-NetTCPConnection -LocalPort ${PORT} | Select-Object -ExpandProperty OwningProcess -Unique | Stop-Process -Force`,
+      `  • Stop the other process, or run on another port, e.g. PowerShell:\n` +
+      `      $env:PORT=4001; node server/index.js\n` +
+      `  • To free port ${PORT} on Windows (kill listener):\n` +
+      `      Get-NetTCPConnection -LocalPort ${PORT} | Select-Object -ExpandProperty OwningProcess -Unique | Stop-Process -Force`,
     );
     process.exit(1);
   }

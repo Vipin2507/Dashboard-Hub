@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import type { MeContext, Proposal, ProposalLineItem, ProposalStatus, User, Region, InventoryItem } from "@/types";
 import { apiUrl } from "@/lib/api";
 import { makeProposalNumber } from "@/lib/proposalNumber";
-import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { MANDATORY_SETUP_CONFIGURATION_COST, computeProposalMoneyTotals } from "@/lib/proposalSetupCharge";
 import { MIN_PROPOSAL_TOTAL_VALUE } from "@/lib/proposalMinValue";
 
 export type ParseError = { row: number; message: string };
@@ -409,13 +409,11 @@ export async function buildProposalsFromExcelRows(
       taxAmount,
     };
 
-    const subtotal = lineTotal;
-    const totalTax = taxAmount;
-    const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
-    if (grandTotal < MIN_PROPOSAL_TOTAL_VALUE) {
+    const money = computeProposalMoneyTotals([line], MANDATORY_SETUP_CONFIGURATION_COST);
+    if (money.grandTotal < MIN_PROPOSAL_TOTAL_VALUE) {
       errors.push({
         row: rowIndex,
-        message: `Proposal total must be at least ₹${MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")}. Current: ₹${Math.round(grandTotal).toLocaleString("en-IN")}.`,
+        message: `Proposal total must be at least ₹${MIN_PROPOSAL_TOTAL_VALUE.toLocaleString("en-IN")}. Current: ₹${Math.round(money.grandTotal).toLocaleString("en-IN")}.`,
       });
       continue;
     }
@@ -458,11 +456,11 @@ export async function buildProposalsFromExcelRows(
       validUntil: new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
       lineItems: [line],
       setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
-      subtotal,
-      totalDiscount: 0,
-      totalTax,
-      grandTotal,
-      finalQuoteValue: grandTotal,
+      subtotal: money.subtotal,
+      totalDiscount: money.totalDiscount,
+      totalTax: money.totalTax,
+      grandTotal: money.grandTotal,
+      finalQuoteValue: money.grandTotal,
       versionHistory: [
         {
           version: 1,
@@ -471,10 +469,10 @@ export async function buildProposalsFromExcelRows(
           createdByName: ctx.me.name,
           lineItems: [line],
           setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
-          subtotal,
-          totalDiscount: 0,
-          totalTax,
-          grandTotal,
+          subtotal: money.subtotal,
+          totalDiscount: money.totalDiscount,
+          totalTax: money.totalTax,
+          grandTotal: money.grandTotal,
           notes: notesParts.join(" | ") || undefined,
         },
       ],

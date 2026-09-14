@@ -16,7 +16,7 @@ import { api, apiUrl } from "@/lib/api";
 import { QK } from "@/lib/queryKeys";
 import { useAppStore } from "@/store/useAppStore";
 import { formatINR } from "@/lib/rbac";
-import { MANDATORY_SETUP_CONFIGURATION_COST } from "@/lib/proposalSetupCharge";
+import { MANDATORY_SETUP_CONFIGURATION_COST, computeProposalMoneyTotals } from "@/lib/proposalSetupCharge";
 import { assertProposalMeetsMinimumForCreate } from "@/lib/proposalMinValue";
 import { sendSubscriptionReminderChannels, triggerAutomation } from "@/lib/automationService";
 import type { AutomationContext } from "@/lib/automationService";
@@ -303,10 +303,13 @@ export function RenewalSubscriptionTracker() {
         lineTotal: inv.sellingPrice,
         taxAmount: (inv.sellingPrice * inv.taxRate) / 100,
       };
-      const subtotal = line.lineTotal;
-      const totalTax = line.taxAmount;
-      const grandTotal = subtotal + totalTax + MANDATORY_SETUP_CONFIGURATION_COST;
-      assertProposalMeetsMinimumForCreate({ grandTotal });
+      const money = computeProposalMoneyTotals([line], MANDATORY_SETUP_CONFIGURATION_COST);
+      assertProposalMeetsMinimumForCreate({
+        grandTotal: money.grandTotal,
+        subtotal: money.subtotal,
+        totalTax: money.totalTax,
+        setupDeploymentCharges: money.setupCharges,
+      });
       const pid = "p" + makeId();
       const nowIso = new Date().toISOString();
       const v1: ProposalVersion = {
@@ -316,10 +319,10 @@ export function RenewalSubscriptionTracker() {
         createdByName: me.name,
         lineItems: [line],
         setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
-        subtotal,
-        totalDiscount: 0,
-        totalTax,
-        grandTotal,
+        subtotal: money.subtotal,
+        totalDiscount: money.totalDiscount,
+        totalTax: money.totalTax,
+        grandTotal: money.grandTotal,
         notes: "Renewal",
       };
       const proposal: Proposal = {
@@ -336,10 +339,10 @@ export function RenewalSubscriptionTracker() {
         validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
         lineItems: [line],
         setupDeploymentCharges: MANDATORY_SETUP_CONFIGURATION_COST,
-        subtotal,
-        totalDiscount: 0,
-        totalTax,
-        grandTotal,
+        subtotal: money.subtotal,
+        totalDiscount: money.totalDiscount,
+        totalTax: money.totalTax,
+        grandTotal: money.grandTotal,
         versionHistory: [v1],
         currentVersion: 1,
         createdAt: nowIso,
@@ -354,14 +357,14 @@ export function RenewalSubscriptionTracker() {
         proposalId: pid,
         proposalNumber: proposal.proposalNumber,
         proposalTitle: proposal.title,
-        grandTotal,
+        grandTotal: money.grandTotal,
         renewalLink: proposalUrl,
       };
       const ch: Array<"whatsapp" | "email" | "sms"> = [];
       if (proposeChannels.whatsapp) ch.push("whatsapp");
       if (proposeChannels.email) ch.push("email");
       if (proposeChannels.sms) ch.push("sms");
-      const body = `Your renewal proposal ${proposal.proposalNumber} is ready. Total: ${formatINR(grandTotal)}. View: ${proposalUrl}`;
+      const body = `Your renewal proposal ${proposal.proposalNumber} is ready. Total: ${formatINR(money.grandTotal)}. View: ${proposalUrl}`;
       await sendSubscriptionReminderChannels(ch, body, `Proposal ${proposal.proposalNumber}`, ctx);
       await triggerAutomation("proposal_sent", {
         ...ctx,

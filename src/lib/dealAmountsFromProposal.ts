@@ -1,4 +1,5 @@
 import type { Proposal, ProposalLineItem } from "@/types";
+import { setupConfigurationGstAmount } from "@/lib/proposalSetupCharge";
 
 export type DealFinanceAmounts = {
   amountWithoutTax: number;
@@ -13,10 +14,12 @@ type ProposalFinanceSource = Pick<
 
 function recomputeFromLineItems(proposal: ProposalFinanceSource): { sub: number; tax: number; grand: number } {
   const items = Array.isArray(proposal.lineItems) ? proposal.lineItems : [];
+  const setup = Number(proposal.setupDeploymentCharges) || 0;
+  const setupGst = setupConfigurationGstAmount(setup);
   const sub =
-    items.reduce((s, li: ProposalLineItem) => s + (Number(li.lineTotal) || 0), 0) +
-    (Number(proposal.setupDeploymentCharges) || 0);
-  const tax = items.reduce((s, li: ProposalLineItem) => s + (Number(li.taxAmount) || 0), 0);
+    items.reduce((s, li: ProposalLineItem) => s + (Number(li.lineTotal) || 0), 0) + setup;
+  const tax =
+    items.reduce((s, li: ProposalLineItem) => s + (Number(li.taxAmount) || 0), 0) + setupGst;
   const grand = sub + tax;
   return { sub, tax, grand };
 }
@@ -36,7 +39,7 @@ export function dealAmountsFromProposal(
       : Number(proposal.finalQuoteValue ?? proposal.grandTotal) || 0;
 
   let sub = Number(proposal.subtotal) || 0;
-  // Setup/deployment is taxable-free add-on stored separately from line subtotal.
+  // Setup is excl. GST and stored separately; GST on setup is included in totalTax when saved.
   const setup = Number(proposal.setupDeploymentCharges) || 0;
   let tax = Number(proposal.totalTax) || 0;
   let grand = Number(proposal.grandTotal) || 0;

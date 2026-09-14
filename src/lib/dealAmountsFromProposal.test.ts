@@ -32,8 +32,8 @@ function baseProposal(overrides: Partial<Proposal> = {}): Proposal {
     setupDeploymentCharges: 200,
     subtotal: 10000,
     totalDiscount: 0,
-    totalTax: 1800,
-    grandTotal: 12000,
+    totalTax: 1836,
+    grandTotal: 12036,
     notes: "",
     versions: [],
     createdAt: "2026-01-01",
@@ -47,8 +47,8 @@ describe("dealAmountsFromProposal", () => {
   it("splits proposal subtotal+setup and tax into deal finance fields", () => {
     const amounts = dealAmountsFromProposal(baseProposal());
     expect(amounts.amountWithoutTax).toBe(10200);
-    expect(amounts.taxAmount).toBe(1800);
-    expect(amounts.totalAmount).toBe(12000);
+    expect(amounts.taxAmount).toBe(1836);
+    expect(amounts.totalAmount).toBe(12036);
   });
 
   it("scales split when deal value differs from grand total", () => {
