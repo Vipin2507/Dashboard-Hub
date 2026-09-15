@@ -49,7 +49,7 @@ import {
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
-import { FileText, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { DEFAULT_TERMS, defaultCoverHeadingTextForScope, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
 import { previewProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 
@@ -272,6 +272,19 @@ export function ProposalFormDialog({
   };
 
   const removeLineItem = (id: string) => setLineItems((prev) => prev.filter((li) => li.id !== id));
+
+  const moveLineItem = (id: string, direction: -1 | 1) => {
+    setLineItems((prev) => {
+      const index = prev.findIndex((li) => li.id === id);
+      if (index < 0) return prev;
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      return next;
+    });
+  };
 
   const nextProposalNumber = useMemo(
     () => makeProposalNumber(proposals.map((p) => p.proposalNumber)),
@@ -705,11 +718,11 @@ export function ProposalFormDialog({
                         <TableHead className="text-xs whitespace-nowrap w-[100px]">GST %</TableHead>
                         <TableHead className="text-xs text-right whitespace-nowrap w-[180px]">Deal Value (Excl. GST)</TableHead>
                         <TableHead className="text-xs text-right whitespace-nowrap w-[140px]">GST Amount</TableHead>
-                        <TableHead className="w-10" />
+                        <TableHead className="w-[5.5rem]" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {lineItems.map((li) => (
+                      {lineItems.map((li, index) => (
                         <TableRow key={li.id}>
                           <TableCell className="align-top min-w-[320px]">
                             <Input
@@ -767,10 +780,44 @@ export function ProposalFormDialog({
                           </TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatINR(li.lineTotal)}</TableCell>
                           <TableCell className="text-right font-mono text-xs">{formatINR(li.taxAmount)}</TableCell>
-                          <TableCell>
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeLineItem(li.id)}>
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
+                          <TableCell className="align-top">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={index === 0}
+                                title="Move up"
+                                aria-label="Move line item up"
+                                onClick={() => moveLineItem(li.id, -1)}
+                              >
+                                <ChevronUp className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={index === lineItems.length - 1}
+                                title="Move down"
+                                aria-label="Move line item down"
+                                onClick={() => moveLineItem(li.id, 1)}
+                              >
+                                <ChevronDown className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                title="Remove"
+                                aria-label="Remove line item"
+                                onClick={() => removeLineItem(li.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -931,8 +978,39 @@ export function ProposalFormDialog({
                 <section className="space-y-1.5">
                   <p className="typo-section-title">Line items</p>
                   <div className="space-y-2">
-                    {lineItems.map((li) => (
+                    {lineItems.map((li, index) => (
                       <div key={li.id} className="space-y-2 rounded-md border border-border p-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Item {index + 1}
+                          </p>
+                          <div className="flex items-center gap-0.5">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              disabled={index === 0}
+                              title="Move up"
+                              aria-label="Move line item up"
+                              onClick={() => moveLineItem(li.id, -1)}
+                            >
+                              <ChevronUp className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              disabled={index === lineItems.length - 1}
+                              title="Move down"
+                              aria-label="Move line item down"
+                              onClick={() => moveLineItem(li.id, 1)}
+                            >
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_10rem]">
                           <div className="min-w-0 space-y-0.5">
                             <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Item</Label>
