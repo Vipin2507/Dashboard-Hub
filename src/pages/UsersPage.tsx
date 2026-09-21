@@ -241,7 +241,7 @@ export default function UsersPage() {
       if (teamFilter !== "all" && u.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && u.regionId !== regionFilter) return false;
       if (!q) return true;
-      return (
+  return (
         u.name.toLowerCase().includes(q) ||
         u.email.toLowerCase().includes(q) ||
         u.id.toLowerCase().includes(q) ||
@@ -263,108 +263,108 @@ export default function UsersPage() {
 
   const renderContact = (u: User) => (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <Input
-        type="email"
-        className="h-8 text-xs"
-        placeholder="Sign-in email"
-        value={contactDrafts[u.id]?.email ?? u.email}
-        onChange={(e) =>
-          setContactDrafts((prev) => ({
-            ...prev,
+                        <Input
+                          type="email"
+                          className="h-8 text-xs"
+                          placeholder="Sign-in email"
+                          value={contactDrafts[u.id]?.email ?? u.email}
+                          onChange={(e) =>
+                            setContactDrafts((prev) => ({
+                              ...prev,
             [u.id]: { email: e.target.value, phone: prev[u.id]?.phone ?? u.phone ?? "" },
-          }))
-        }
-      />
-      <div className="flex gap-1">
-        <Input
+                            }))
+                          }
+                        />
+                        <div className="flex gap-1">
+                          <Input
           className="h-8 min-w-0 flex-1 text-xs"
-          placeholder="Phone"
+                            placeholder="Phone"
           value={contactDrafts[u.id]?.phone ?? u.phone ?? ""}
-          onChange={(e) =>
-            setContactDrafts((prev) => ({
-              ...prev,
+                            onChange={(e) =>
+                              setContactDrafts((prev) => ({
+                                ...prev,
               [u.id]: { email: prev[u.id]?.email ?? u.email, phone: e.target.value },
-            }))
-          }
-        />
-        <Button
-          type="button"
-          size="sm"
+                              }))
+                            }
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
           className="h-8 shrink-0 px-2.5 text-xs"
-          onClick={() => handleSaveContact(u.id)}
-          disabled={updateUserMutation.isPending}
-        >
-          Save
-        </Button>
-      </div>
-    </div>
+                            onClick={() => handleSaveContact(u.id)}
+                            disabled={updateUserMutation.isPending}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
   );
 
   const renderRole = (u: User) => (
     <Select value={u.role} onValueChange={(value) => handleRoleChange(u.id, value as Role)}>
       <SelectTrigger className="h-8 text-xs">
-        <SelectValue placeholder="Role" />
-      </SelectTrigger>
-      <SelectContent>
-        {Object.entries(ROLE_LABELS).map(([role, label]) => (
-          <SelectItem key={role} value={role} className="text-xs">
-            {label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+                            <SelectValue placeholder="Role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(ROLE_LABELS).map(([role, label]) => (
+                              <SelectItem key={role} value={role} className="text-xs">
+                                {label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
   );
 
   const renderTeam = (u: User) => (
     <Select value={u.teamId} onValueChange={(teamId) => handleTeamChange(u, teamId)}>
       <SelectTrigger className="h-8 text-xs">
-        <SelectValue placeholder="Team" />
-      </SelectTrigger>
-      <SelectContent>
-        {teams
+                            <SelectValue placeholder="Team" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {teams
           .filter((t) => t.regionId === u.regionId)
           .map((t) => (
-            <SelectItem key={t.id} value={t.id} className="text-xs">
-              {t.name}
-            </SelectItem>
-          ))}
-      </SelectContent>
-    </Select>
+                                <SelectItem key={t.id} value={t.id} className="text-xs">
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
   );
 
   const renderRegion = (u: User) => (
     <Select value={u.regionId} onValueChange={(regionId) => handleRegionChange(u, regionId)}>
       <SelectTrigger className="h-8 text-xs">
-        <SelectValue placeholder="Region" />
-      </SelectTrigger>
-      <SelectContent>
+                            <SelectValue placeholder="Region" />
+                          </SelectTrigger>
+                          <SelectContent>
         {regions.map((r) => (
-          <SelectItem key={r.id} value={r.id} className="text-xs">
-            {r.name}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+                              <SelectItem key={r.id} value={r.id} className="text-xs">
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
   );
 
   const renderSecurity = (u: User) => (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
         <Switch checked={u.status === "active"} onCheckedChange={(checked) => handleStatusToggle(u, checked)} />
         <span className="text-[11px] text-muted-foreground">{u.status === "active" ? "Can sign in" : "Sign in disabled"}</span>
-      </div>
-      <div className="space-y-1">
-        <div className="flex gap-1">
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex gap-1">
           <div className="relative min-w-0 flex-1">
-            <Input
+                              <Input
               type={showPasswordFor[u.id] ? "text" : "password"}
-              placeholder="New password"
+                                placeholder="New password"
               className="h-8 pr-9 text-xs"
               value={passwordEdits[u.id] ?? ""}
               onChange={(e) => setPasswordEdits((prev) => ({ ...prev, [u.id]: e.target.value }))}
-            />
-            <Button
-              type="button"
+                              />
+                              <Button
+                                type="button"
               variant="ghost"
               size="icon"
               className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground"
@@ -375,9 +375,9 @@ export default function UsersPage() {
             </Button>
           </div>
           <Button size="sm" className="h-8 shrink-0 px-2.5 text-xs" type="button" onClick={() => handlePasswordChange(u.id)}>
-            Update
-          </Button>
-        </div>
+                                Update
+                              </Button>
+                            </div>
         {passwordErrors[u.id] && <p className="text-[11px] text-destructive">{passwordErrors[u.id]}</p>}
       </div>
     </div>
@@ -570,7 +570,7 @@ export default function UsersPage() {
               >
                 Clear
               </Button>
-            </div>
+                          </div>
           </div>
         </FilterPanel>
 
@@ -600,8 +600,8 @@ export default function UsersPage() {
                     {renderSecurity(u)}
                   </div>
                 ))}
-              </div>
-            )}
+                        </div>
+                      )}
           </div>
         ) : (
           <div className="card-soft overflow-hidden">
@@ -635,15 +635,15 @@ export default function UsersPage() {
                           <StatusPill tone={u.status === "active" ? "success" : "danger"} className="capitalize">
                             {u.status === "active" ? "Active" : "Disabled"}
                           </StatusPill>
-                        </TableCell>
+                    </TableCell>
                         <TableCell>{renderSecurity(u)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
               </div>
             )}
-          </div>
+      </div>
         )}
 
         <p className="hidden text-[11px] text-muted-foreground sm:block">Only Super Admin can manage users in V1.</p>

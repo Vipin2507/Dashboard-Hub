@@ -9,7 +9,7 @@ export type ProposalValueSource = {
   setupDeploymentCharges?: number | null;
 };
 
-/** Effective proposal total: final quote if set, otherwise grand total (incl. GST). */
+/** Effective proposal total: final quote if set, otherwise grand total (incl. GST + setup). */
 export function proposalTotalValue(source: ProposalValueSource): number {
   if (typeof source.finalQuoteValue === "number" && Number.isFinite(source.finalQuoteValue)) {
     return source.finalQuoteValue;
@@ -17,12 +17,11 @@ export function proposalTotalValue(source: ProposalValueSource): number {
   if (typeof source.grandTotal === "number" && Number.isFinite(source.grandTotal)) {
     return source.grandTotal;
   }
-  // Newer totals fold setup into subtotal; legacy fallback still adds setup if present.
-  const sub = Number(source.subtotal) || 0;
-  const tax = Number(source.totalTax) || 0;
-  const setup = Number(source.setupDeploymentCharges) || 0;
-  if (sub > 0 || tax > 0) return sub + tax;
-  return setup;
+  return (
+    (Number(source.subtotal) || 0) +
+    (Number(source.totalTax) || 0) +
+    (Number(source.setupDeploymentCharges) || 0)
+  );
 }
 
 export function isProposalBelowMinimumTotal(source: ProposalValueSource): boolean {

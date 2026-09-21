@@ -1,7 +1,7 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 import { formatProposalVersionComment } from "@/lib/proposalVersionComment";
-import { setupConfigurationGstAmount } from "@/lib/proposalSetupCharge";
+import { setupConfigurationGstAmount, setupServiceLabelForPdf } from "@/lib/proposalSetupCharge";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -617,9 +617,17 @@ function renderCommercialSection(
 
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
   const setupGst = setupConfigurationGstAmount(setupCharges);
+  if (chunkIndex === totalChunks - 1 && setupCharges > 0) {
+    tableBody.push([
+      "",
+      "Setup & Configuration Cost",
+      setupServiceLabelForPdf(proposal.setupServiceLabel),
+      formatINR(Math.round(setupCharges)),
+    ]);
+  }
 
   if (chunkIndex === totalChunks - 1) {
-    // Summary rows — setup is folded into subtotal / taxable / GST (no separate setup row).
+    // Summary rows — setup appears only in the item list above; include it in subtotal/taxable.
     const baseSum = proposal.lineItems.reduce((s, li) => s + baseAmount(li), 0) + setupCharges;
     const discSum = proposal.lineItems.reduce((s, li) => s + discountAmount(li), 0);
     const taxableSum = proposal.lineItems.reduce((s, li) => s + taxableAmount(li), 0) + setupCharges;
