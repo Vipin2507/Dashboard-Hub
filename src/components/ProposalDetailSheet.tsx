@@ -126,7 +126,6 @@ export function ProposalDetailSheet({
   activityLog.sort((a, b) => b.at.localeCompare(a.at));
 
   const dealValueInclGst = proposal.finalQuoteValue ?? proposal.grandTotal;
-  const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
   const status = normalizeProposalStatus(proposal.status);
 
   const saveNumber = async () => {
@@ -338,7 +337,6 @@ export function ProposalDetailSheet({
             <Section title="Commercial">
               <MetaRow label="Value excl. GST" value={formatINR(proposal.subtotal)} mono />
               <MetaRow label="GST" value={formatINR(proposal.totalTax)} mono />
-              <MetaRow label="Setup & configuration" value={formatINR(setupCharges)} mono />
               <MetaRow label="Value incl. GST" value={formatINR(dealValueInclGst)} mono emphasize />
             </Section>
 
@@ -400,7 +398,6 @@ export function ProposalDetailSheet({
                   <TotalsRow label="Subtotal" value={formatINR(proposal.subtotal)} />
                   <TotalsRow label="Discount" value={`-${formatINR(proposal.totalDiscount)}`} />
                   <TotalsRow label="GST" value={formatINR(proposal.totalTax)} />
-                  <TotalsRow label="Setup & configuration" value={formatINR(setupCharges)} />
                   <div className="flex justify-between border-t border-border pt-1.5 font-semibold">
                     <span>Grand total</span>
                     <span className="font-mono tabular-nums">{formatINR(proposal.grandTotal)}</span>

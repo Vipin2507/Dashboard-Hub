@@ -35,18 +35,23 @@ export function setupConfigurationGstAmount(
 }
 
 export type ProposalMoneyTotals = {
-  /** Line items excl. GST (excl. setup). */
+  /**
+   * Deal value excl. GST — line items + setup & configuration.
+   * Setup is not shown as its own commercial row; it is folded into this subtotal.
+   */
   subtotal: number;
+  /** Line items only (excl. setup), excl. GST. */
+  lineSubtotal: number;
   totalDiscount: number;
   /** GST on line items only. */
   lineTax: number;
-  /** Setup excl. GST. */
+  /** Setup excl. GST (stored separately for editing; included in `subtotal`). */
   setupCharges: number;
-  /** GST on setup. */
+  /** GST on setup (included in `totalTax`). */
   setupTax: number;
   /** lineTax + setupTax. */
   totalTax: number;
-  /** subtotal + setupCharges + totalTax. */
+  /** subtotal + totalTax. */
   grandTotal: number;
 };
 
@@ -58,7 +63,7 @@ type LineMoneySource = {
   discount?: number;
 };
 
-/** Compute proposal money totals with GST on setup & configuration. */
+/** Compute proposal money totals — setup folded into subtotal, with 18% GST. */
 export function computeProposalMoneyTotals(
   lineItems: LineMoneySource[] | null | undefined,
   setupExclGst: number,
@@ -66,14 +71,15 @@ export function computeProposalMoneyTotals(
   const items = Array.isArray(lineItems) ? lineItems : [];
   const setupCharges = Math.max(0, Number(setupExclGst) || 0);
   const setupTax = setupConfigurationGstAmount(setupCharges);
-  const subtotal = items.reduce((s, li) => s + (Number(li.lineTotal) || 0), 0);
+  const lineSubtotal = items.reduce((s, li) => s + (Number(li.lineTotal) || 0), 0);
   const totalDiscount = items.reduce(
     (s, li) =>
       s + (Number(li.qty) || 0) * (Number(li.unitPrice) || 0) * ((Number(li.discount) || 0) / 100),
     0,
   );
   const lineTax = items.reduce((s, li) => s + (Number(li.taxAmount) || 0), 0);
+  const subtotal = Math.round((lineSubtotal + setupCharges) * 100) / 100;
   const totalTax = Math.round((lineTax + setupTax) * 100) / 100;
-  const grandTotal = Math.round((subtotal + setupCharges + totalTax) * 100) / 100;
-  return { subtotal, totalDiscount, lineTax, setupCharges, setupTax, totalTax, grandTotal };
+  const grandTotal = Math.round((subtotal + totalTax) * 100) / 100;
+  return { subtotal, lineSubtotal, totalDiscount, lineTax, setupCharges, setupTax, totalTax, grandTotal };
 }

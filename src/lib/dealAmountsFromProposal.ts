@@ -1,5 +1,5 @@
 import type { Proposal, ProposalLineItem } from "@/types";
-import { setupConfigurationGstAmount } from "@/lib/proposalSetupCharge";
+import { computeProposalMoneyTotals } from "@/lib/proposalSetupCharge";
 
 export type DealFinanceAmounts = {
   amountWithoutTax: number;
@@ -13,21 +13,20 @@ type ProposalFinanceSource = Pick<
 >;
 
 function recomputeFromLineItems(proposal: ProposalFinanceSource): { sub: number; tax: number; grand: number } {
-  const items = Array.isArray(proposal.lineItems) ? proposal.lineItems : [];
-  const setup = Number(proposal.setupDeploymentCharges) || 0;
-  const setupGst = setupConfigurationGstAmount(setup);
-  const sub =
-    items.reduce((s, li: ProposalLineItem) => s + (Number(li.lineTotal) || 0), 0) + setup;
-  const tax =
-    items.reduce((s, li: ProposalLineItem) => s + (Number(li.taxAmount) || 0), 0) + setupGst;
-  const grand = sub + tax;
-  return { sub, tax, grand };
+  const money = computeProposalMoneyTotals(
+    proposal.lineItems,
+    Number(proposal.setupDeploymentCharges) || 0,
+  );
+  return { sub: money.subtotal, tax: money.totalTax, grand: money.grandTotal };
 }
 
 /**
  * Split a deal total into amount-without-tax + tax using proposal line totals.
  * When `dealValue` differs from the proposal grand total (e.g. negotiated quote),
  * the split is scaled so without-tax + tax = dealValue.
+ *
+ * Newer proposals store setup inside `subtotal`. Legacy rows kept setup outside
+ * `subtotal` and added it only into `grandTotal`.
  */
 export function dealAmountsFromProposal(
   proposal: ProposalFinanceSource,
@@ -39,7 +38,6 @@ export function dealAmountsFromProposal(
       : Number(proposal.finalQuoteValue ?? proposal.grandTotal) || 0;
 
   let sub = Number(proposal.subtotal) || 0;
-  // Setup is excl. GST and stored separately; GST on setup is included in totalTax when saved.
   const setup = Number(proposal.setupDeploymentCharges) || 0;
   let tax = Number(proposal.totalTax) || 0;
   let grand = Number(proposal.grandTotal) || 0;
@@ -50,8 +48,12 @@ export function dealAmountsFromProposal(
     tax = recomputed.tax;
     grand = recomputed.grand || grand;
   } else {
-    // Proposal.subtotal is excl. GST and excl. setup; amount without tax should include setup.
-    sub = sub + setup;
+    const asStored = sub + tax;
+    const asLegacy = sub + tax + setup;
+    if (grand > 0 && setup > 0) {
+      const closerToLegacy = Math.abs(grand - asLegacy) + 0.01 < Math.abs(grand - asStored);
+      if (closerToLegacy) sub = sub + setup;
+    }
     if (grand <= 0) grand = sub + tax;
   }
 

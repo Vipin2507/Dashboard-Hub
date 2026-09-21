@@ -30,7 +30,7 @@ function baseProposal(overrides: Partial<Proposal> = {}): Proposal {
       },
     ],
     setupDeploymentCharges: 200,
-    subtotal: 10000,
+    subtotal: 10200,
     totalDiscount: 0,
     totalTax: 1836,
     grandTotal: 12036,

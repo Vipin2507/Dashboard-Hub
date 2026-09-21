@@ -1,7 +1,7 @@
 import type { Proposal, ProposalLineItem, ProposalPdfScope } from "@/types";
 import { formatProposalQtyBracket } from "@/lib/proposalQtyDisplay";
 import { formatProposalVersionComment } from "@/lib/proposalVersionComment";
-import { setupConfigurationGstAmount, setupServiceLabelForPdf } from "@/lib/proposalSetupCharge";
+import { setupConfigurationGstAmount } from "@/lib/proposalSetupCharge";
 import type { ImageCompression, jsPDF } from "jspdf";
 import { useAppStore } from "@/store/useAppStore";
 import { imageDataFormat, preloadProposalImages } from "@/assets/proposal/images";
@@ -617,22 +617,14 @@ function renderCommercialSection(
 
   const setupCharges = Number((proposal as unknown as { setupDeploymentCharges?: number }).setupDeploymentCharges) || 0;
   const setupGst = setupConfigurationGstAmount(setupCharges);
-  if (chunkIndex === totalChunks - 1 && setupCharges > 0) {
-    tableBody.push([
-      "",
-      "Setup & Configuration Cost",
-      setupServiceLabelForPdf(proposal.setupServiceLabel),
-      formatINR(Math.round(setupCharges)),
-    ]);
-  }
 
   if (chunkIndex === totalChunks - 1) {
-    // Summary rows (match frontend totals)
-    const baseSum = proposal.lineItems.reduce((s, li) => s + baseAmount(li), 0);
+    // Summary rows — setup is folded into subtotal / taxable / GST (no separate setup row).
+    const baseSum = proposal.lineItems.reduce((s, li) => s + baseAmount(li), 0) + setupCharges;
     const discSum = proposal.lineItems.reduce((s, li) => s + discountAmount(li), 0);
-    const taxableSum = proposal.lineItems.reduce((s, li) => s + taxableAmount(li), 0);
+    const taxableSum = proposal.lineItems.reduce((s, li) => s + taxableAmount(li), 0) + setupCharges;
     const gstSum = proposal.lineItems.reduce((s, li) => s + gstAmount(li), 0) + setupGst;
-    const grandComputed = taxableSum + gstSum + setupCharges;
+    const grandComputed = taxableSum + gstSum;
 
     const finalToShow =
       (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandComputed;
@@ -673,7 +665,6 @@ function renderCommercialSection(
     pushSummary("Discount", discSum);
     pushSummary("Taxable Amount", taxableSum);
     pushSummary("GST Total", gstSum);
-    if (setupCharges > 0) pushSummary("Setup & Configuration Cost", setupCharges);
     pushSummary("Grand Total (Incl. GST)", grandComputed);
     if ((proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue != null) {
       pushSummary("Final Quote Value", finalToShow);

@@ -827,7 +827,6 @@ export function ProposalFormDialog({
                     <div className="flex justify-between"><span>Deal Value (Excl. GST)</span><span className="font-mono">{formatINR(totals.subtotal)}</span></div>
                     <div className="flex justify-between"><span>Total Discount</span><span className="font-mono">-{formatINR(totals.totalDiscount)}</span></div>
                     <div className="flex justify-between"><span>Total GST</span><span className="font-mono">{formatINR(totals.totalTax)}</span></div>
-                    <div className="flex justify-between"><span>{MANDATORY_SETUP_CONFIGURATION_LABEL}</span><span className="font-mono">{formatINR(effectiveSetupCharges)}</span></div>
                     <div className="flex justify-between font-medium"><span>Deal Value (Incl. GST)</span><span className="font-mono">{formatINR(totals.grandTotal)}</span></div>
                     {isProposalBelowMinimumTotal({
                       grandTotal: totals.grandTotal,
@@ -854,7 +853,7 @@ export function ProposalFormDialog({
                     }
                   />
                   <p className="text-xs text-muted-foreground">
-                    Editable — minimum ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")} excl. GST.
+                    Included in Deal Value (excl. GST). Minimum ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}; 18% GST applies.
                   </p>
                 </div>
               </div>
@@ -1094,19 +1093,8 @@ export function ProposalFormDialog({
                           }
                         />
                         <p className="text-[10px] text-muted-foreground">
-                          Min ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}
+                          Included in subtotal · min ₹{MANDATORY_SETUP_CONFIGURATION_COST.toLocaleString("en-IN")}
                         </p>
-                      </div>
-                      <div className="min-w-0 space-y-0.5">
-                        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          Setup service duration
-                        </Label>
-                        <Input
-                          className="h-9 text-sm"
-                          value={setupServiceLabel}
-                          onChange={(e) => setSetupServiceLabel(e.target.value)}
-                          placeholder={DEFAULT_SETUP_SERVICE_LABEL}
-                        />
                       </div>
                       {canOverride && (
                         <div className="min-w-0 space-y-0.5">
