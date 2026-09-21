@@ -93,9 +93,9 @@ export function useDashboardData() {
     subscriptionTrackerQuery,
   } = useCoreEntityQueries();
 
-  const proposalScope = getScope(role, "proposals");
-  const dealScope = getScope(role, "deals");
-  const customerScope = getScope(role, "customers");
+  const proposalScope = getScope(role, "proposals", me);
+  const dealScope = getScope(role, "deals", me);
+  const customerScope = getScope(role, "customers", me);
 
   const rawProposals = proposalsQuery.data ?? [];
   const rawDeals = dealsQuery.data ?? [];

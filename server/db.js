@@ -52,6 +52,21 @@ function migrateCustomerSecondaryEmailsSchema() {
 }
 migrateCustomerSecondaryEmailsSchema();
 
+function migrateSalesGroupsSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      teamId TEXT NOT NULL,
+      adminUserId TEXT NOT NULL,
+      memberUserIds TEXT NOT NULL DEFAULT '[]',
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+}
+migrateSalesGroupsSchema();
+
 /** Sales targets table for executive performance (CREATE TABLE in schema for new installs). */
 function migrateExecutiveSalesTargetsSchema() {
   db.exec(`

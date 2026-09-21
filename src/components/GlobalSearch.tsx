@@ -30,9 +30,9 @@ export function GlobalSearch({ className }: { className?: string }) {
   const hits = useMemo(() => {
     if (query.length < 1) return [] as SearchHit[];
 
-    const custScope = getScope(me.role, "customers");
-    const propScope = getScope(me.role, "proposals");
-    const dealScope = getScope(me.role, "deals");
+    const custScope = getScope(me.role, "customers", me);
+    const propScope = getScope(me.role, "proposals", me);
+    const dealScope = getScope(me.role, "deals", me);
 
     const visibleCustomers = visibleWithScope(custScope, me, customers);
     const visibleProposals = visibleWithScope(propScope, me, proposals);

@@ -524,7 +524,7 @@ export default function CustomerProfile() {
   const inventoryItems = useAppStore((s) => s.inventoryItems);
   const setInventoryItems = useAppStore((s) => s.setInventoryItems);
   const customersQuery = useCustomersListQuery();
-  const scope = getScope(me.role, "customers");
+  const scope = getScope(me.role, "customers", me);
   const visibleCustomers = visibleWithScope(scope, me, customers);
   const rawCustomer = id ? (visibleCustomers.find((c) => c.id === id) ?? null) : null;
   const extrasQuery = useCustomerExtrasQuery(rawCustomer?.id ?? id);
@@ -645,7 +645,7 @@ export default function CustomerProfile() {
   const openTicketsCount =
     (customer?.supportTickets ?? []).filter((t) => t.status === "open" || t.status === "in_progress").length;
 
-  const dealScope = getScope(me.role, "deals");
+  const dealScope = getScope(me.role, "deals", me);
   const visibleDeals = visibleWithScope(dealScope, me, deals);
   const customerDeals = customer
     ? liveDealsReady

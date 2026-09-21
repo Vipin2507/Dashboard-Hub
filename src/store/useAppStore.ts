@@ -11,6 +11,7 @@ import type {
   MeContext,
   Region,
   Team,
+  SalesGroup,
   User,
   Customer,
   CustomerContact,
@@ -55,6 +56,7 @@ interface AppState {
   me: MeContext;
   regions: Region[];
   teams: Team[];
+  groups: SalesGroup[];
   users: User[];
   customers: Customer[];
   proposals: Proposal[];
@@ -70,6 +72,7 @@ interface AppState {
   // Auth & user management
   setRegions: (regions: Region[]) => void;
   setTeams: (teams: Team[]) => void;
+  setGroups: (groups: SalesGroup[]) => void;
   setUsers: (users: User[]) => void;
   setNotifications: (notifications: Notification[]) => void;
   login: (email: string, password: string) => void;
@@ -157,14 +160,38 @@ function getUserForRole(role: Role, users: User[]): User {
   return users.find(u => u.role === role) ?? users[0];
 }
 
-function meFromUser(u: User): MeContext {
-  return { id: u.id, name: u.name, role: u.role, teamId: u.teamId, regionId: u.regionId };
+function meFromUser(u: User, groups: SalesGroup[] = []): MeContext {
+  const adminGroups = groups.filter((g) => g.adminUserId === u.id);
+  const memberIds = new Set<string>();
+  for (const g of adminGroups) {
+    memberIds.add(g.adminUserId);
+    for (const id of g.memberUserIds ?? []) {
+      if (id) memberIds.add(id);
+    }
+  }
+  return {
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    teamId: u.teamId,
+    regionId: u.regionId,
+    adminGroupIds: adminGroups.map((g) => g.id),
+    groupMemberUserIds: [...memberIds],
+  };
 }
 
 const GUEST_USER_ID = '__guest__';
 
 function guestMe(): MeContext {
-  return { id: GUEST_USER_ID, name: '', role: 'sales_rep', teamId: 't1', regionId: 'r2' };
+  return {
+    id: GUEST_USER_ID,
+    name: '',
+    role: 'sales_rep',
+    teamId: 't1',
+    regionId: 'r2',
+    adminGroupIds: [],
+    groupMemberUserIds: [],
+  };
 }
 
 function readAuthUserId(): string | null {
@@ -292,6 +319,7 @@ function getInitialState() {
     me,
     regions: structuredClone(seedRegions),
     teams: structuredClone(seedTeams),
+    groups: [] as SalesGroup[],
     users,
     customers: structuredClone(seedCustomers),
     proposals: structuredClone(seedProposals),
@@ -322,6 +350,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setRegions: (regions) => set({ regions }),
   setTeams: (teams) => set({ teams }),
+  setGroups: (groups) => {
+    set((s) => {
+      const effId = s.effectiveUserId ?? s.authUserId;
+      const user = effId ? s.users.find((u) => u.id === effId && u.status === 'active') : null;
+      return {
+        groups,
+        me: user ? meFromUser(user, groups) : s.me,
+      };
+    });
+  },
   setUsers: (users) => {
     const authUserId = get().authUserId;
     if (!authUserId) {
@@ -348,7 +386,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         effectiveUserId = target.id;
       }
     }
-    set({ users, me: meFromUser(eff), effectiveUserId });
+    set({ users, me: meFromUser(eff, get().groups), effectiveUserId });
   },
   setNotifications: (notifications) => set({ notifications }),
 
@@ -365,7 +403,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       throw new Error('Invalid password');
     }
     persistAuthUserId(user.id);
-    set({ me: meFromUser(user), authUserId: user.id, effectiveUserId: null });
+    set({ me: meFromUser(user, get().groups), authUserId: user.id, effectiveUserId: null });
   },
 
   logout: () => {
@@ -479,7 +517,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (status !== 'active' && userId === me.id && authUserId && userId !== authUserId) {
       const logged = get().users.find((u) => u.id === authUserId && u.status === 'active');
       if (logged) {
-        set({ effectiveUserId: null, me: meFromUser(logged) });
+        set({ effectiveUserId: null, me: meFromUser(logged, get().groups) });
       }
     }
   },
@@ -1243,7 +1281,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!logged || logged.role !== 'super_admin') return;
     const user = getUserForRole(role, get().users);
     set({
-      me: meFromUser(user),
+      me: meFromUser(user, get().groups),
       effectiveUserId: user.id === authUserId ? null : user.id,
     });
   },
@@ -1255,7 +1293,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const user = get().users.find((u) => u.id === userId);
     if (!user) return;
     set({
-      me: meFromUser(user),
+      me: meFromUser(user, get().groups),
       effectiveUserId: user.id === authUserId ? null : user.id,
     });
   },

@@ -17,7 +17,7 @@ export type Module =
   | 'data_control_center'
   | 'executive_performance';
 
-export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'SELF' | 'NONE';
+export type Scope = 'ALL' | 'REGION' | 'TEAM' | 'GROUP' | 'SELF' | 'NONE';
 
 export type Action =
   | 'view'
@@ -44,6 +44,18 @@ export interface Team {
   id: string;
   name: string;
   regionId: string;
+}
+
+/** Sales group under a team; group admins see member executives across key modules. */
+export interface SalesGroup {
+  id: string;
+  name: string;
+  teamId: string;
+  /** User who can view executive performance + scoped data for group members. */
+  adminUserId: string;
+  memberUserIds: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface User {
@@ -414,6 +426,10 @@ export interface MeContext {
   role: Role;
   teamId: string;
   regionId: string;
+  /** Groups where this user is the assigned group admin. */
+  adminGroupIds?: string[];
+  /** Member user ids across groups this user administers (includes self). */
+  groupMemberUserIds?: string[];
 }
 
 export type MasterType = 'product_category' | 'subscription_type' | 'proposal_format';

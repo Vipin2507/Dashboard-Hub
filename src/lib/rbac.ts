@@ -7,6 +7,15 @@ interface ModulePolicy {
 
 type RBACPolicy = Record<Role, Partial<Record<Module, ModulePolicy>>>;
 
+const GROUP_ELEVATED_MODULES: Module[] = [
+  'dashboard',
+  'proposals',
+  'deals',
+  'customers',
+  'email_log',
+  'executive_performance',
+];
+
 export const RBAC_POLICY: RBACPolicy = {
   super_admin: {
     dashboard: { scope: 'ALL', actions: ['view'] },
@@ -74,21 +83,34 @@ export const RBAC_POLICY: RBACPolicy = {
   },
 };
 
+export function isGroupAdmin(me?: MeContext | null): boolean {
+  return Boolean(me?.adminGroupIds?.length);
+}
+
 export function getModulePolicy(role: Role, module: Module): ModulePolicy | null {
   return RBAC_POLICY[role]?.[module] ?? null;
 }
 
-export function getScope(role: Role, module: Module): Scope {
-  return getModulePolicy(role, module)?.scope ?? 'NONE';
+export function getScope(role: Role, module: Module, me?: MeContext): Scope {
+  const base = getModulePolicy(role, module)?.scope ?? 'NONE';
+  if (!isGroupAdmin(me) || !GROUP_ELEVATED_MODULES.includes(module)) return base;
+  // Group admins see their members (and themselves) instead of only SELF/TEAM/REGION.
+  if (base === 'SELF' || base === 'TEAM' || base === 'REGION') return 'GROUP';
+  if (base === 'NONE' && module === 'executive_performance') return 'GROUP';
+  return base;
 }
 
-export function can(role: Role, module: Module, action: Action): boolean {
+export function can(role: Role, module: Module, action: Action, me?: MeContext): boolean {
+  if (module === 'executive_performance' && isGroupAdmin(me) && (action === 'view' || action === 'export')) {
+    return true;
+  }
   const policy = getModulePolicy(role, module);
   if (!policy) return false;
   return policy.actions.includes(action);
 }
 
-export function hasModuleAccess(role: Role, module: Module): boolean {
+export function hasModuleAccess(role: Role, module: Module, me?: MeContext): boolean {
+  if (module === 'executive_performance' && isGroupAdmin(me)) return true;
   const policy = getModulePolicy(role, module);
   return policy !== null && policy.scope !== 'NONE';
 }
@@ -98,11 +120,18 @@ export function visibleWithScope<T extends { ownerUserId?: string; assignedTo?: 
   me: MeContext,
   records: T[]
 ): T[] {
+  const memberIds = new Set(me.groupMemberUserIds ?? []);
   switch (scope) {
     case 'ALL': return records;
     case 'SELF': return records.filter(r => (r.ownerUserId ?? r.assignedTo) === me.id);
     case 'TEAM': return records.filter(r => r.teamId === me.teamId);
     case 'REGION': return records.filter(r => r.regionId === me.regionId);
+    case 'GROUP':
+      return records.filter((r) => {
+        const owner = r.ownerUserId ?? r.assignedTo;
+        if (!owner) return false;
+        return owner === me.id || memberIds.has(owner);
+      });
     case 'NONE': return [];
   }
 }

@@ -31,6 +31,7 @@ import { LIVE_ENTITY_POLL_MS } from "@/lib/queryKeys";
 function DataBootstrapper() {
   const setRegions = useAppStore((s) => s.setRegions);
   const setTeams = useAppStore((s) => s.setTeams);
+  const setGroups = useAppStore((s) => s.setGroups);
   const setUsers = useAppStore((s) => s.setUsers);
   const setNotifications = useAppStore((s) => s.setNotifications);
   const meId = useAppStore((s) => s.me.id);
@@ -44,15 +45,17 @@ function DataBootstrapper() {
           userId: meId || "",
           role: meRole || "",
         });
-        const [regionsRes, teamsRes, usersRes, notificationsRes] = await Promise.all([
+        const [regionsRes, teamsRes, groupsRes, usersRes, notificationsRes] = await Promise.all([
           fetch(apiUrl("/api/regions")),
           fetch(apiUrl("/api/teams")),
+          fetch(apiUrl("/api/groups")),
           fetch(apiUrl("/api/users")),
           fetch(apiUrl(`/api/notifications?${notifQs}`)),
         ]);
         if (!mounted) return;
         if (regionsRes.ok) setRegions(await regionsRes.json());
         if (teamsRes.ok) setTeams(await teamsRes.json());
+        if (groupsRes.ok) setGroups(await groupsRes.json());
         if (usersRes.ok) setUsers(await usersRes.json());
         if (notificationsRes.ok) setNotifications(await notificationsRes.json());
       } catch {
@@ -67,7 +70,7 @@ function DataBootstrapper() {
       mounted = false;
       window.clearInterval(intervalId);
     };
-  }, [setRegions, setTeams, setUsers, setNotifications, meId, meRole]);
+  }, [setRegions, setTeams, setGroups, setUsers, setNotifications, meId, meRole]);
 
   return null;
 }

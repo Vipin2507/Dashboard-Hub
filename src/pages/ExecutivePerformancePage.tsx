@@ -494,12 +494,15 @@ export default function ExecutivePerformancePage() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const authUserId = useAppStore((s) => s.authUserId);
+  const me = useAppStore((s) => s.me);
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
 
-  const loggedInUser = users.find((u) => u.id === authUserId);
-  const isSuperAdmin = loggedInUser?.role === "super_admin";
+  const loggedInUser = users.find((u) => u.id === authUserId) ?? users.find((u) => u.id === me.id);
+  const isSuperAdmin = me.role === "super_admin";
+  const isGroupAdmin = Boolean(me.adminGroupIds?.length);
+  const canAccessExecPerformance = isSuperAdmin || isGroupAdmin;
 
   const [applied, setApplied] = useState<AppliedFilters>(() => loadInitialExecutiveFilters(searchParams));
   const [draft, setDraft] = useState<AppliedFilters>(() => loadInitialExecutiveFilters(searchParams));
@@ -518,7 +521,7 @@ export default function ExecutivePerformancePage() {
   }, [searchParams]);
 
   const queryFilters: ExecutivePerformanceFilters | null = useMemo(() => {
-    if (!isSuperAdmin || !loggedInUser) return null;
+    if (!canAccessExecPerformance || !loggedInUser) return null;
     return {
       from: applied.from,
       to: applied.to,
@@ -534,22 +537,22 @@ export default function ExecutivePerformancePage() {
       detailType: detailType ?? undefined,
       detailPage,
       detailPageSize: 25,
-      actorRole: "super_admin",
+      actorRole: isSuperAdmin ? "super_admin" : loggedInUser.role,
       actorUserId: loggedInUser.id,
       actorUserName: loggedInUser.name,
     };
-  }, [applied, detailPage, detailType, isSuperAdmin, loggedInUser]);
+  }, [applied, canAccessExecPerformance, detailPage, detailType, isSuperAdmin, loggedInUser]);
 
-  const query = useExecutivePerformanceQuery(queryFilters, Boolean(isSuperAdmin));
+  const query = useExecutivePerformanceQuery(queryFilters, Boolean(canAccessExecPerformance));
 
-  const salesReps = useMemo(
-    () =>
-      users.filter(
-        (u) =>
-          (u.role === "sales_rep" || u.role === "sales_manager") && u.status !== "disabled",
-      ),
-    [users],
-  );
+  const salesReps = useMemo(() => {
+    const base = users.filter(
+      (u) => (u.role === "sales_rep" || u.role === "sales_manager") && u.status !== "disabled",
+    );
+    if (isSuperAdmin) return base;
+    const memberIds = new Set(me.groupMemberUserIds ?? []);
+    return base.filter((u) => memberIds.has(u.id));
+  }, [users, isSuperAdmin, me.groupMemberUserIds]);
 
   const hasPending =
     draft.range !== applied.range ||
@@ -704,7 +707,7 @@ export default function ExecutivePerformancePage() {
     });
   }, [data?.lossReasons, data?.rejectionReasons, draft.reasonType]);
 
-  if (!isSuperAdmin) {
+  if (!canAccessExecPerformance) {
     return <Navigate to="/" replace />;
   }
 

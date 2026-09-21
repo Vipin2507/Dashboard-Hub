@@ -560,7 +560,7 @@ export default function DealsPage() {
   const users = useAppStore((s) => s.users);
   const teams = useAppStore((s) => s.teams);
   const regions = useAppStore((s) => s.regions);
-  const scope = getScope(me.role, "deals");
+  const scope = getScope(me.role, "deals", me);
   const visibleDeals = visibleWithScope(scope, me, deals);
   const scopedActiveDeals = useMemo(
     () => visibleDeals.filter((d) => !d.deletedAt),

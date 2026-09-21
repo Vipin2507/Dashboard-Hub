@@ -57,6 +57,7 @@ export const QK = {
   // Users / Teams / Regions
   users: () => ["users"] as const,
   teams: () => ["teams"] as const,
+  groups: () => ["groups"] as const,
   regions: () => ["regions"] as const,
   notifications: () => ["notifications"] as const,
   notificationReads: (userId: string) => ["notifications", "reads", userId] as const,

@@ -167,7 +167,7 @@ export default function CustomersPage() {
   };
 
   const all = customersQuery.data ?? [];
-  const scope = getScope(me.role, 'customers');
+  const scope = getScope(me.role, 'customers', me);
   const scoped = scope === 'NONE' ? [] : scope === 'ALL' ? all : all.filter(c => c.regionId === me.regionId);
   const visible = scoped.filter(c => {
     if (leadFilter && !c.leadId?.toLowerCase().includes(leadFilter.toLowerCase())) return false;

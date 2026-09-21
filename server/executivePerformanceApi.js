@@ -1,6 +1,6 @@
 /**
- * Super Admin executive performance analytics (aggregated).
- * Auth model matches the rest of the app: client-supplied actorRole === "super_admin".
+ * Super Admin + Group Admin executive performance analytics (aggregated).
+ * Auth: super_admin sees all; group admins see only their group members.
  */
 
 import { buildTargetVsAchievement, resolveTargetsForPeriod } from "./salesTargetsLib.js";
@@ -26,13 +26,41 @@ function getActor(req) {
   };
 }
 
-function requireSuperAdmin(req, res) {
-  const { actorRole } = getActor(req);
-  if (actorRole !== "super_admin") {
-    res.status(403).json({ error: "Only Super Admin can access Executive Performance" });
-    return false;
+function parseJsonArray(raw) {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw !== "string" || !raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
   }
-  return true;
+}
+
+/** @returns {{ ok: true, memberIds: Set<string>|null } | { ok: false }} */
+function requireExecPerformanceAccess(req, res, db) {
+  const { actorRole, userId } = getActor(req);
+  if (actorRole === "super_admin") {
+    return { ok: true, memberIds: null };
+  }
+  try {
+    const groups = db
+      .prepare("SELECT adminUserId, memberUserIds FROM sales_groups WHERE adminUserId = ?")
+      .all(String(userId || ""));
+    if (!groups.length) {
+      res.status(403).json({ error: "Only Super Admin or Group Admin can access Executive Performance" });
+      return { ok: false };
+    }
+    const memberIds = new Set();
+    for (const g of groups) {
+      memberIds.add(String(g.adminUserId));
+      for (const id of parseJsonArray(g.memberUserIds)) memberIds.add(id);
+    }
+    return { ok: true, memberIds };
+  } catch {
+    res.status(403).json({ error: "Only Super Admin or Group Admin can access Executive Performance" });
+    return { ok: false };
+  }
 }
 
 function isValidYmd(value) {
@@ -338,7 +366,9 @@ function sortReasons(map) {
  */
 export function registerExecutivePerformanceApi(app, db) {
   app.get("/api/analytics/executive-performance", (req, res) => {
-    if (!requireSuperAdmin(req, res)) return;
+    const access = requireExecPerformanceAccess(req, res, db);
+    if (!access.ok) return;
+    const groupMemberIds = access.memberIds;
 
     try {
       const q = req.query || {};
@@ -455,12 +485,18 @@ export function registerExecutivePerformanceApi(app, db) {
       for (const p of proposalRows) {
         if (p.assignedTo) execIds.add(p.assignedTo);
       }
+      if (groupMemberIds) {
+        for (const id of [...execIds]) {
+          if (!groupMemberIds.has(id)) execIds.delete(id);
+        }
+      }
 
       /** @type {Map<string, ReturnType<typeof emptyExecStats>>} */
       const byExec = new Map();
       for (const id of execIds) {
         const u = userById[id];
         if (!u) continue;
+        if (groupMemberIds && !groupMemberIds.has(id)) continue;
         if (executiveId && id !== executiveId) continue;
         if (teamId && u.teamId !== teamId) continue;
         if (regionId && u.regionId !== regionId) continue;
@@ -469,6 +505,7 @@ export function registerExecutivePerformanceApi(app, db) {
 
       const passUser = (userId) => {
         if (!userId) return false;
+        if (groupMemberIds && !groupMemberIds.has(userId)) return false;
         if (executiveId && userId !== executiveId) return false;
         const u = userById[userId];
         if (!u) return false;

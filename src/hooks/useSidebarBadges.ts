@@ -13,19 +13,19 @@ export function useSidebarBadges() {
   const role = me.role;
 
   const proposalsPending = useQuery({
-    queryKey: [...QK.proposalPendingBadge(), role, me.teamId, me.regionId],
+    queryKey: [...QK.proposalPendingBadge(), role, me.teamId, me.regionId, me.adminGroupIds?.join(",") ?? ""],
     queryFn: async () => {
       const rows = await api.get<Proposal[]>("/proposals?status=approval_pending");
-      const scope = getScope(me.role, "proposals");
+      const scope = getScope(me.role, "proposals", me);
       return visibleWithScope(scope, me, rows).length;
     },
     staleTime: 30_000,
     refetchInterval: 60_000,
-    enabled: role === "super_admin" || role === "sales_manager",
+    enabled: role === "super_admin" || role === "sales_manager" || Boolean(me.adminGroupIds?.length),
   });
 
   const dealsNegotiation = useQuery({
-    queryKey: [...QK.dealsNegotiationBadge(), role, me.teamId, me.regionId],
+    queryKey: [...QK.dealsNegotiationBadge(), role, me.teamId, me.regionId, me.adminGroupIds?.join(",") ?? ""],
     queryFn: async () => {
       const qs = new URLSearchParams();
       qs.set("stage", "Negotiation");
@@ -34,7 +34,7 @@ export function useSidebarBadges() {
       qs.set("actorTeamId", me.teamId);
       qs.set("actorRegionId", me.regionId);
       const rows = await api.get<Deal[]>(`/deals?${qs.toString()}`);
-      const scope = getScope(me.role, "deals");
+      const scope = getScope(me.role, "deals", me);
       return visibleWithScope(scope, me, rows).length;
     },
     staleTime: 30_000,
@@ -42,13 +42,13 @@ export function useSidebarBadges() {
   });
 
   const paymentsOverdue = useQuery({
-    queryKey: [...QK.paymentsOverdueBadge(), role, me.teamId, me.regionId],
+    queryKey: [...QK.paymentsOverdueBadge(), role, me.teamId, me.regionId, me.adminGroupIds?.join(",") ?? ""],
     queryFn: async () => {
       const rows = await api.get<PaymentRemainingRow[]>("/payments/remaining?overdue=true");
-      const scope = getScope(me.role, "customers");
+      const scope = getScope(me.role, "customers", me);
       if (scope === "ALL") return rows.length;
 
-      const customers = await api.get<Array<{ id: string; regionId: string }>>("/customers");
+      const customers = await api.get<Array<{ id: string; regionId: string; assignedTo?: string }>>("/customers");
       const { users } = useAppStore.getState();
 
       let allowedIds: Set<string>;
@@ -57,6 +57,16 @@ export function useSidebarBadges() {
       } else if (scope === "TEAM") {
         const teamRegions = new Set(users.filter((u) => u.teamId === me.teamId).map((u) => u.regionId));
         allowedIds = new Set(customers.filter((c) => teamRegions.has(c.regionId)).map((c) => c.id));
+      } else if (scope === "GROUP") {
+        const memberIds = new Set(me.groupMemberUserIds ?? []);
+        allowedIds = new Set(
+          customers
+            .filter((c) => {
+              const owner = (c as { assignedTo?: string }).assignedTo;
+              return owner && (owner === me.id || memberIds.has(owner));
+            })
+            .map((c) => c.id),
+        );
       } else if (scope === "SELF") {
         allowedIds = new Set(); // API customers lack owner id — show 0
       } else {

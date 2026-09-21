@@ -44,7 +44,7 @@ export default function ProposalsPage() {
   const createDeal = useAppStore(s => s.createDeal);
   const updateFinalValue = useAppStore(s => s.updateFinalValue);
 
-  const scope = getScope(me.role, 'proposals');
+  const scope = getScope(me.role, 'proposals', me);
   const visible = visibleWithScope(scope, me, proposals);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);

@@ -594,11 +594,14 @@ export default function DashboardPage() {
     [filteredProposals]
   );
 
-  const isAdminView = me.role === "super_admin" || me.role === "sales_manager";
+  const isAdminView =
+    me.role === "super_admin" || me.role === "sales_manager" || Boolean(me.adminGroupIds?.length);
   const teamPerformance = useMemo(() => {
     if (!isAdminView) return [];
+    const memberIds = new Set(me.groupMemberUserIds ?? []);
     const reps = users.filter((u) => {
       if (u.role !== "sales_rep") return false;
+      if (me.adminGroupIds?.length && !memberIds.has(u.id)) return false;
       if (ownerFilter !== "all" && u.id !== ownerFilter) return false;
       if (teamFilter !== "all" && u.teamId !== teamFilter) return false;
       if (regionFilter !== "all" && u.regionId !== regionFilter) return false;
@@ -633,7 +636,19 @@ export default function DashboardPage() {
         };
       })
       .sort((a, b) => b.dealsWonValue - a.dealsWonValue);
-  }, [isAdminView, users, filteredProposals, filteredDeals, ownerFilter, teamFilter, regionFilter, dateFrom, dateTo]);
+  }, [
+    isAdminView,
+    users,
+    filteredProposals,
+    filteredDeals,
+    ownerFilter,
+    teamFilter,
+    regionFilter,
+    dateFrom,
+    dateTo,
+    me.adminGroupIds,
+    me.groupMemberUserIds,
+  ]);
 
   const leastPerforming = useMemo(() => {
     if (!teamPerformance.length) return null;
@@ -1033,7 +1048,10 @@ export default function DashboardPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All owners</SelectItem>
-                  {users.map((u) => (
+                  {(me.adminGroupIds?.length
+                    ? users.filter((u) => (me.groupMemberUserIds ?? []).includes(u.id))
+                    : users
+                  ).map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.name}
                     </SelectItem>

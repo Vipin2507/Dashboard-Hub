@@ -195,7 +195,7 @@ export function ProposalFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId, lineItems, monthYear, proposals, editingProposal?.id]);
 
-  const customerScope = getScope(me.role, "customers");
+  const customerScope = getScope(me.role, "customers", me);
   const visibleCustomers = useMemo(
     () => visibleWithScope(customerScope, me, customers),
     [customerScope, me, customers],

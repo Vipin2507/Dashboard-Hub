@@ -12,6 +12,7 @@ import { attachInteractionLogger } from "./middleware/interactionLogger.js";
 import { registerDeliveryApi } from "./deliveryApi.js";
 import { registerCustomerExtrasApi } from "./customerExtrasApi.js";
 import { registerExecutivePerformanceApi } from "./executivePerformanceApi.js";
+import { registerGroupsApi } from "./groupsApi.js";
 import { registerSalesTargetsApi } from "./salesTargetsApi.js";
 
 const app = express();
@@ -2586,6 +2587,7 @@ registerDeliveryApi(app, db, { broadcast });
 registerCustomerExtrasApi(app, db, { broadcast });
 registerDataControlApi(app, db, { makeId, nextDealId });
 registerSubscriptionRenewalApi(app, db);
+registerGroupsApi(app, { db, broadcast });
 registerExecutivePerformanceApi(app, db);
 registerSalesTargetsApi(app, db, { makeId });
 

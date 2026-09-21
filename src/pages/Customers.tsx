@@ -280,7 +280,7 @@ export default function Customers() {
     onSettled: () => customersQuery.refetch(),
   });
 
-  const scope = getScope(me.role, "customers");
+  const scope = getScope(me.role, "customers", me);
   const visible = visibleWithScope(scope, me, customers);
 
   const initialCustomerFilters = useMemo(
@@ -457,13 +457,27 @@ export default function Customers() {
   const canUpdateCustomer = (c: Customer) => {
     if (!canUpdate) return false;
     if (scope === "SELF" && c.assignedTo !== me.id) return false;
+    if (scope === "GROUP") {
+      const memberIds = new Set(me.groupMemberUserIds ?? []);
+      return c.assignedTo === me.id || (c.assignedTo != null && memberIds.has(c.assignedTo));
+    }
     return true;
   };
   const canDeleteCustomer = (c: Customer) => {
     if (!canDelete) return false;
     if (scope === "SELF" && c.assignedTo !== me.id) return false;
+    if (scope === "GROUP") {
+      const memberIds = new Set(me.groupMemberUserIds ?? []);
+      return c.assignedTo === me.id || (c.assignedTo != null && memberIds.has(c.assignedTo));
+    }
     return true;
   };
+
+  const ownerFilterUsers = useMemo(() => {
+    if (!me.adminGroupIds?.length) return users;
+    const memberIds = new Set(me.groupMemberUserIds ?? []);
+    return users.filter((u) => memberIds.has(u.id));
+  }, [users, me.adminGroupIds, me.groupMemberUserIds]);
 
   const handleExportCsv = () => {
     const headers = [
@@ -775,7 +789,7 @@ export default function Customers() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All owners</SelectItem>
-                      {users.map((u) => (
+                      {ownerFilterUsers.map((u) => (
                         <SelectItem key={u.id} value={u.id}>
                           {u.name}
                         </SelectItem>

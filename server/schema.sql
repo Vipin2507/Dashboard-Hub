@@ -84,6 +84,16 @@ CREATE TABLE IF NOT EXISTS teams (
   regionId TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sales_groups (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  teamId TEXT NOT NULL,
+  adminUserId TEXT NOT NULL,
+  memberUserIds TEXT NOT NULL DEFAULT '[]',
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

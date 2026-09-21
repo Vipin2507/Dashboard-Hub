@@ -431,7 +431,7 @@ export default function Proposals() {
   const updateProposal = useAppStore((s) => s.updateProposal);
   const submitForApprovalAction = useAppStore((s) => s.submitForApproval);
 
-  const scope = getScope(me.role, "proposals");
+  const scope = getScope(me.role, "proposals", me);
 
   const persistedProposalsFilters = useMemo(() => {
     if (hasAnySearchParam(searchParams, ["status", "owner", "team", "region", "from", "to", "range"])) {
@@ -656,10 +656,14 @@ export default function Proposals() {
   const canAdminSetStatus = me.role === "super_admin";
 
   const ownerOptions = useMemo(() => {
-    const reps = users.filter((u) => u.role === "sales_rep" || u.role === "sales_manager" || u.role === "super_admin");
+    let reps = users.filter((u) => u.role === "sales_rep" || u.role === "sales_manager" || u.role === "super_admin");
+    if (me.adminGroupIds?.length) {
+      const memberIds = new Set(me.groupMemberUserIds ?? []);
+      reps = reps.filter((u) => memberIds.has(u.id));
+    }
     const list = reps.length > 0 ? reps : users;
     return [...list].sort((a, b) => a.name.localeCompare(b.name)).map((u) => ({ id: u.id, name: u.name }));
-  }, [users]);
+  }, [users, me.adminGroupIds, me.groupMemberUserIds]);
 
   const changeAssignedTo = async (p: Proposal, nextUserId: string) => {
     if (!canReassign) return;

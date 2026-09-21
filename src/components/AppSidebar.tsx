@@ -151,7 +151,7 @@ export function AppSidebar({ onClose, collapsed = false }: AppSidebarProps) {
   const { proposalsBadge, dealsBadge, paymentsBadge } = useSidebarBadges();
   const { toggleCollapsed, isLgUp } = useSidebarNav();
 
-  const customerScope = getScope(me.role, "customers");
+  const customerScope = getScope(me.role, "customers", me);
   const visibleCustomers = visibleWithScope(customerScope, me, customers);
   const leadCount = visibleCustomers.filter((c) => c.status === "lead").length;
   const showProposalBadge =
@@ -210,7 +210,7 @@ export function AppSidebar({ onClose, collapsed = false }: AppSidebarProps) {
 
       <nav className={cn("scrollbar-rail flex-1 overflow-y-auto py-2", collapsed ? "px-1.5" : "space-y-4 px-1.5")}>
         {NAV_GROUPS.map((group) => {
-          const visibleItems = group.items.filter((item) => hasModuleAccess(me.role, item.module));
+          const visibleItems = group.items.filter((item) => hasModuleAccess(me.role, item.module, me));
           if (visibleItems.length === 0) return null;
           return (
             <div key={group.label} className={cn(!collapsed && "mb-3")}>

@@ -17,7 +17,7 @@ export default function EmailLogPage() {
   const proposals = useAppStore(s => s.proposals);
   const deals = useAppStore(s => s.deals);
   const users = useAppStore(s => s.users);
-  const scope = getScope(me.role, 'email_log');
+  const scope = getScope(me.role, 'email_log', me);
   const visible = useMemo(() => {
     if (scope === 'NONE') return [];
     return scopeNotificationsForUser(me, notifications, { proposals, deals, users });
