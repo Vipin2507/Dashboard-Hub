@@ -583,7 +583,7 @@ function renderCommercialSection(
   totalChunks: number,
   globalOffset: number,
   totalToShow: number,
-): number {
+): { pageNum: number; endY: number } {
   const currentPageNum = pageNum;
   addPageHeader(doc);
 
@@ -749,6 +749,7 @@ function renderCommercialSection(
 
   // Terms: keep on the commercial page when space allows; otherwise continue on following pages
   // (never drop bullets that don't fit under a tall product table).
+  // Heading appears only once — continuation pages do not repeat "Terms & Conditions".
   if (isLastCommercialPage) {
     const terms = getTermsForProposal(proposal);
     const footerLimitY = L.footerBreakY;
@@ -771,18 +772,12 @@ function renderCommercialSection(
       titleY = startTermsOnNewPage();
     }
 
-    const renderTermsHeading = (y: number) => {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(FONT.termsTitle);
-      doc.setTextColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
-      doc.text("Terms & Conditions", L.marginLeft, y);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(fontSize);
-      doc.setTextColor(40, 40, 40);
-      return y + titleGap;
-    };
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(FONT.termsTitle);
+    doc.setTextColor(PROPOSAL_BLUE[0], PROPOSAL_BLUE[1], PROPOSAL_BLUE[2]);
+    doc.text("Terms & Conditions", L.marginLeft, titleY);
 
-    let y = renderTermsHeading(titleY);
+    let y = titleY + titleGap;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(fontSize);
@@ -795,7 +790,6 @@ function renderCommercialSection(
 
       if (y + itemHeight > footerLimitY) {
         y = startTermsOnNewPage();
-        y = renderTermsHeading(y);
         doc.setFont("helvetica", "normal");
         doc.setFontSize(fontSize);
         doc.setTextColor(40, 40, 40);
@@ -805,10 +799,9 @@ function renderCommercialSection(
         doc.text(lines[0], L.marginLeft, y);
         if (lines.length > 1) {
           for (let i = 1; i < lines.length; i++) {
-            // Wrap long bullets across pages if needed
+            // Wrap long bullets across pages if needed (no repeated heading).
             if (y + lineHeight > footerLimitY) {
               y = startTermsOnNewPage();
-              y = renderTermsHeading(y);
               doc.setFont("helvetica", "normal");
               doc.setFontSize(fontSize);
               doc.setTextColor(40, 40, 40);
@@ -820,10 +813,13 @@ function renderCommercialSection(
       }
       y += lineHeight + itemGap;
     }
+
+    // Leave page open for Annexure to continue immediately after terms (no forced break).
+    return { pageNum: usedPageNum, endY: y };
   }
 
   addPageNumber(doc, usedPageNum);
-  return usedPageNum;
+  return { pageNum: usedPageNum, endY: afterY };
 }
 
 export const DEFAULT_TERMS = [
@@ -981,17 +977,36 @@ function sectionHeading(doc: jsPDF, title: string, y: number): number {
   return y + 5.5;
 }
 
-function renderSLAPages(doc: jsPDF, startPageNum: number): number {
-  addPageHeader(doc);
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(FONT.pageTitle);
-  doc.setTextColor(0, 0, 0);
-  const annexureTitleY = L.contentStartY + 8;
-  doc.text("Annexure: Buildesk SLA", L.marginLeft, annexureTitleY);
-
+function renderSLAPages(
+  doc: jsPDF,
+  startPageNum: number,
+  opts?: { continueFromY?: number },
+): number {
   let pageNum = startPageNum;
-  let y = annexureTitleY + 10;
+  let y: number;
+
+  const drawAnnexureTitle = (titleY: number): number => {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(FONT.pageTitle);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Annexure: Buildesk SLA", L.marginLeft, titleY);
+    return titleY + 10;
+  };
+
+  // Prefer continuing on the same page as the last terms item when there is room.
+  const minBlockForAnnexure = 36;
+  if (opts?.continueFromY != null && opts.continueFromY + minBlockForAnnexure <= L.footerBreakY) {
+    y = drawAnnexureTitle(opts.continueFromY + 4);
+  } else {
+    if (opts?.continueFromY != null) {
+      addPageNumber(doc, pageNum);
+      pageNum += 1;
+      doc.addPage();
+    }
+    addPageHeader(doc);
+    y = drawAnnexureTitle(L.contentStartY + 8);
+  }
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   doc.setTextColor(50, 50, 50);
@@ -1114,9 +1129,10 @@ async function buildProposalPdfDoc(proposal: Proposal): Promise<jsPDF> {
       : undefined) ?? computedGrand;
   const totalToShow = (proposal as unknown as { finalQuoteValue?: number }).finalQuoteValue ?? grandFromProposal;
 
+  let lastEndY = L.contentStartY;
   chunks.forEach((chunk, idx) => {
     if (idx > 0) doc.addPage();
-    const lastUsed = renderCommercialSection(
+    const last = renderCommercialSection(
       doc,
       proposal,
       autoTable,
@@ -1127,11 +1143,15 @@ async function buildProposalPdfDoc(proposal: Proposal): Promise<jsPDF> {
       idx * ROWS_PER_COMMERCIAL_PAGE,
       totalToShow,
     );
-    pageNum = lastUsed + 1;
+    pageNum = last.pageNum;
+    lastEndY = last.endY;
+    if (idx < chunks.length - 1) {
+      pageNum = last.pageNum + 1;
+    }
   });
 
-  doc.addPage();
-  renderSLAPages(doc, pageNum);
+  // Annexure continues immediately after the last terms item (same page when space allows).
+  renderSLAPages(doc, pageNum, { continueFromY: lastEndY });
 
   return doc;
 }
