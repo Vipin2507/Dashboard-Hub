@@ -834,6 +834,7 @@ export const DEFAULT_TERMS = [
   "Detailed NDA agreement (for data privacy) will be done after the payment if needed for the receiving party, this can be reviewed by the receiving party's legal team and will duly sign by the authorized signatories at the time of deployment.",
   "SMS, IVR and WhatsApp API Charges are extra as per the usage.",
   "The above-mentioned pricing includes the annual license cost, which is non-refundable.",
+  "Yearly Package must be renewed annually to continue use.",
   "Buildesk will provide free technical support on the provided product and services during the subscription period.",
   "Buildesk personnel will be available to by phone and via email to answer questions regarding the supplied data and to help identify, verify, and resolve problems with the supplied data for a period of six months for product and services purchased as part of this proposal. Telephone/email Support will be made available on Monday through Saturday from 10.00 a.m. to 6:30 p.m., IST, Buildesk holidays excluded.",
   "If there is any change in scope other than agreed line items/content, then Buildesk shall be liable to charge extra for the efforts involved with due discussion with client.",
