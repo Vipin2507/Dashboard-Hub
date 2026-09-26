@@ -410,15 +410,31 @@ export default function Customers() {
   const filtered = useMemo(() => {
     let list = visible;
     const q = search.trim().toLowerCase();
+    const qDigits = q.replace(/\D/g, "");
     if (q) {
-      list = list.filter(
-        (c) =>
+      list = list.filter((c) => {
+        if (
           (c.companyName || "").toLowerCase().includes(q) ||
           (c.customerName || "").toLowerCase().includes(q) ||
           c.customerNumber.toLowerCase().includes(q) ||
           (c.gstin?.toLowerCase().includes(q) ?? false) ||
-          (c.address?.city?.toLowerCase().includes(q) ?? false)
-      );
+          (c.address?.city?.toLowerCase().includes(q) ?? false) ||
+          (c.secondaryEmails?.toLowerCase().includes(q) ?? false)
+        ) {
+          return true;
+        }
+        return (c.contacts ?? []).some((contact) => {
+          const email = (contact.email || "").toLowerCase();
+          const phone = (contact.phone || "").toLowerCase();
+          const name = (contact.name || "").toLowerCase();
+          if (email.includes(q) || phone.includes(q) || name.includes(q)) return true;
+          if (qDigits.length >= 3) {
+            const phoneDigits = phone.replace(/\D/g, "");
+            if (phoneDigits.includes(qDigits)) return true;
+          }
+          return false;
+        });
+      });
     }
     if (statusFilter !== "all") list = list.filter((c) => c.status === statusFilter);
     if (regionFilter !== "all") list = list.filter((c) => c.regionId === regionFilter);
@@ -731,7 +747,7 @@ export default function Customers() {
                   <div className="relative min-w-0 flex-1">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      placeholder="Search company, GSTIN, city…"
+                      placeholder="Search company, contact, phone, email…"
                       className="h-9 pl-8 text-sm"
                       value={search}
                       onChange={(e) => {
