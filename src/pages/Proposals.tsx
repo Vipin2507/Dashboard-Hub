@@ -69,6 +69,7 @@ import {
   Link2,
   MessageSquarePlus,
   MessageCircle,
+  Mail,
   Truck,
   CheckCircle,
   Users,
@@ -85,6 +86,7 @@ import { ProposalFormDialog } from "@/components/ProposalFormDialog";
 import { ApproveProposalDialog } from "@/components/ApproveProposalDialog";
 import { RejectProposalDialog } from "@/components/RejectProposalDialog";
 import { SendProposalDialog } from "@/components/SendProposalDialog";
+import { SendProposalFollowUpDialog } from "@/components/SendProposalFollowUpDialog";
 import { ConvertToDealDialog } from "@/components/ConvertToDealDialog";
 import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
 import { generateProposalPdf, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
@@ -504,6 +506,7 @@ export default function Proposals() {
   const [approveId, setApproveId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [sendId, setSendId] = useState<string | null>(null);
+  const [followUpId, setFollowUpId] = useState<string | null>(null);
   const [createDealId, setCreateDealId] = useState<string | null>(null);
   const [deleteProposal, setDeleteProposal] = useState<Proposal | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -1248,6 +1251,10 @@ export default function Proposals() {
                 <MessageCircle className="mr-2 h-4 w-4" />
                 Share via WhatsApp
               </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer" onClick={() => setFollowUpId(p.id)}>
+                <Mail className="mr-2 h-4 w-4" />
+                Send follow-up
+              </DropdownMenuItem>
             </>
           )}
           {canMenu.copyLink && (
@@ -1749,6 +1756,7 @@ export default function Proposals() {
         onApprove={() => detailId && setApproveId(detailId)}
         onReject={() => detailId && setRejectId(detailId)}
         onSend={() => detailId && setSendId(detailId)}
+        onFollowUp={canMenu.sendEmail && detailId ? () => setFollowUpId(detailId) : undefined}
         onCreateDeal={() => detailId && setCreateDealId(detailId)}
         onMarkNegotiation={() => detailId && markNegotiation(detailId)}
         onMarkWon={() => detailId && markWon(detailId)}
@@ -1781,6 +1789,12 @@ export default function Proposals() {
       {approveId && <ApproveProposalDialog proposalId={approveId} onClose={() => setApproveId(null)} />}
       {rejectId && <RejectProposalDialog proposalId={rejectId} onClose={() => setRejectId(null)} />}
       {sendId && <SendProposalDialog proposalId={sendId} onClose={() => setSendId(null)} />}
+      {followUpId && proposals.find((p) => p.id === followUpId) ? (
+        <SendProposalFollowUpDialog
+          proposal={proposals.find((p) => p.id === followUpId)!}
+          onClose={() => setFollowUpId(null)}
+        />
+      ) : null}
       <ConvertToDealDialog
         open={!!createDealId}
         proposal={

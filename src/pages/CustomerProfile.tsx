@@ -98,6 +98,7 @@ import {
 import type { Customer, CustomerProductLine, CustomerStatus, CustomerSupportTicket, Deal, InventoryItem, Proposal } from "@/types";
 import { CustomerFormDialog } from "@/components/CustomerFormDialog";
 import { ProposalDetailSheet } from "@/components/ProposalDetailSheet";
+import { SendProposalFollowUpDialog } from "@/components/SendProposalFollowUpDialog";
 import { generateProposalPdf } from "@/lib/generateProposalPdf";
 import { toast } from "@/components/ui/use-toast";
 import { StatusPill } from "@/components/StatusPill";
@@ -545,6 +546,7 @@ export default function CustomerProfile() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [proposalDetailId, setProposalDetailId] = useState<string | null>(null);
+  const [followUpProposal, setFollowUpProposal] = useState<Proposal | null>(null);
   const [noteInput, setNoteInput] = useState("");
   const [noteExpanded, setNoteExpanded] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
@@ -1127,7 +1129,11 @@ export default function CustomerProfile() {
                 <AccordionItem value="proposals" className="border-b border-border px-4">
                   <AccordionTrigger className="py-4 hover:no-underline">Proposals</AccordionTrigger>
                   <AccordionContent className="pb-4 pt-0">
-                    <CustomerProposalsLiveTable customerId={customer.id} onViewProposal={(id) => setProposalDetailId(id)} />
+                    <CustomerProposalsLiveTable
+                      customerId={customer.id}
+                      onViewProposal={(id) => setProposalDetailId(id)}
+                      onFollowUp={(p) => setFollowUpProposal(p)}
+                    />
                   </AccordionContent>
                 </AccordionItem>
 
@@ -1887,6 +1893,11 @@ export default function CustomerProfile() {
         onApprove={() => {}}
         onReject={() => {}}
         onSend={() => {}}
+        onFollowUp={
+          detailProposal && (me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep")
+            ? () => setFollowUpProposal(detailProposal)
+            : undefined
+        }
         onCreateDeal={() => {}}
         onDownloadPdf={async () => {
           if (!detailProposal) return;
@@ -1905,6 +1916,10 @@ export default function CustomerProfile() {
         }}
         isPdfLoading={pdfLoading}
       />
+
+      {followUpProposal ? (
+        <SendProposalFollowUpDialog proposal={followUpProposal} onClose={() => setFollowUpProposal(null)} />
+      ) : null}
 
       <Dialog
         open={addContactOpen}

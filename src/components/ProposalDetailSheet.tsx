@@ -27,6 +27,7 @@ import {
   FileDown,
   Loader2,
   Handshake,
+  Mail,
   Trophy,
   Snowflake,
   ExternalLink,
@@ -61,6 +62,7 @@ interface ProposalDetailSheetProps {
   onApprove: () => void;
   onReject: () => void;
   onSend: () => void;
+  onFollowUp?: () => void;
   onCreateDeal: () => void;
   onMarkNegotiation: () => void;
   onMarkWon: () => void;
@@ -77,6 +79,7 @@ export function ProposalDetailSheet({
   onApprove,
   onReject,
   onSend,
+  onFollowUp,
   onCreateDeal,
   onMarkNegotiation,
   onMarkWon,
@@ -235,6 +238,18 @@ export function ProposalDetailSheet({
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5">
+              {onFollowUp ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mr-1 h-8 gap-1.5 px-2.5 text-xs"
+                  onClick={onFollowUp}
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  Send follow-up
+                </Button>
+              ) : null}
               <IconAction onClick={onDownloadPdf} title="Download PDF" disabled={isPdfLoading}>
                 {isPdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
               </IconAction>

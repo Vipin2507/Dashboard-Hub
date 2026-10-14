@@ -53,9 +53,11 @@ function formatWhen(iso: string) {
 export function CustomerProposalsLiveTable({
   customerId,
   onViewProposal,
+  onFollowUp,
 }: {
   customerId: string;
   onViewProposal: (id: string) => void;
+  onFollowUp?: (proposal: Proposal) => void;
 }) {
   const me = useAppStore((s) => s.me);
   const approve = useApproveProposal();
@@ -64,6 +66,7 @@ export function CustomerProposalsLiveTable({
   const canApprove = can(me.role, "proposals", "approve");
   const canReject = can(me.role, "proposals", "reject");
   const canSend = can(me.role, "proposals", "send");
+  const canFollowUp = me.role === "super_admin" || me.role === "sales_manager" || me.role === "sales_rep";
 
   const { data = [], isLoading, isError } = useQuery({
     queryKey: QK.customerProposals(customerId),
@@ -150,6 +153,11 @@ export function CustomerProposalsLiveTable({
                       Send
                     </Button>
                   )}
+                  {canFollowUp && onFollowUp ? (
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => onFollowUp(p)}>
+                      Send follow-up
+                    </Button>
+                  ) : null}
                 </div>
               </TableCell>
             </TableRow>
