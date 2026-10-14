@@ -96,7 +96,8 @@ export function SendProposalFollowUpDialog({ proposal, onClose }: SendProposalFo
             <div className="space-y-2 text-sm text-muted-foreground">
               <p>
                 Send a follow-up for <strong className="text-foreground">{proposal.proposalNumber}</strong> to{" "}
-                <strong className="text-foreground">{fields.customerName}</strong> by email and WhatsApp.
+                <strong className="text-foreground">{fields.customerName}</strong> by email and WhatsApp, with the
+                proposal PDF attached.
               </p>
               <p>
                 {fields.companyName} · {formatINR(proposal.finalQuoteValue ?? proposal.grandTotal)} · created{" "}

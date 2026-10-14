@@ -29,6 +29,7 @@ describe("proposalFollowUp", () => {
     expect(body).toContain("Dear Riya <Shah>,");
     expect(body).toContain("Greetings from Buildesk!");
     expect(body).toContain("proposal shared with Acme & Co");
+    expect(body).toContain("Please find the proposal PDF attached");
     expect(body).toContain("- Proposal Value: ₹2,50,000");
     expect(body).toContain("- Proposal Creation Date: 10/03/2026");
     expect(body).toContain("If the deal has already been created in Buildesk, please disregard this follow-up message.");
@@ -40,6 +41,7 @@ describe("proposalFollowUp", () => {
     const text = buildProposalFollowUpWhatsApp(fields);
     expect(text).toContain("Hello Riya <Shah>! 👋");
     expect(text).toContain("Greetings from *Buildesk*.");
+    expect(text).toContain("Please find the proposal PDF attached.");
     expect(text).toContain("📋 *Proposal Details*");
     expect(text).toContain("• *Proposal Value:* ₹2,50,000");
     expect(text).toContain("• *Creation Date:* 10/03/2026");

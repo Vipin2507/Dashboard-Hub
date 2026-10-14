@@ -87,6 +87,7 @@ import { ApproveProposalDialog } from "@/components/ApproveProposalDialog";
 import { RejectProposalDialog } from "@/components/RejectProposalDialog";
 import { SendProposalDialog } from "@/components/SendProposalDialog";
 import { SendProposalFollowUpDialog } from "@/components/SendProposalFollowUpDialog";
+import { SendBulkProposalFollowUpDialog } from "@/components/SendBulkProposalFollowUpDialog";
 import { ConvertToDealDialog } from "@/components/ConvertToDealDialog";
 import { BulkImportProposalsDialog } from "@/components/BulkImportProposalsDialog";
 import { generateProposalPdf, generateProposalPdfBlob } from "@/lib/generateProposalPdf";
@@ -507,6 +508,7 @@ export default function Proposals() {
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [sendId, setSendId] = useState<string | null>(null);
   const [followUpId, setFollowUpId] = useState<string | null>(null);
+  const [bulkFollowUps, setBulkFollowUps] = useState<Proposal[] | null>(null);
   const [createDealId, setCreateDealId] = useState<string | null>(null);
   const [deleteProposal, setDeleteProposal] = useState<Proposal | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -1349,6 +1351,19 @@ export default function Proposals() {
         subtitle={`${filtered.length} in scope`}
         actions={
           <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-1.5">
+            {canMenu.sendEmail && filtered.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => setBulkFollowUps(filtered.slice())}
+              >
+                <Mail className="mr-1 h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Send follow-up</span>
+                <span className="tabular-nums sm:ml-1">{filtered.length}</span>
+              </Button>
+            )}
             {canExport && (
               <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={handleExportCsv}>
                 <FileDown className="mr-1 h-3.5 w-3.5 shrink-0" />
@@ -1794,6 +1809,9 @@ export default function Proposals() {
           proposal={proposals.find((p) => p.id === followUpId)!}
           onClose={() => setFollowUpId(null)}
         />
+      ) : null}
+      {bulkFollowUps ? (
+        <SendBulkProposalFollowUpDialog proposals={bulkFollowUps} onClose={() => setBulkFollowUps(null)} />
       ) : null}
       <ConvertToDealDialog
         open={!!createDealId}
