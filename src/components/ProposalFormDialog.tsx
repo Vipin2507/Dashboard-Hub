@@ -541,9 +541,14 @@ export function ProposalFormDialog({
       setSetupServiceLabel(editingProposal.setupServiceLabel?.trim() || DEFAULT_SETUP_SERVICE_LABEL);
       setOverrideFinal(editingProposal.finalQuoteValue != null);
       setFinalQuoteValue(String(editingProposal.finalQuoteValue ?? ""));
-      setPdfScope(editingProposal.pdfScope ?? "end_to_end");
-      setPdfCoverHeading(editingProposal.pdfCoverHeading ?? "");
-      setTermsAndConditionsText((editingProposal.termsAndConditions ?? []).join("\n"));
+      const scope = editingProposal.pdfScope ?? "end_to_end";
+      const savedHeading = (editingProposal.pdfCoverHeading ?? "").trim();
+      const savedTerms = Array.isArray(editingProposal.termsAndConditions)
+        ? editingProposal.termsAndConditions.map((t) => String(t ?? "").trim()).filter(Boolean)
+        : [];
+      setPdfScope(scope);
+      setPdfCoverHeading(savedHeading || defaultCoverHeadingTextForScope(scope));
+      setTermsAndConditionsText(savedTerms.length ? savedTerms.join("\n") : DEFAULT_TERMS.join("\n"));
       setDidAutoSeedPdfFields(true);
     } else {
       const createdAt = new Date();
