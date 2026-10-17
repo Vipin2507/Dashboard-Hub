@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -12,10 +13,10 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/use-toast";
 import {
   PROPOSAL_FOLLOW_UP_GAP_MS,
-  sendProposalFollowUpBatch,
-  type FollowUpBatchItemResult,
-  type FollowUpBatchProgress,
+  enqueueProposalFollowUpJob,
+  type FollowUpEnqueueProgress,
 } from "@/lib/proposalFollowUp";
+import { useAppStore } from "@/store/useAppStore";
 import type { Proposal } from "@/types";
 
 interface SendBulkProposalFollowUpDialogProps {
@@ -23,118 +24,102 @@ interface SendBulkProposalFollowUpDialogProps {
   onClose: () => void;
 }
 
-function tally(results: FollowUpBatchItemResult[]) {
-  let both = 0;
-  let emailOnly = 0;
-  let whatsappOnly = 0;
-  let none = 0;
-  for (const row of results) {
-    if (row.email.ok && row.whatsapp.ok) both += 1;
-    else if (row.email.ok) emailOnly += 1;
-    else if (row.whatsapp.ok) whatsappOnly += 1;
-    else none += 1;
-  }
-  return { both, emailOnly, whatsappOnly, none };
-}
-
 export function SendBulkProposalFollowUpDialog({ proposals, onClose }: SendBulkProposalFollowUpDialogProps) {
-  const [sending, setSending] = useState(false);
-  const [progress, setProgress] = useState<FollowUpBatchProgress | null>(null);
-  const [done, setDone] = useState<{ results: FollowUpBatchItemResult[]; stoppedEarly: boolean } | null>(null);
+  const me = useAppStore((s) => s.me);
+  const [preparing, setPreparing] = useState(false);
+  const [progress, setProgress] = useState<FollowUpEnqueueProgress | null>(null);
+  const [queued, setQueued] = useState(false);
   const cancelRef = useRef(false);
-  const gapSeconds = Math.round(PROPOSAL_FOLLOW_UP_GAP_MS / 1000);
+  const gapMinutes = Math.round(PROPOSAL_FOLLOW_UP_GAP_MS / 60_000);
 
   const handleSend = async () => {
     cancelRef.current = false;
-    setSending(true);
-    setDone(null);
+    setPreparing(true);
+    setQueued(false);
     try {
-      const outcome = await sendProposalFollowUpBatch(proposals, {
+      await enqueueProposalFollowUpJob(proposals, {
+        createdByName: me.name,
         isCancelled: () => cancelRef.current,
         onProgress: setProgress,
       });
-      setDone(outcome);
+      setQueued(true);
       setProgress(null);
-      const counts = tally(outcome.results);
-      const summary = [
-        counts.both ? `${counts.both} email and WhatsApp` : "",
-        counts.emailOnly ? `${counts.emailOnly} email only` : "",
-        counts.whatsappOnly ? `${counts.whatsappOnly} WhatsApp only` : "",
-        counts.none ? `${counts.none} not sent` : "",
-      ]
-        .filter(Boolean)
-        .join(", ");
       toast({
-        title: outcome.stoppedEarly ? "Follow-up stopped" : "Follow-up finished",
-        description: summary || "No messages were sent.",
-        variant: counts.none > 0 && counts.both === 0 ? "destructive" : "default",
+        title: "Follow-up queued",
+        description: "The server will keep sending. You can close this tab.",
       });
     } catch (e) {
+      if (cancelRef.current) {
+        toast({ title: "Follow-up stopped", description: "Nothing else will be sent." });
+        onClose();
+        return;
+      }
       toast({
-        title: "Follow-up failed",
+        title: "Could not start follow-up",
         description: e instanceof Error ? e.message : "Try again",
         variant: "destructive",
       });
     } finally {
-      setSending(false);
+      setPreparing(false);
     }
   };
 
   const phaseLabel =
-    progress?.phase === "email"
-      ? "Sending email"
-      : progress?.phase === "whatsapp"
-        ? "Sending WhatsApp"
-        : "Waiting before the next message";
-
-  const counts = done ? tally(done.results) : null;
+    progress?.phase === "upload"
+      ? "Uploading PDF"
+      : progress?.phase === "start"
+        ? "Starting the queue"
+        : "Creating PDF";
 
   return (
-    <AlertDialog open onOpenChange={(open) => !open && !sending && onClose()}>
+    <AlertDialog open onOpenChange={(open) => !open && !preparing && onClose()}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Send follow-up to filtered proposals</AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div className="space-y-2 text-sm text-muted-foreground">
-              {!done ? (
+              {queued ? (
+                <p>
+                  These follow-ups are running on the server, about {gapMinutes} minutes apart. Closing or refreshing
+                  this tab will not stop them. Track progress on the Automation page.
+                </p>
+              ) : (
                 <>
                   <p>
-                    This sends the follow-up email and WhatsApp, with the proposal PDF attached, to{" "}
+                    This queues the follow-up email and WhatsApp, with the proposal PDF attached, for{" "}
                     <strong className="text-foreground">{proposals.length}</strong> proposal
                     {proposals.length === 1 ? "" : "s"} in the current filter.
                   </p>
                   <p>
-                    Messages go out one at a time, with about {gapSeconds} seconds between each email and each WhatsApp
-                    message.
+                    This tab stays open only while the PDFs are prepared. After that, the server sends each email and
+                    WhatsApp about {gapMinutes} minutes apart until the list is finished.
                   </p>
                 </>
-              ) : (
-                <p>
-                  {done.stoppedEarly ? "Stopped early. " : ""}
-                  {counts?.both ?? 0} received both, {counts?.emailOnly ?? 0} email only,{" "}
-                  {counts?.whatsappOnly ?? 0} WhatsApp only, {counts?.none ?? 0} not sent.
-                </p>
               )}
-              {sending && progress ? (
+              {preparing && progress ? (
                 <p className="text-foreground">
-                  {phaseLabel} {progress.index + 1} of {progress.total}
+                  {phaseLabel} {Math.min(progress.index + 1, progress.total)} of {progress.total}
                   {progress.customerName ? ` — ${progress.customerName}` : ""}
-                  {progress.proposalNumber ? ` (${progress.proposalNumber})` : ""}
                 </p>
               ) : null}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          {done ? (
-            <Button type="button" onClick={onClose}>
-              Close
-            </Button>
+          {queued ? (
+            <>
+              <Button type="button" variant="outline" asChild>
+                <Link to="/automation">Open Automation</Link>
+              </Button>
+              <Button type="button" onClick={onClose}>
+                Close
+              </Button>
+            </>
           ) : (
             <>
               <AlertDialogCancel
                 onClick={(event) => {
-                  if (!sending) {
+                  if (!preparing) {
                     onClose();
                     return;
                   }
@@ -142,10 +127,10 @@ export function SendBulkProposalFollowUpDialog({ proposals, onClose }: SendBulkP
                   cancelRef.current = true;
                 }}
               >
-                {sending ? "Stop" : "Cancel"}
+                {preparing ? "Stop" : "Cancel"}
               </AlertDialogCancel>
-              <Button type="button" onClick={() => void handleSend()} disabled={sending || proposals.length === 0}>
-                {sending ? "Sending…" : `Send to ${proposals.length}`}
+              <Button type="button" onClick={() => void handleSend()} disabled={preparing || proposals.length === 0}>
+                {preparing ? "Preparing…" : `Queue ${proposals.length}`}
               </Button>
             </>
           )}

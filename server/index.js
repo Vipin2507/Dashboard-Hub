@@ -14,6 +14,7 @@ import { registerCustomerExtrasApi } from "./customerExtrasApi.js";
 import { registerExecutivePerformanceApi } from "./executivePerformanceApi.js";
 import { registerGroupsApi } from "./groupsApi.js";
 import { registerSalesTargetsApi } from "./salesTargetsApi.js";
+import { registerOutboundJobs } from "./outboundJobs.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -2590,6 +2591,7 @@ registerSubscriptionRenewalApi(app, db);
 registerGroupsApi(app, { db, broadcast });
 registerExecutivePerformanceApi(app, db);
 registerSalesTargetsApi(app, db, { makeId });
+registerOutboundJobs(app, { db, broadcast });
 
 server.on("error", (err) => {
   if (err && err.code === "EADDRINUSE") {

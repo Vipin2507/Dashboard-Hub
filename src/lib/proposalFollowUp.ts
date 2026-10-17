@@ -1,4 +1,4 @@
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { fetchN8nWebhook } from "@/lib/automationEndpoints";
 import { resolveMergedEmailCc, resolveWahaSession } from "@/lib/automationService";
 import { resolveCustomerNotifyReachability } from "@/lib/customerNotifyContacts";
@@ -21,7 +21,7 @@ export type ChannelSendResult = {
 };
 
 /** Pause between each follow-up email and each WhatsApp send in a bulk run. */
-export const PROPOSAL_FOLLOW_UP_GAP_MS = 5_000;
+export const PROPOSAL_FOLLOW_UP_GAP_MS = 5 * 60 * 1000;
 
 export type FollowUpBatchProgress = {
   index: number;
@@ -513,4 +513,108 @@ export async function sendProposalFollowUpBatch(
   }
 
   return { results, stoppedEarly };
+}
+
+export type FollowUpEnqueueProgress = {
+  index: number;
+  total: number;
+  customerName: string;
+  phase: "pdf" | "upload" | "start";
+};
+
+type CreatedOutboundJob = {
+  id: string;
+  items: Array<{ id: string; position: number; prepareError?: string | null }>;
+};
+
+/**
+ * Builds each proposal PDF in this tab, then hands the queue to the API.
+ * After this resolves, the server keeps sending even if the tab closes.
+ */
+export async function enqueueProposalFollowUpJob(
+  proposals: Proposal[],
+  opts?: {
+    gapMs?: number;
+    createdByName?: string;
+    isCancelled?: () => boolean;
+    onProgress?: (progress: FollowUpEnqueueProgress) => void;
+  },
+): Promise<{ id: string }> {
+  const total = proposals.length;
+  const prepared: Array<{
+    proposal: Proposal;
+    fields: ProposalFollowUpFields;
+    email: string;
+    phone: string;
+    subject: string;
+    emailBody: string;
+    whatsappMessage: string;
+    pdf: FollowUpPdf | null;
+    pdfError?: string;
+  }> = [];
+
+  for (let i = 0; i < proposals.length; i++) {
+    if (opts?.isCancelled?.()) throw new Error("Stopped");
+    const proposal = proposals[i];
+    opts?.onProgress?.({
+      index: i,
+      total,
+      customerName: proposal.customerName || proposal.customerCompanyName || proposal.proposalNumber,
+      phase: "pdf",
+    });
+    prepared.push(await prepareProposalFollowUp(proposal));
+  }
+
+  if (opts?.isCancelled?.()) throw new Error("Stopped");
+
+  const job = await api.post<CreatedOutboundJob>("/automation/outbound-jobs", {
+    kind: "proposal_follow_up",
+    title: `Follow-up · ${total} proposal${total === 1 ? "" : "s"}`,
+    gapMs: opts?.gapMs ?? PROPOSAL_FOLLOW_UP_GAP_MS,
+    createdByName: opts?.createdByName || "",
+    items: prepared.map((row) => ({
+      proposalId: row.proposal.id,
+      proposalNumber: row.proposal.proposalNumber,
+      customerName: row.fields.customerName,
+      companyName: row.fields.companyName,
+      email: row.email,
+      phone: row.phone,
+      emailSubject: row.subject,
+      emailBody: row.emailBody,
+      whatsappMessage: row.whatsappMessage,
+      prepareError: row.pdf ? "" : row.pdfError || "Could not create the proposal PDF",
+    })),
+  });
+
+  try {
+    for (let i = 0; i < prepared.length; i++) {
+      if (opts?.isCancelled?.()) throw new Error("Stopped");
+      const row = prepared[i];
+      const created = job.items[i];
+      if (!row.pdf || !created || created.prepareError) continue;
+      opts?.onProgress?.({
+        index: i,
+        total,
+        customerName: row.fields.customerName,
+        phase: "upload",
+      });
+      const form = new FormData();
+      form.append("file", new File([row.pdf.blob], row.pdf.fileName, { type: "application/pdf" }));
+      const res = await fetch(apiUrl(`/api/automation/outbound-jobs/${job.id}/items/${created.id}/pdf`), {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Could not upload the PDF for ${row.fields.customerName}`);
+      }
+    }
+    if (opts?.isCancelled?.()) throw new Error("Stopped");
+    opts?.onProgress?.({ index: total - 1, total, customerName: "", phase: "start" });
+    await api.post(`/automation/outbound-jobs/${job.id}/start`, {});
+    return { id: job.id };
+  } catch (err) {
+    await api.post(`/automation/outbound-jobs/${job.id}/cancel`, {}).catch(() => undefined);
+    throw err;
+  }
 }

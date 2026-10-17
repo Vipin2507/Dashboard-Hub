@@ -83,6 +83,7 @@ export function useRealtimeSync(): SyncState {
         if (entity === "users") qc.invalidateQueries({ queryKey: QK.users() });
         if (entity === "teams") qc.invalidateQueries({ queryKey: QK.teams() });
         if (entity === "regions") qc.invalidateQueries({ queryKey: QK.regions() });
+        if (entity === "outbound_jobs") qc.invalidateQueries({ queryKey: ["outbound-jobs"] });
 
         // Dashboard aggregates depend on everything.
         qc.invalidateQueries({ queryKey: QK.dashboard() });

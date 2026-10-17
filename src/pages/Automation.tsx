@@ -16,6 +16,7 @@ import { toast } from "@/components/ui/use-toast";
 import { DataTablePagination } from "@/components/DataTablePagination";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Topbar } from "@/components/Topbar";
+import { OutboundJobsPanel } from "@/components/OutboundJobsPanel";
 import { StatusPill, type StatusTone } from "@/components/StatusPill";
 import { CountUp } from "@/components/CountUp";
 import { hoverLift, staggerContainer, staggerItem, tapPress } from "@/lib/motion";
@@ -592,6 +593,8 @@ export default function Automation() {
         </motion.div>
 
         <AutomationKillSwitch />
+
+        <OutboundJobsPanel />
 
         <div className="inline-flex h-8 items-center rounded-lg border border-border bg-muted/40 p-0.5">
           {(["Templates", "Rules", "Activity Logs", "Settings"] as const).map((tab) => (

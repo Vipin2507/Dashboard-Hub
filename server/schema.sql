@@ -300,6 +300,44 @@ CREATE TABLE IF NOT EXISTS automation_settings (
   updatedAt TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS outbound_jobs (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  gapMs INTEGER NOT NULL,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  createdByName TEXT,
+  nextRunAt TEXT,
+  error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS outbound_job_items (
+  id TEXT PRIMARY KEY,
+  jobId TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  proposalId TEXT,
+  proposalNumber TEXT,
+  customerName TEXT,
+  companyName TEXT,
+  email TEXT,
+  phone TEXT,
+  emailSubject TEXT,
+  emailBody TEXT,
+  whatsappMessage TEXT,
+  pdfPath TEXT,
+  status TEXT NOT NULL,
+  emailStatus TEXT,
+  whatsappStatus TEXT,
+  emailError TEXT,
+  whatsappError TEXT,
+  sentAt TEXT,
+  FOREIGN KEY (jobId) REFERENCES outbound_jobs(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbound_job_items_jobId ON outbound_job_items(jobId, position);
+
 CREATE INDEX IF NOT EXISTS idx_proposals_status ON proposals(status);
 CREATE INDEX IF NOT EXISTS idx_proposals_customerId ON proposals(customerId);
 CREATE INDEX IF NOT EXISTS idx_proposals_createdAt ON proposals(createdAt);
